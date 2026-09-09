@@ -98,6 +98,7 @@ function allUsers() {
     name: a.name || a.login,
     roles: a.roles && a.roles.includes("governor") ? a.roles : remapSeedRoles(a),
     post: a.post || "",
+    passport: a.passport || "",
     photo: a.photo || "",
     seeded: true
   }));
