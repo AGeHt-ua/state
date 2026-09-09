@@ -1,9 +1,27 @@
 const ROLE_LABELS = {
-  governor: "Губернатор штату Сан-Андреас",
-  official: "Посадовець Уряду",
-  court: "Судова гілка",
+  governor: "Кабінет Губернатора",
+  official: "Кабінет Директорів Департаменту",
+  prosecutor: "Кабінет Прокуратури",
+  court: "Кабінет Судової влади",
   pending: "Очікує призначення"
 };
+
+const OFFICE_BY_ROLE = {
+  governor: "governor",
+  official: "directors",
+  prosecutor: "prosecutor",
+  court: "court"
+};
+
+function userOffice(user) {
+  const role = ((user && user.roles) || []).find((r) => r !== "pending") || "official";
+  return OFFICE_BY_ROLE[role] || "directors";
+}
+
+function officeTitle(user) {
+  const role = ((user && user.roles) || [])[0] || "pending";
+  return ROLE_LABELS[role] || ROLE_LABELS.pending;
+}
 
 const DOC_TYPES = ["Конституція штату", "Закон", "Указ", "Розпорядження", "Статут органу"];
 const DOC_STATUSES = {
@@ -155,7 +173,7 @@ function hasRole(user, role) {
 
 function isStaff(user) {
   const roles = (user && user.roles) || [];
-  return roles.includes("governor") || roles.includes("official") || roles.includes("court");
+  return ["governor", "official", "prosecutor", "court"].some((r) => roles.includes(r));
 }
 
 function requireAuth(neededRole) {
