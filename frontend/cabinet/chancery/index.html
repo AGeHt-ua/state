@@ -1452,23 +1452,22 @@
 (function () {
   const user = (typeof requireAuth === "function") ? requireAuth() : null;
   if (!user) return;
-  const roleOffice = {
-    governor: ["governor", "directors", "prosecutor", "court"],
-    official: ["directors"],
-    court: ["court"]
-  };
-  const allowed = roleOffice[(user.roles || [])[0]] || roleOffice.official;
-  if ((user.roles || []).includes("governor")) {
-    /* all */
-  } else {
-    document.querySelectorAll(".office-card").forEach((btn) => {
-      if (allowed.indexOf(btn.getAttribute("data-office")) === -1) btn.style.display = "none";
-    });
-  }
+  const office = (typeof userOffice === "function") ? userOffice(user) : "governor";
+  const home = document.getElementById("homeScreen");
+  const work = document.getElementById("workspace");
+  if (home) home.classList.add("hidden");
+  if (work) work.classList.remove("hidden");
+  const btnHome = document.getElementById("btnHome");
+  if (btnHome) btnHome.style.display = "none";
+  const card = document.querySelector('.office-card[data-office="' + office + '"]');
+  if (card) card.click();
+  else if (document.getElementById("fldOffice")) document.getElementById("fldOffice").value = office;
+  const badge = document.getElementById("officeBadge");
+  if (badge && typeof officeTitle === "function") badge.textContent = officeTitle(user);
   const signer = document.getElementById("fldSigner");
   const signText = document.getElementById("fldSignText");
-  if (signer && !signer.value) signer.value = user.username;
-  if (signText && user.username) signText.value = user.username;
+  if (signer) signer.value = user.username;
+  if (signText) signText.value = user.username;
 
   function collectText() {
     const pts = Array.from(document.querySelectorAll("#decreePointsList .point-text")).map((el) => el.textContent.trim());
@@ -1488,20 +1487,23 @@
       const titleEl = document.getElementById("decreeSubject");
       const typeLabel = typeSel && typeSel.options[typeSel.selectedIndex] ? typeSel.options[typeSel.selectedIndex].text : "Акт";
       const onHome = !!(document.getElementById("chkPublishHome") && document.getElementById("chkPublishHome").checked);
+      const editId = new URLSearchParams(location.search).get("id");
+      const prev = editId && typeof getDoc === "function" ? getDoc(editId) : null;
       const doc = {
-        id: "act-" + Date.now().toString(36),
+        id: (prev && prev.id) || ("act-" + Date.now().toString(36)),
         type: typeLabel,
         typeKey: typeKey,
         number: number,
         date: date,
         title: typeLabel + " №" + number,
         subject: titleEl ? titleEl.textContent.trim() : "",
-        body: "Канцелярія штату Сан-Андреас",
+        body: (typeof officeTitle === "function" ? officeTitle(user) : "Канцелярія"),
         status: onHome ? "ok" : "draft",
         publishHome: onHome,
         text: collectText(),
         author: user.username,
-        office: (document.getElementById("fldOffice") || {}).value || "governor"
+        ownerLogin: user.login,
+        office: office
       };
       saveDoc(doc);
       alert(onHome ? "Опубліковано на головній і в законодавчій базі." : "Збережено в базі сайту без виводу на головну.");
@@ -1511,4 +1513,3 @@
 </script>
 </body>
 </html>
-
