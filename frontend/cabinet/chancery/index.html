@@ -75,8 +75,8 @@
             text-transform: uppercase;
         }
         .cabinet-layout.chancery-page {
-            grid-template-columns: 220px minmax(0, 1fr) 320px;
-            width: min(1480px, calc(100% - 16px));
+            grid-template-columns: 220px minmax(0, 1fr) 360px;
+            width: min(1540px, calc(100% - 16px));
             margin: 0 auto;
         }
         .doc-nav-label {
@@ -101,6 +101,49 @@
             background: transparent;
             border: 0;
             color: #1a1f2b;
+        }
+        .doc-panel .panel,
+        .doc-panel .panel .grid,
+        .doc-panel .grid {
+            display: block !important;
+        }
+        .doc-panel .panel label,
+        .doc-panel label {
+            display: block !important;
+            width: 100% !important;
+            margin: 0 0 10px !important;
+        }
+        .doc-panel .panel label > input,
+        .doc-panel .panel label > select,
+        .doc-panel .panel label > div {
+            width: 100%;
+        }
+        .doc-panel #btnHome,
+        .doc-panel h1.font-playfair {
+            display: none !important;
+        }
+        .doc-panel .flex.flex-wrap.justify-between {
+            display: block !important;
+            border: 0 !important;
+            padding: 0 !important;
+        }
+        .doc-panel .flex.flex-wrap.items-center.gap-1.justify-end {
+            display: flex !important;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 8px 0 12px;
+        }
+        .doc-panel .gold-btn,
+        .doc-panel .ghost-btn {
+            border-radius: 0 !important;
+            font-family: Arial, sans-serif;
+        }
+        .doc-panel #officeBadge {
+            display: block;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            color: #5c6578;
+            margin-bottom: 8px;
         }
         .doc-panel .ghost-btn {
             background: #fff;
@@ -252,13 +295,6 @@
       <a href="../docs/">Опубліковані документи</a>
       <a href="../people/" id="nav-people">Учасники</a>
       <a href="../../acts/">Законодавча база</a>
-      <span class="doc-nav-label">Документ</span>
-      <a href="#sec-doc">1. Тип і номер</a>
-      <a href="#sec-person">2. Особа</a>
-      <a href="#sec-sign">3. Підписант</a>
-      <a href="#secCourt">4. Суд</a>
-      <a href="#sec-tpl">Заготовки</a>
-      <a href="#sec-act">Публікація</a>
     </aside>
     <div id="editor-root">
 <section id="homeScreen" class="no-print font-sans-ui text-white">
