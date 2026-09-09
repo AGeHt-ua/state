@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Очікування ролі — State</title>
+  <link rel="stylesheet" href="../../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">Кабінет</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../../">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Заявка на розгляді</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <main class="wrap">
+    <h2 class="page-title">Очікується призначення ролі</h2>
+    <section class="card">
+      <p>Заявку прийнято. Губернатор штату Сан-Андреас побачить вас у розділі «Учасники» і призначить посаду.</p>
+      <p class="muted" id="who"></p>
+      <p><a class="btn ghost" href="#" id="logout">Вийти</a></p>
+    </section>
+  </main>
+  <script src="../../assets/accounts.js"></script>
+  <script src="../../assets/app.js"></script>
+  <script src="../../assets/store.js"></script>
+  <script>
+    const user = currentUser();
+    if (!user) location.href = pathTo("login/");
+    else if (isStaff(user)) location.href = pathTo("cabinet/");
+    else document.getElementById("who").textContent = user.username + " · " + user.login;
+  </script>
+</body>
+</html>

@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Канцелярія — State</title>
+    <script src="../../assets/accounts.js"></script>
+    <script src="../../assets/app.js"></script>
+    <script src="../../assets/store.js"></script>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Great+Vibes&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;0,800;1,600&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root { --paper: #f7f4ed; --ink: #050505; }
+        body { font-family: 'Cormorant Garamond', serif; background: #0f1012; color: var(--ink); }
+        .font-sans-ui { font-family: 'Inter', sans-serif; }
+        .font-playfair { font-family: 'Playfair Display', serif; }
+        .font-signature { font-family: 'Great Vibes', cursive; }
+        .certificate-container {
+            width: 210mm; min-height: 297mm; background: var(--paper);
+            box-shadow: 0 25px 60px rgba(0,0,0,.9); position: relative;
+            box-sizing: border-box; margin: 16px auto; border-radius: 4px; overflow: hidden;
+        }
+        .document-bounds { font-size: 16px; }
+        .draggable-block, .seal-layer {
+            position: relative; cursor: grab; user-select: none; touch-action: none;
+            border-radius: 6px; padding: 4px;
+        }
+        .seal-layer { position: absolute; z-index: 20; padding: 0; }
+        .edit-mode .draggable-block:hover, .edit-mode .seal-layer:hover {
+            outline: 1.5px dashed #f59e0b; background: rgba(245,158,11,.06);
+        }
+        .is-dragging { cursor: grabbing; outline: 2px dashed #f59e0b !important; z-index: 40; }
+        .drag-handle {
+            position: absolute; top: -10px; right: -10px; background: #f59e0b; color: #000;
+            border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center;
+            justify-content: center; font-size: 11px; font-weight: 700; opacity: 0; pointer-events: none;
+        }
+        .edit-mode .draggable-block:hover .drag-handle, .edit-mode .seal-layer:hover .drag-handle { opacity: 1; }
+        .lock-mode .draggable-block, .lock-mode .seal-layer { cursor: default; outline: none !important; background: transparent !important; }
+        .lock-mode .drag-handle { display: none !important; }
+        .decree-text-dark { color: var(--ink); text-shadow: 0 0 1px rgba(255,255,255,.35); }
+        [contenteditable="true"] {
+            outline: 1px dashed transparent; border-radius: 3px; padding: 2px 4px; cursor: text; user-select: text;
+        }
+        .edit-mode [contenteditable="true"]:hover { outline: 1px dashed #a1a1aa; background: rgba(255,255,255,.55); }
+        .edit-mode [contenteditable="true"]:focus { outline: 2px solid #3b82f6; background: rgba(255,255,255,.95); }
+        .watermark {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            pointer-events: none; z-index: 8; font-family: 'Cinzel', serif; font-weight: 900;
+            font-size: 92px; letter-spacing: .2em; color: rgba(120,20,20,.12); transform: rotate(-28deg);
+            text-transform: uppercase; user-select: none;
+        }
+        .official-seal {
+            width: 118px; height: 118px; border-radius: 50%;
+            border: 4px double #7a1f1f; background: radial-gradient(circle, rgba(247,244,237,.92), rgba(247,244,237,.55));
+            display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+            color: #7a1f1f; font-family: 'Cinzel', serif; line-height: 1.15; box-shadow: 0 0 0 3px rgba(122,31,31,.15);
+        }
+        .chancery {
+            background:
+                radial-gradient(1200px 400px at 10% -20%, rgba(232,184,109,.12), transparent 50%),
+                linear-gradient(180deg, #14161c 0%, #0c0d11 100%);
+            border: 1px solid rgba(232,184,109,.28);
+            box-shadow: 0 20px 50px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04);
+        }
+        .chancery .sec-title {
+            font-family: 'Cinzel', serif;
+            letter-spacing: .14em;
+            font-size: 9px;
+            color: #e8b86d;
+            text-transform: uppercase;
+        }
+        .panel label {
+            display: flex; flex-direction: column; gap: 3px;
+            color: #9ca3af; font-size: 10px; font-weight: 500;
+        }
+        .panel input, .panel select, .panel textarea {
+            background: #0a0b0e;
+            border: 1px solid rgba(232,184,109,.18);
+            color: #f3e9d7;
+            border-radius: 7px;
+            padding: 4px 7px;
+            font-size: 12px;
+            width: 100%;
+            outline: none;
+        }
+        .panel input:focus, .panel select:focus {
+            border-color: #e8b86d;
+            box-shadow: 0 0 0 3px rgba(232,184,109,.15);
+        }
+        .gold-btn {
+            background: linear-gradient(180deg, #f0d19a, #c9953a);
+            color: #1a1206; font-weight: 700;
+        }
+        .gold-btn:hover { filter: brightness(1.06); }
+        .ghost-btn {
+            background: rgba(255,255,255,.04);
+            border: 1px solid rgba(232,184,109,.22);
+            color: #e8dcc4;
+        }
+        .ghost-btn:hover { background: rgba(232,184,109,.1); }
+        .slot-btn {
+            min-width: 26px; height: 26px;
+            border-radius: 6px; font-size: 11px;
+            border: 1px solid rgba(232,184,109,.25);
+            background: #101218;
+            color: #d6c4a3;
+        }
+        .slot-btn.active {
+            background: linear-gradient(180deg, #f0d19a, #c9953a);
+            color: #1a1206; border-color: #e8b86d; font-weight: 700;
+        }
+        #tplBar button {
+            background: #101218;
+            border: 1px solid rgba(232,184,109,.22);
+            color: #ead9b6;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 10px;
+        }
+        #tplBar button:hover { border-color: #e8b86d; color: #fff; }
+        #homeScreen { width: 100%; max-width: 920px; padding: 24px 16px 40px; }
+        .office-card {
+            background: linear-gradient(180deg, rgba(20,22,28,.95), rgba(10,11,14,.98));
+            border: 1px solid rgba(232,184,109,.22);
+            border-radius: 16px;
+            padding: 22px 18px;
+            text-align: left;
+            color: #f3e6c8;
+            cursor: pointer;
+            transition: .2s ease;
+            min-height: 0;
+        }
+        .office-card:hover {
+            border-color: #e8b86d;
+            transform: translateY(-3px);
+            box-shadow: 0 16px 40px rgba(0,0,0,.45), 0 0 0 1px rgba(232,184,109,.25);
+        }
+        .office-card small { display: block; color: #9ca3af; font-size: 12px; margin-top: 8px; line-height: 1.4; }
+        @media print {
+            body { background: none; padding: 0; }
+            .no-print { display: none !important; }
+            .certificate-container { margin: 0; box-shadow: none; width: 100%; min-height: 100vh; }
+            .draggable-block, .seal-layer { outline: none !important; background: transparent !important; cursor: default; }
+            .drag-handle { display: none !important; }
+            [contenteditable="true"] { outline: none !important; background: transparent !important; }
+        }
+    </style>
+</head>
+<body class="py-2 min-h-screen flex flex-col items-center edit-mode">
+<section id="homeScreen" class="no-print font-sans-ui text-white">
+    <p class="sec-title text-center mb-2">State of San-Andreas</p>
+    <h1 class="font-playfair text-3xl md:text-4xl text-center text-[#f3e6c8] mb-2">Апарат управління</h1>
+    <p class="text-center text-sm text-gray-400 mb-8">Оберіть кабінет, щоб відкрити канцелярію</p>
+    <div class="grid grid-cols-1 gap-3 max-w-lg mx-auto w-full">
+        <button type="button" class="office-card" data-office="governor">
+            <div class="font-playfair text-xl">1. Кабінет Губернатора</div>
+            <small>Накази, укази, розпорядження, постанови, доручення, ордери</small>
+        </button>
+        <button type="button" class="office-card" data-office="directors">
+            <div class="font-playfair text-xl">2. Кабінет Директорів Департаменту</div>
+            <small>Відомчі накази, розпорядження та доручення</small>
+        </button>
+        <button type="button" class="office-card" data-office="prosecutor">
+            <div class="font-playfair text-xl">3. Кабінет Прокуратури</div>
+            <small>Накази та ордери прокуратури</small>
+        </button>
+        <button type="button" class="office-card" data-office="court">
+            <div class="font-playfair text-xl">4. Кабінет Судової влади</div>
+            <small>Накази Голови ВС, повістки, ухвали, ордери</small>
+        </button>
+    </div>
+</section>
+
+<div id="workspace" class="hidden w-full flex flex-col items-center">
+<header class="no-print w-full max-w-6xl mb-2 px-2 font-sans-ui text-white">
+    <div class="chancery rounded-xl p-2.5">
+        <div class="flex flex-wrap justify-between items-center gap-2 pb-2 border-b border-amber-200/10">
+            <div class="flex items-center gap-3">
+                <button type="button" id="btnHome" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">← Кабінети</button>
+                <h1 class="font-playfair text-lg text-[#f3e6c8] tracking-wide">Канцелярія</h1>
+                <span id="officeBadge" class="text-[10px] uppercase tracking-widest text-amber-200/70"></span>
+                <div class="flex items-center gap-1">
+                    <span class="text-[9px] uppercase tracking-widest text-amber-200/60">Слот</span>
+                    <div id="slotBar" class="flex gap-0.5"></div>
+                </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-1 justify-end">
+                <button type="button" id="btnApplyVars" class="gold-btn px-2.5 py-1 rounded-lg text-[11px]">Внести в бланк</button>
+                <label class="flex items-center gap-1 text-[11px] text-amber-100/80 px-2"><input type="checkbox" id="chkPublishHome" class="accent-amber-500"> На головну сайту</label>
+                <button type="button" id="btnPublishSite" class="gold-btn px-2.5 py-1 rounded-lg text-[11px]">Опублікувати на сайт</button>
+                <button type="button" id="btnSave" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">Зберегти</button>
+                <button type="button" id="btnSliders" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">Поля</button>
+                <button type="button" id="btnReset" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">Скинути</button>
+                <button type="button" id="btnPng" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">PNG</button>
+                <button type="button" id="btnAnsi" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">Discord-текст</button>
+                <button type="button" id="btnDiscord" class="gold-btn px-2.5 py-1 rounded-lg text-[11px]">Надіслати в DS</button>
+            </div>
+        </div>
+        <div class="panel grid grid-cols-1 lg:grid-cols-2 gap-1.5 mt-2">
+            <section class="rounded-lg border border-amber-200/10 bg-black/20 p-2">
+                <h2 class="sec-title mb-1.5">1. Документ</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+                    <select id="fldOffice" class="hidden">
+                        <option value="governor">Кабінет Губернатора</option>
+                        <option value="directors">Кабінет Директорів Департаменту</option>
+                        <option value="prosecutor">Кабінет Прокуратури</option>
+                        <option value="court">Кабінет Судової влади</option>
+                    </select>
+                    <label class="col-span-2">Тип бланка
+                        <select id="fldType"></select>
+                    </label>
+                    <label id="wrapNumber">Номер документа
+                        <input id="fldNumber" value="415/2026">
+                    </label>
+                    <label id="wrapDate">Дата видання
+                        <div class="flex gap-1">
+                            <input id="fldDate" value="09.09.2026">
+                            <button type="button" id="btnToday" class="ghost-btn px-2 rounded-xl text-[10px] shrink-0">Сьогодні</button>
+                        </div>
+                    </label>
+                    <label id="wrapCity">Місто
+                        <input id="fldCity" value="Los-Santos">
+                    </label>
+                </div>
+            </section>
+
+            <section class="rounded-lg border border-amber-200/10 bg-black/20 p-2">
+                <h2 class="sec-title mb-1.5" id="secPersonTitle">2. Кого стосується</h2>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-1.5">
+                    <label id="wrapName" class="col-span-2">ПІБ особи
+                        <input id="fldName" value="Danichka Swarovski">
+                    </label>
+                    <label id="wrapPost">Посада особи
+                        <input id="fldPost" value="Заступник Директора департаменту культури">
+                    </label>
+                    <label id="wrapIdKind">Що за номер
+                        <select id="fldIdKind">
+                            <option value="ident">Ідентифікаційний номер</option>
+                            <option value="badge">Номер жетона</option>
+                            <option value="passport">Номер паспорта</option>
+                            <option value="cert">Номер посвідчення</option>
+                        </select>
+                    </label>
+                    <label id="wrapId">Номер особи
+                        <input id="fldId" value="5587">
+                    </label>
+                    <label id="wrapPostId">Номер посади
+                        <input id="fldPostId" value="43099">
+                    </label>
+                </div>
+            </section>
+
+            <section class="rounded-lg border border-amber-200/10 bg-black/20 p-2">
+                <h2 class="sec-title mb-1.5">3. Хто підписує</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-1.5">
+                    <label>Посада підписанта
+                        <input id="fldOfficer" value="Губернатор штату">
+                    </label>
+                    <label>ПІБ підписанта
+                        <input id="fldSigner" value="Dominik Lemaer">
+                    </label>
+                    <label>Розчерк на бланку
+                        <input id="fldSignText" value="Dominik Lemaer" placeholder="те, що буде курсивом">
+                    </label>
+                </div>
+            </section>
+
+            <section id="secCourt" class="rounded-lg border border-amber-200/10 bg-black/20 p-2 hidden">
+                <h2 class="sec-title mb-1.5" id="secCourtTitle">4. Суд</h2>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-1.5">
+                    <label id="wrapCase">Справа №
+                        <input id="fldCase" value="DOJ-91">
+                    </label>
+                    <label id="wrapRole">Роль у справі
+                        <input id="fldRole" value="підсудного">
+                    </label>
+                    <label id="wrapHearing">Дата й час засідання
+                        <input id="fldHearing" value="29 серпня 2026 року о 21:00">
+                    </label>
+                    <label id="wrapVenue" class="col-span-2 md:col-span-3">Місце засідання
+                        <input id="fldVenue" value="у приміщенні Капітолію міста Los-Santos">
+                    </label>
+                </div>
+            </section>
+        </div>
+
+        <div class="mt-1.5 rounded-lg border border-amber-200/10 bg-black/20 p-2">
+            <div class="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
+                <h2 class="sec-title">Заготовки</h2>
+                <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-300">
+                    <button type="button" id="btnPickBg" class="ghost-btn px-2 py-0.5 rounded-lg">+ Фон документу</button>
+                    <button type="button" id="btnClearBg" class="ghost-btn px-2 py-0.5 rounded-lg" title="Прибрати фон">✕</button>
+                    <label class="ghost-btn px-2 py-0.5 rounded-lg cursor-pointer">Печатка PNG
+                        <input type="file" id="sealUploader" accept="image/*" class="hidden">
+                    </label>
+                    <button type="button" id="btnClearSeal" class="ghost-btn px-2 py-0.5 rounded-lg" title="Прибрати печатку">✕</button>
+                    <label class="flex items-center gap-1.5"><input type="checkbox" id="toggleHeaderCheck" checked class="accent-amber-500"> Шапка</label>
+                    <label class="flex items-center gap-1.5"><input type="checkbox" id="toggleFooterCheck" checked class="accent-amber-500"> Блок підпису</label>
+                    <label class="flex items-center gap-1.5"><input type="checkbox" id="toggleSealCheck" checked class="accent-amber-500"> Печатка</label>
+                </div>
+            </div>
+            <div id="tplBar" class="flex flex-wrap gap-1.5"></div>
+        </div>
+    </div>
+
+    <div id="slidersPanel" class="hidden bg-gray-800 border border-gray-700 rounded-xl p-3 mt-2 text-xs text-white">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <label>Верх <span id="valPadTop" class="text-amber-400">140</span>
+                <input type="range" id="inputPadTop" min="50" max="350" value="140" class="w-full accent-amber-500">
+            </label>
+            <label>Низ <span id="valPadBottom" class="text-amber-400">135</span>
+                <input type="range" id="inputPadBottom" min="20" max="250" value="135" class="w-full accent-amber-500">
+            </label>
+            <label>Боки <span id="valPadSide" class="text-amber-400">95</span>
+                <input type="range" id="inputPadSide" min="20" max="180" value="95" class="w-full accent-amber-500">
+            </label>
+            <label>Шрифт <span id="valFontScale" class="text-amber-400">110</span>%
+                <input type="range" id="inputFontScale" min="70" max="160" value="110" class="w-full accent-amber-500">
+            </label>
+            <label>Печатка <span id="valSeal" class="text-amber-400">118</span>px
+                <input type="range" id="inputSeal" min="70" max="180" value="118" class="w-full accent-amber-500">
+            </label>
+        </div>
+    </div>
+</header>
+
+<div id="dsModal" class="no-print hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/70 font-sans-ui">
+    <div class="chancery rounded-xl p-4 w-full max-w-sm">
+        <h2 class="sec-title mb-1">Куди надіслати</h2>
+        <p class="text-[11px] text-gray-400 mb-3">Обери канал</p>
+        <div id="dsChannelBtns" class="flex flex-col gap-1.5 mb-3"></div>
+        <div class="flex justify-end gap-1.5">
+            <button type="button" id="dsCancel" class="ghost-btn px-3 py-1.5 rounded-lg text-xs">Скасувати</button>
+            <button type="button" id="dsConfirm" class="gold-btn px-3 py-1.5 rounded-lg text-xs">Надіслати</button>
+        </div>
+    </div>
+</div>
+<div id="bgModal" class="no-print hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/70 font-sans-ui">
+    <div class="chancery rounded-xl p-4 w-full max-w-sm">
+        <h2 class="sec-title mb-1">Фон документу</h2>
+        <p class="text-[11px] text-gray-400 mb-3">Готові рамки цього кабінету</p>
+        <div id="bgPresetList" class="flex flex-col gap-1.5 mb-3"></div>
+        <label class="gold-btn block text-center px-3 py-2 rounded-lg text-xs cursor-pointer mb-3">+ Додати з комп’ютера
+            <input type="file" id="bgUploader" accept="image/*" class="hidden">
+        </label>
+        <div class="flex justify-end gap-1.5">
+            <button type="button" id="bgModalClose" class="ghost-btn px-3 py-1.5 rounded-lg text-xs">Закрити</button>
+        </div>
+    </div>
+</div>
+<div id="toastNotification" class="no-print fixed bottom-5 right-5 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-2xl text-sm font-sans-ui opacity-0 pointer-events-none translate-y-3 transition-all">Збережено</div>
+
+<main class="certificate-container" id="decreeDocument">
+    <img id="bgFrameImg" src="image_7133bb.jpg" alt="" class="absolute inset-0 w-full h-full object-fill pointer-events-none z-0" onerror="this.style.display='none'">
+    <div class="document-bounds relative z-10 min-h-full flex flex-col justify-between" id="documentBounds">
+        <div id="dragBlockHeader" class="draggable-block flex flex-col items-center decree-text-dark text-center" data-x="0" data-y="0">
+            <div class="drag-handle">⠿</div>
+            <div id="decreePlace" contenteditable="true" class="text-[0.85em] tracking-wide mb-1 text-gray-700">Штат San-Andreas • м. Los-Santos</div>
+            <h2 id="decreeNumber" contenteditable="true" class="text-[1.5em] font-extrabold tracking-wide mb-3 font-playfair uppercase">Наказ №415/2026</h2>
+            <div id="decreeSubject" contenteditable="true" class="text-[1.25em] font-bold max-w-xl italic leading-snug px-2">“Про призначення на посаду Заступника Директора департаменту культури”</div>
+        </div>
+
+        <div id="dragBlockBody" class="draggable-block decree-text-dark my-4" data-x="0" data-y="0">
+            <div class="drag-handle">⠿</div>
+            <p id="decreePreamble" contenteditable="true" class="text-center text-[1.15em] font-medium leading-relaxed mb-6">Я, Губернатор штату, керуючись Конституцією та іншими нормативно-правовими актами.</p>
+            <div id="decreePointsList" class="space-y-4 text-[1.15em] font-medium text-justify"></div>
+            <div class="no-print text-center mt-3">
+                <button type="button" id="btnAddPoint" class="text-xs bg-amber-600/20 hover:bg-amber-600/40 text-amber-900 border border-amber-600/40 font-sans-ui px-2.5 py-1 rounded-md font-semibold">+ Пункт</button>
+                <button type="button" id="btnAddSub" class="text-xs bg-amber-600/10 hover:bg-amber-600/30 text-amber-900 border border-amber-600/30 font-sans-ui px-2.5 py-1 rounded-md font-semibold">+ Підпункт</button>
+            </div>
+            <p id="decreeEffectiveText" contenteditable="true" class="text-center text-[1.15em] font-bold mt-8">Цей наказ набуває чинності з моменту його публікації.</p>
+            <p id="decreeCopies" contenteditable="true" class="text-left text-[0.9em] mt-6 text-gray-800">Розсилка: Департамент культури; Кадрова служба; Преса Уряду; Архів.</p>
+        </div>
+
+        <div id="dragBlockFooter" class="draggable-block decree-text-dark pt-2" data-x="0" data-y="0">
+            <div class="drag-handle">⠿</div>
+            <div class="flex justify-between items-end relative min-h-[90px]">
+                <div class="text-left leading-tight pl-5">
+                    <div id="signOfficerTitle" contenteditable="true" class="font-bold text-[1.2em]">Губернатор штату</div>
+                    <div id="signOfficerName" contenteditable="true" class="text-[1.1em] mt-1 font-semibold">Dominik Lemaer</div>
+                </div>
+                <div id="decreeCursiveSign" contenteditable="true" class="font-signature text-[2em] font-bold absolute left-1/2 -translate-x-1/2 -bottom-2 leading-none">Dominik Lemaer</div>
+                <div id="decreeDate" contenteditable="true" class="text-right font-bold text-[1.35em] tracking-wide pr-5">09.09.2026</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="sealLayer" class="seal-layer" data-x="520" data-y="920" style="left:0;top:0;transform:translate(520px,920px);">
+        <div class="drag-handle">⠿</div>
+        <div id="sealDefault" class="official-seal">
+            <div style="font-size:22px;line-height:1">✦</div>
+            <div style="font-size:9px;letter-spacing:.08em;margin-top:2px">STATE OF</div>
+            <div style="font-size:10px;font-weight:900;">SAN ANDREAS</div>
+            <div style="font-size:8px;margin-top:3px">OFFICIAL SEAL</div>
+        </div>
+        <img id="sealImg" alt="" class="hidden rounded-full object-contain pointer-events-none" style="width:118px;height:118px;">
+    </div>
+</main>
+</div>
+
+<script>
+(function () {
+    const STORE = 'gov_chancery_v1';
+    const COURT_BG = 'https://media.discordapp.net/attachments/1547182239794860032/1547182567265140808/photo_5323606809891249632_y.png?ex=6aa27d8d&is=6aa12c0d&hm=5b9f17272e79c20e44a1ff0d3899eb7e11718418a07f5373e77e568db8884461&=&format=webp&quality=lossless';
+    const BG_PRESETS = {
+        court: [
+            { id: 'judiciary', name: 'Судова рамка', src: COURT_BG }
+        ],
+        governor: [],
+        directors: [],
+        prosecutor: []
+    };
+    // Встав свої webhook тільки сюди. На сторінці вони не показуються.
+    const DISCORD_CHANNELS = [
+        { id: 'gov', name: 'Уряд', webhook: '', offices: ['governor', 'directors'] },
+        { id: 'prosecutor_ch', name: 'Прокуратура', webhook: '', offices: ['prosecutor'] },
+        { id: 'court_templates', name: '📄・шаблони-доків', webhook: '', offices: ['court'] }
+    ];
+    const OFFICE_NAMES = {
+        governor: 'Кабінет Губернатора',
+        directors: 'Кабінет Директорів Департаменту',
+        prosecutor: 'Кабінет Прокуратури',
+        court: 'Кабінет Судової влади'
+    };
+    const OFFICE_DOCS = {
+        governor: ['nakaz', 'rozp', 'ukaz', 'post', 'dor', 'order'],
+        directors: ['nakaz', 'rozp', 'dor'],
+        prosecutor: ['nakaz', 'order'],
+        court: ['scorder', 'summons', 'ruling', 'arrest']
+    };
+    const TYPES = {
+        nakaz: {
+            label: 'Наказ',
+            title: (n) => 'Наказ №' + n,
+            subject: (post) => '“Про призначення на посаду ' + post + '”',
+            preamble: 'Я, {ПОСАДА_ПІДПИСАНТА} штату San-Andreas, керуючись Конституцією та іншими нормативно-правовими актами.',
+            effective: 'Цей наказ набуває чинності з моменту його публікації.',
+            officer: 'Губернатор штату',
+            copies: 'Розсилка: профільний департамент; Кадрова служба; Преса Уряду; Архів.',
+            tpls: [
+                { id: 'assign', label: 'Призначити', text: 'Призначити {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}) на посаду {ПОСАДА}.' },
+                { id: 'powers', label: 'Повноваження', text: 'Надати {ПІБ} усі права та повноваження відповідно до посади {ПОСАДА} (ідентифікаційний номер посади {ID_ПОСАДИ}) згідно Конституції та інших нормативно-правових актів.' },
+                { id: 'fire', label: 'Звільнити', text: 'Звільнити {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}) з посади {ПОСАДА} з дня опублікування цього наказу.' },
+                { id: 'cancel', label: 'Скасувати', text: 'Визнати таким, що втратив чинність, Наказ №___ у частині, що суперечить цьому акту.' },
+                { id: 'publish', label: 'Опублікувати', text: 'Ознайомити заінтересованих осіб під підпис та опублікувати наказ протягом 24 годин. Копію направити до Архіву Уряду.' }
+            ]
+        },
+        rozp: {
+            label: 'Розпорядження',
+            title: (n) => 'Розпорядження №' + n,
+            subject: (post) => '“Про організацію роботи щодо посади ' + post + '”',
+            preamble: 'Керуючись Конституцією штату San-Andreas та Законом про діяльність Уряду,',
+            effective: 'Розпорядження набирає чинності з дня доведення до виконавців.',
+            officer: 'Губернатор штату',
+            copies: 'Розсилка: виконавці; Канцелярія Уряду; Архів.',
+            tpls: [
+                { id: 'org', label: 'Організувати', text: 'Організувати виконання заходів щодо посади {ПОСАДА} у м. {МІСТО}.' },
+                { id: 'resp', label: 'Відповідальний', text: 'Відповідальним призначити {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}).' },
+                { id: 'term', label: 'Строк', text: 'Встановити строк виконання — до {ДАТА} включно.' },
+                { id: 'report', label: 'Звіт', text: 'Звіт про виконання подати до Канцелярії Уряду.' },
+                { id: 'ctrl', label: 'Контроль', text: 'Контроль за виконанням цього розпорядження залишаю за собою.' }
+            ]
+        },
+        ukaz: {
+            label: 'Указ',
+            title: (n) => 'Указ №' + n,
+            subject: () => '“Про кадрові питання”',
+            preamble: 'Відповідно до Конституції штату San-Andreas постановляю:',
+            effective: 'Указ підлягає негайному опублікуванню.',
+            officer: 'Губернатор штату',
+            copies: 'Розсилка: Уряд; профільний департамент; Преса; Архів.',
+            tpls: [
+                { id: 'assign', label: 'Призначити', text: 'Призначити {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}) на посаду {ПОСАДА}.' },
+                { id: 'rank', label: 'Статус', text: 'Установити, що {ПІБ} здійснює повноваження {ПОСАДА} з дня опублікування цього указу.' },
+                { id: 'fire', label: 'Звільнити', text: 'Звільнити {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}) з посади {ПОСАДА}.' },
+                { id: 'cancel', label: 'Скасувати', text: 'Визнати таким, що втратив чинність, Указ №___.' },
+                { id: 'publish', label: 'Оприлюднити', text: 'Оприлюднити цей указ у офіційних джерелах штату San-Andreas.' }
+            ]
+        },
+        post: {
+            label: 'Постанова',
+            title: (n) => 'Постанова №' + n,
+            subject: () => '“Про окремі питання діяльності виконавчої влади”',
+            preamble: 'Уряд штату San-Andreas постановляє:',
+            effective: 'Постанова чинна з моменту офіційного оприлюднення.',
+            officer: 'Губернатор штату',
+            copies: 'Розсилка: органи виконавчої влади; Канцелярія; Архів.',
+            tpls: [
+                { id: 'approve', label: 'Затвердити', text: 'Затвердити запропонований порядок щодо {ПОСАДА}.' },
+                { id: 'bind', label: 'Зобов’язати', text: 'Зобов’язати профільні органи забезпечити виконання постанови у м. {МІСТО}.' },
+                { id: 'person', label: 'Виконавець', text: 'Координацію покласти на {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}).' },
+                { id: 'finance', label: 'Ресурс', text: 'Передбачити організаційно-технічне забезпечення виконання цієї постанови.' },
+                { id: 'publish', label: 'Оприлюднити', text: 'Опублікувати постанову та надіслати копії виконавцям.' }
+            ]
+        },
+        dor: {
+            label: 'Доручення',
+            title: (n) => 'Доручення №' + n,
+            subject: (post) => '“Щодо виконання обов’язків ' + post + '”',
+            preamble: 'Доручаю відповідним органам забезпечити виконання нижченаведеного.',
+            effective: 'Контроль за виконанням залишаю за собою.',
+            officer: 'Губернатор штату',
+            copies: 'Розсилка: виконавець; безпосередній керівник; Архів.',
+            tpls: [
+                { id: 'do', label: 'Виконати', text: 'До {ДАТА} забезпечити виконання завдань, пов’язаних із посадою {ПОСАДА}.' },
+                { id: 'who', label: 'Кому', text: 'Виконання доручити {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}).' },
+                { id: 'how', label: 'Порядок', text: 'Діяти в межах Конституції штату San-Andreas та посадових інструкцій.' },
+                { id: 'report', label: 'Доповісти', text: 'Про результати доповісти {ПОСАДА_ПІДПИСАНТА} письмово.' },
+                { id: 'ctrl', label: 'Контроль', text: 'Контроль залишаю за собою.' }
+            ]
+        },
+        order: {
+            label: 'Ордер',
+            title: (n) => 'Ордер №' + n,
+            subject: () => '“На вчинення процесуальних / службових дій”',
+            preamble: 'Керуючись Конституцією штату San-Andreas, Законом про діяльність Уряду та встановленим порядком видачі ордерів,',
+            effective: 'Ордер дійсний з моменту підписання і підлягає пред’явленню перед виконанням.',
+            officer: 'Губернатор штату',
+            copies: 'Розсилка: виконавець ордера; реєстр ордерів; Архів.',
+            tpls: [
+                { id: 'auth', label: 'Уповноважити', text: 'Уповноважити {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}) на виконання цього ордера.' },
+                { id: 'what', label: 'Дія', text: 'Дозволити проведення службових дій щодо об’єкта / особи в межах м. {МІСТО}, штат San-Andreas.' },
+                { id: 'scope', label: 'Межі', text: 'Дії вчиняти строго в межах, зазначених у цьому ордері, без перевищення повноважень.' },
+                { id: 'term', label: 'Строк', text: 'Строк дії ордера — до {ДАТА} включно, якщо його не відкликано раніше.' },
+                { id: 'report', label: 'Звіт', text: 'Після виконання подати звіт до органу, що видав ордер, та повернути оригінал до реєстру.' }
+            ]
+        },
+        scorder: {
+            label: 'Наказ Голови ВС',
+            title: () => 'НАКАЗ ГОЛОВИ ВЕРХОВНОГО СУДУ',
+            subject: () => 'SUPREME COURT OF SAN-ANDREAS',
+            preamble: 'Я, {ПОСАДА_ПІДПИСАНТА} {ПІДПИСАНТ} на підставі Конституції штату San-Andreas та інших нормативно-правових актів, НАКАЗУЮ:',
+            effective: 'Цей наказ набуває чинності з моменту його публікації.',
+            officer: 'Голова Верховного суду',
+            copies: '',
+            tpls: [
+                { id: 'sc_app_scj', label: 'Призначити Верховного суддю', text: 'Призначити громадянина {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}) на посаду Верховного судді та надати всі права та повноваження відповідно посади.' },
+                { id: 'sc_app_app', label: 'Призначити апеляційного суддю', text: 'Призначити громадянина {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}) на посаду апеляційного судді та надати всі права та повноваження відповідно посади.' },
+                { id: 'sc_app_dj', label: 'Призначити окружного суддю', text: 'Призначити громадянина {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}) на посаду окружного судді та надати всі права та повноваження відповідно посади.' },
+                { id: 'sc_fire_scj', label: 'Звільнити Верховного суддю', text: 'Звільнити громадянина {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}) з посади Верховного судді та скасувати всі права та повноваження відповідно посади.' },
+                { id: 'sc_fire_app', label: 'Звільнити апеляційного суддю', text: 'Звільнити громадянина {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}) з посади апеляційного судді та скасувати всі права та повноваження відповідно посади.' },
+                { id: 'sc_fire_dj', label: 'Звільнити окружного суддю', text: 'Звільнити громадянина {ПІБ} ({Вид номера} {НОМЕР_ОСОБИ}) з посади окружного судді та скасувати всі права та повноваження відповідно посади.' }
+            ]
+        },
+        summons: {
+            label: 'Повістка',
+            title: () => 'Повістка',
+            subject: () => 'DISTRICT COURT — DISTRICT OF SAN-ANDREAS',
+            preamble: 'Шановний {ПОСАДА} {ПІБ}, Окружний суд повідомляє про виклик Вас для участі у судовому засіданні у якості {РОЛЬ} у справі №{СПРАВА} від {ДАТА}.',
+            effective: 'Просимо з’явитись до суду у зазначений час та мати при собі документи, що посвідчують особу, а також процесуальні матеріали, необхідні для розгляду справи.',
+            officer: 'Окружний суддя',
+            copies: 'Розсилка: адресат повістки; канцелярія окружного суду; матеріали справи №{СПРАВА}.',
+            tpls: [
+                { id: 'sum_when', label: 'Коли і де', text: 'Судове засідання відбудеться {ЗАСІДАННЯ} {МІСЦЕ_ЗАСІДАННЯ}.' },
+                { id: 'sum_accused', label: 'Як підсудного', text: 'Викликати {ПІБ} ({ПОСАДА}) для участі у судовому засіданні у якості підсудного у справі №{СПРАВА}.' },
+                { id: 'sum_witness', label: 'Як свідка', text: 'Викликати {ПІБ} ({ПОСАДА}) для участі у судовому засіданні у якості свідка у справі №{СПРАВА}.' },
+                { id: 'sum_victim', label: 'Як потерпілого', text: 'Викликати {ПІБ} ({ПОСАДА}) для участі у судовому засіданні у якості потерпілого у справі №{СПРАВА}.' },
+                { id: 'sum_docs', label: 'Документи', text: 'З’явитись особисто, мати при собі документи, що посвідчують особу, та процесуальні матеріали, необхідні для розгляду справи №{СПРАВА}.' }
+            ]
+        },
+        ruling: {
+            label: 'Ухвала суду',
+            title: () => 'УХВАЛА СУДУ',
+            subject: () => 'DISTRICT COURT — DISTRICT OF SAN-ANDREAS',
+            preamble: 'Суд у складі {ПОСАДА_ПІДПИСАНТА} {ПІДПИСАНТ}, керуючись чинним законодавством штату San-Andreas, постановив:',
+            effective: 'НАБРАННЯ ЧИННОСТІ: ухвала набирає чинності з моменту проголошення та може бути оскаржена в установленому порядку.',
+            officer: 'Окружний суддя',
+            copies: 'Розсилка: сторони у справі №{СПРАВА}; канцелярія окружного суду; Архів суду.',
+            tpls: [
+                { id: 'rul_facts', label: 'Обставини — позов', text: 'ОБСТАВИНИ СПРАВИ. До суду надійшов позов щодо {ПІБ}, якому інкримінується вчинення правопорушень, передбачених кримінальним кодексом штату San-Andreas.' },
+                { id: 'rul_motion', label: 'Обставини — клопотання', text: 'ОБСТАВИНИ СПРАВИ. До суду надійшло клопотання від {ПОСАДА} {ПІБ}.' },
+                { id: 'rul_found', label: 'Встановлено судом', text: 'ВСТАНОВЛЕНО СУДОМ. Дослідивши матеріали, суд дійшов висновку, зазначеного нижче.' },
+                { id: 'rul_adjourn', label: 'Перенести засідання', text: 'СУД УХВАЛИВ. Про перенесення судового засідання. Засідання, яке мало відбутися {ЗАСІДАННЯ}, переноситься.' },
+                { id: 'rul_hold', label: 'Залишити без задоволення', text: 'СУД УХВАЛИВ. Залишити позов без задоволення у зв’язку з недостатністю доказової бази.' },
+                { id: 'rul_grant', label: 'Задовольнити', text: 'СУД УХВАЛИВ. Задовольнити позов / клопотання щодо {ПІБ} у справі №{СПРАВА}.' }
+            ]
+        },
+        arrest: {
+            label: 'Ордер',
+            title: (n) => n ? 'ОРДЕР №' + n : 'ОРДЕР',
+            subject: () => 'DISTRICT COURT — DISTRICT OF SAN-ANDREAS',
+            preamble: 'До: будь-якого уповноваженого працівника правоохоронних органів штату San-Andreas.',
+            effective: 'ВИДАНО. Суддею окружного суду {ПІДПИСАНТ}. Ордер підлягає негайному виконанню в межах, зазначених нижче.',
+            officer: 'Суддя окружного суду',
+            copies: '',
+            tpls: [
+                { id: 'w_raid', label: 'Проведення рейду', text: 'Дозволити проведення рейду щодо {ПІБ} / об’єкта {ПОСАДА} за адресою {МІСЦЕ_ЗАСІДАННЯ} у справі №{СПРАВА}. Під час рейду дозволено затримання причетних осіб та фіксацію речових доказів.' },
+                { id: 'w_arrest', label: 'Арешт особи', text: 'На підставі судового рішення у справі №{СПРАВА} від {ДАТА} здійснити арешт {ПІБ}.' },
+                { id: 'w_search', label: 'Обшук приміщення', text: 'Дозволити проведення обшуку приміщення / володіння {ПІБ} за адресою: {МІСЦЕ_ЗАСІДАННЯ}.' },
+                { id: 'w_seize', label: 'Вилучення майна', text: 'Дозволити вилучення приватної власності {ПІБ}, а саме: {ПОСАДА}, що перебуває {МІСЦЕ_ЗАСІДАННЯ}.' },
+                { id: 'w_freeze', label: 'Заборона розпоряджатись', text: 'Заборонити {ПІБ} відчужувати, переміщувати або іншим чином розпоряджатись майном, зазначеним у цьому ордері, до окремого рішення суду.' },
+                { id: 'w_scope', label: 'Межі виконання', text: 'Дії вчиняти строго в межах цього ордера, у м. {МІСТО}, штат San-Andreas, без перевищення повноважень.' }
+            ]
+        }
+    };
+
+    const defaultState = () => ({
+        slot: 1,
+        office: 'governor',
+        type: 'nakaz',
+        fields: {
+            number: '415/2026', date: today(), city: 'Los-Santos', stamp: '', water: '',
+            name: 'Danichka Swarovski', id: '5587', idKind: 'ident',
+            post: 'Заступник Директора департаменту культури',
+            postId: '43099', officer: 'Губернатор штату', signer: 'Dominik Lemaer', signText: 'Dominik Lemaer',
+            caseNo: 'DOJ-91', role: 'підсудного', hearing: '29 серпня 2026 року о 21:00',
+            venue: 'у приміщенні Капітолію міста Los-Santos'
+        },
+        padding: { top: 140, side: 95, bottom: 135, fontScale: 110, seal: 118 },
+        positions: {
+            dragBlockHeader: { x: 0, y: 0 },
+            dragBlockBody: { x: 0, y: 0 },
+            dragBlockFooter: { x: 0, y: 0 },
+            sealLayer: { x: 520, y: 920 }
+        },
+        visibility: { header: true, footer: true, seal: true },
+        locked: false,
+        bgImageSrc: 'image_7133bb.jpg',
+        sealSrc: '',
+        content: null
+    });
+
+    let state = defaultState();
+    let saveTimer = null;
+
+    const $ = (id) => document.getElementById(id);
+
+    function today() {
+        const d = new Date();
+        const p = (n) => String(n).padStart(2, '0');
+        return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear();
+    }
+
+    function toast(msg) {
+        const el = $('toastNotification');
+        el.textContent = msg;
+        el.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-3');
+        clearTimeout(toast._t);
+        toast._t = setTimeout(() => el.classList.add('opacity-0', 'pointer-events-none', 'translate-y-3'), 2600);
+    }
+
+    function idKindLabel() {
+        const map = {
+            ident: 'ідентифікаційний номер',
+            badge: 'номер жетона',
+            passport: 'номер паспорта',
+            cert: 'номер посвідчення'
+        };
+        return map[state.fields.idKind] || 'ідентифікаційний номер';
+    }
+
+    function vars() {
+        const f = state.fields;
+        return {
+            '{ПІБ}': f.name,
+            '{НОМЕР_ОСОБИ}': f.id,
+            '{Вид номера}': idKindLabel(),
+            '{ПОСАДА}': f.post,
+            '{ID_ПОСАДИ}': f.postId,
+            '{НОМЕР}': f.number,
+            '{ДАТА}': f.date,
+            '{МІСТО}': f.city || 'Los-Santos',
+            '{ПІДПИСАНТ}': f.signer,
+            '{ПІДПИС}': f.signText || f.signer,
+            '{ПОСАДА_ПІДПИСАНТА}': f.officer || 'Губернатор штату',
+            '{ТИП}': (TYPES[state.type] || TYPES.nakaz).label,
+            '{ТЕМА}': ($('decreeSubject') ? $('decreeSubject').textContent : ''),
+            '{ЗГАДКА}': ( $('fldMention') ? $('fldMention').value.trim() : ''),
+            '@згадка': ( $('fldMention') ? $('fldMention').value.trim() : ''),
+            '{СПРАВА}': f.caseNo || 'DOJ-91',
+            '{РОЛЬ}': f.role || 'підсудного',
+            '{ЗАСІДАННЯ}': f.hearing || '',
+            '{МІСЦЕ_ЗАСІДАННЯ}': f.venue || 'у приміщенні Капітолію міста Los-Santos'
+        };
+    }
+
+    function applyTokens(str) {
+        const map = vars();
+        return String(str).replace(/@згадка|\{ЗГАДКА\}|\{ТИП\}|\{ТЕМА\}|\{ПІБ\}|\{НОМЕР_ОСОБИ\}|\{Вид номера\}|\{ПОСАДА_ПІДПИСАНТА\}|\{ПОСАДА\}|\{ID_ПОСАДИ\}|\{НОМЕР\}|\{ДАТА\}|\{МІСТО\}|\{ПІДПИСАНТ\}|\{ПІДПИС\}|\{СПРАВА\}|\{РОЛЬ\}|\{ЗАСІДАННЯ\}|\{МІСЦЕ_ЗАСІДАННЯ\}|\{ID\}/g, (m) => {
+            if (m === '{ID}') return map['{НОМЕР_ОСОБИ}'];
+            return map[m] || m;
+        });
+    }
+
+    function readFields() {
+        state.fields = {
+            number: $('fldNumber').value.trim(),
+            date: $('fldDate').value.trim(),
+            city: $('fldCity').value.trim() || 'Los-Santos',
+            name: $('fldName').value.trim(),
+            id: $('fldId').value.trim(),
+            idKind: $('fldIdKind').value,
+            post: $('fldPost').value.trim(),
+            postId: $('fldPostId').value.trim(),
+            officer: $('fldOfficer').value.trim() || 'Губернатор штату',
+            signer: $('fldSigner').value.trim(),
+            signText: $('fldSignText') ? $('fldSignText').value.trim() : '',
+            caseNo: $('fldCase') ? $('fldCase').value.trim() : '',
+            role: $('fldRole') ? $('fldRole').value.trim() : '',
+            hearing: $('fldHearing') ? $('fldHearing').value.trim() : '',
+            venue: $('fldVenue') ? $('fldVenue').value.trim() : ''
+        };
+        state.office = $('fldOffice') ? $('fldOffice').value : (state.office || 'governor');
+        state.type = $('fldType').value;
+    }
+
+    function writeFields() {
+        const f = state.fields;
+        $('fldNumber').value = f.number;
+        $('fldDate').value = f.date;
+        $('fldCity').value = f.city || 'Los-Santos';
+        $('fldName').value = f.name;
+        $('fldId').value = f.id;
+        $('fldIdKind').value = f.idKind || 'ident';
+        $('fldPost').value = f.post;
+        $('fldPostId').value = f.postId;
+        $('fldOfficer').value = f.officer || 'Губернатор штату';
+        $('fldSigner').value = f.signer;
+        if ($('fldSignText')) $('fldSignText').value = f.signText || f.signer || '';
+        if ($('fldCase')) $('fldCase').value = f.caseNo || '';
+        if ($('fldRole')) $('fldRole').value = f.role || '';
+        if ($('fldHearing')) $('fldHearing').value = f.hearing || '';
+        if ($('fldVenue')) $('fldVenue').value = f.venue || '';
+        if ($('fldOffice')) $('fldOffice').value = state.office || 'governor';
+        fillTypes(state.office || 'governor', state.type);
+        $('fldType').value = state.type;
+    }
+
+    function applyFieldVisibility() {
+        const type = state.type || $('fldType').value;
+        const profiles = {
+            scorder: {
+                title: '2. Кого призначають / звільняють',
+                courtTitle: '',
+                show: ['wrapNumber','wrapDate','wrapCity','wrapName','wrapPost','wrapIdKind','wrapId']
+            },
+            summons: {
+                title: '2. Кого викликають',
+                courtTitle: '4. Засідання',
+                show: ['wrapDate','wrapCity','wrapName','wrapPost','wrapCase','wrapRole','wrapHearing','wrapVenue']
+            },
+            ruling: {
+                title: '2. Сторони / заявник',
+                courtTitle: '4. Справа',
+                show: ['wrapDate','wrapCity','wrapName','wrapPost','wrapCase','wrapHearing']
+            },
+            arrest: {
+                title: '2. Особа / власник',
+                courtTitle: '4. Справа і об’єкт',
+                show: ['wrapNumber','wrapDate','wrapCity','wrapName','wrapPost','wrapCase','wrapVenue']
+            },
+            nakaz: { title: '2. Кого стосується', show: ['wrapNumber','wrapDate','wrapCity','wrapName','wrapPost','wrapIdKind','wrapId','wrapPostId'] },
+            rozp: { title: '2. Кого стосується', show: ['wrapNumber','wrapDate','wrapCity','wrapName','wrapPost','wrapIdKind','wrapId','wrapPostId'] },
+            ukaz: { title: '2. Кого стосується', show: ['wrapNumber','wrapDate','wrapCity','wrapName','wrapPost','wrapIdKind','wrapId','wrapPostId'] },
+            post: { title: '2. Кого стосується', show: ['wrapNumber','wrapDate','wrapCity','wrapName','wrapPost','wrapIdKind','wrapId','wrapPostId'] },
+            dor: { title: '2. Кого стосується', show: ['wrapNumber','wrapDate','wrapCity','wrapName','wrapPost','wrapIdKind','wrapId','wrapPostId'] },
+            order: { title: '2. Кого уповноважують', show: ['wrapNumber','wrapDate','wrapCity','wrapName','wrapPost','wrapIdKind','wrapId','wrapPostId'] }
+        };
+        const all = ['wrapNumber','wrapDate','wrapCity','wrapName','wrapPost','wrapIdKind','wrapId','wrapPostId','wrapCase','wrapRole','wrapHearing','wrapVenue'];
+        const p = profiles[type] || profiles.nakaz;
+        all.forEach((id) => {
+            if ($(id)) $(id).classList.toggle('hidden', p.show.indexOf(id) === -1);
+        });
+        if ($('secPersonTitle')) $('secPersonTitle').textContent = p.title;
+        const courtOn = p.show.indexOf('wrapCase') !== -1 || p.show.indexOf('wrapHearing') !== -1;
+        if ($('secCourt')) $('secCourt').classList.toggle('hidden', !courtOn);
+        if ($('secCourtTitle') && p.courtTitle) $('secCourtTitle').textContent = p.courtTitle;
+    }
+
+    function applyType(resetText) {
+        const t = TYPES[state.type] || TYPES.nakaz;
+        applyFieldVisibility();
+        if (resetText) {
+            if (t.officer) {
+                state.fields.officer = t.officer;
+                if ($('fldOfficer')) $('fldOfficer').value = t.officer;
+            }
+            if (state.type === 'scorder') {
+                state.fields.idKind = state.fields.idKind === 'badge' || state.fields.idKind === 'ident' ? 'passport' : state.fields.idKind;
+                if ($('fldIdKind')) $('fldIdKind').value = state.fields.idKind;
+                if ($('fldCity')) $('fldCity').value = state.fields.city || 'Los-Santos';
+            }
+            if (state.type === 'summons') {
+                if ($('fldPost') && (!state.fields.post || state.fields.post.indexOf('Заступник') !== -1)) {
+                    state.fields.post = 'Співробітнику LSPD штату San-Andreas';
+                    $('fldPost').value = state.fields.post;
+                }
+            }
+            $('decreeNumber').textContent = t.title(state.fields.number);
+            $('decreeSubject').textContent = t.subject(state.fields.post);
+            $('decreePreamble').textContent = applyTokens(t.preamble);
+            $('decreeEffectiveText').textContent = t.effective;
+            $('signOfficerTitle').textContent = state.fields.officer || t.officer;
+            if (t.copies) $('decreeCopies').textContent = applyTokens(t.copies);
+            loadTypeTemplates();
+            fillDefaultPoints();
+        }
+        document.title = t.label + ' №' + state.fields.number;
+    }
+
+    function applyMeta() {
+        const f = state.fields;
+        const city = f.city || 'Los-Santos';
+        $('decreePlace').textContent = 'Штат San-Andreas • м. ' + city;
+        $('decreeDate').textContent = f.date;
+        $('signOfficerTitle').textContent = f.officer || 'Губернатор штату';
+        $('signOfficerName').textContent = f.signer;
+        $('decreeCursiveSign').textContent = f.signText || f.signer;
+    }
+
+    function applyVarsToDoc() {
+        readFields();
+        applyType(true);
+        applyMeta();
+        const t = TYPES[state.type];
+        $('decreeNumber').textContent = t.title(state.fields.number);
+        $('decreeSubject').textContent = t.subject(state.fields.post);
+        document.querySelectorAll('#decreePointsList .point-text').forEach((el) => {
+            el.textContent = applyTokens(el.textContent);
+        });
+        scheduleSave();
+        toast('Змінні підставлено');
+    }
+
+    function pointEl(text, sub) {
+        const wrap = document.createElement('div');
+        wrap.className = 'decree-point flex items-start group relative' + (sub ? ' pl-8' : '');
+        wrap.dataset.sub = sub ? '1' : '0';
+        wrap.innerHTML = '<span contenteditable="true" class="point-text w-full leading-relaxed"></span>' +
+            '<button type="button" class="btn-del-point no-print opacity-0 group-hover:opacity-100 text-red-500 font-bold ml-1 text-xs px-1">✕</button>';
+        wrap.querySelector('.point-text').textContent = text;
+        return wrap;
+    }
+
+    function renumber() {
+        let n = 0, s = 0;
+        $('decreePointsList').querySelectorAll('.decree-point').forEach((row) => {
+            const span = row.querySelector('.point-text');
+            const raw = span.textContent.replace(/^\s*\d+(\.\d+)?\.\s*/, '').trim();
+            if (row.dataset.sub === '1') {
+                if (!n) n = 1;
+                s += 1;
+                span.textContent = n + '.' + s + '. ' + raw;
+            } else {
+                n += 1; s = 0;
+                span.textContent = n + '. ' + raw;
+            }
+        });
+    }
+
+    function typeTpls() {
+        return (TYPES[state.type] || TYPES.nakaz).tpls || [];
+    }
+
+    function loadTypeTemplates() {
+        const bar = $('tplBar');
+        if (!bar) return;
+        bar.innerHTML = '';
+        typeTpls().forEach((tpl) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'bg-gray-800 border border-gray-600 px-2 py-1 rounded';
+            b.textContent = tpl.label;
+            b.addEventListener('click', () => addPoint(false, applyTokens(tpl.text)));
+            bar.appendChild(b);
+        });
+    }
+
+    function fillDefaultPoints() {
+        const list = $('decreePointsList');
+        list.innerHTML = '';
+        typeTpls().slice(0, 3).forEach((tpl) => list.appendChild(pointEl(applyTokens(tpl.text))));
+        renumber();
+    }
+
+    function defaultPoints() {
+        fillDefaultPoints();
+    }
+
+    function collectContent() {
+        return {
+            place: $('decreePlace').innerHTML,
+            number: $('decreeNumber').innerHTML,
+            subject: $('decreeSubject').innerHTML,
+            preamble: $('decreePreamble').innerHTML,
+            effective: $('decreeEffectiveText').innerHTML,
+            copies: $('decreeCopies').innerHTML,
+            title: $('signOfficerTitle').innerHTML,
+            name: $('signOfficerName').innerHTML,
+            sign: $('decreeCursiveSign').innerHTML,
+            date: $('decreeDate').innerHTML,
+            points: Array.from(document.querySelectorAll('#decreePointsList .decree-point')).map((row) => ({
+                text: row.querySelector('.point-text').textContent,
+                sub: row.dataset.sub === '1'
+            }))
+        };
+    }
+
+    function applyContent(c) {
+        if (!c) return;
+        const map = {
+            decreePlace: c.place, decreeNumber: c.number, decreeSubject: c.subject,
+            decreePreamble: c.preamble, decreeEffectiveText: c.effective, decreeCopies: c.copies,
+            signOfficerTitle: c.title, signOfficerName: c.name, decreeCursiveSign: c.sign, decreeDate: c.date
+        };
+        Object.keys(map).forEach((id) => { if (map[id] != null && $(id)) $(id).innerHTML = map[id]; });
+        if (Array.isArray(c.points)) {
+            const list = $('decreePointsList');
+            list.innerHTML = '';
+            c.points.forEach((p) => list.appendChild(pointEl(p.text, p.sub)));
+        }
+    }
+
+    function applyPadding() {
+        const p = state.padding;
+        ['Top','Bottom','Side'].forEach((k) => {
+            const key = k.toLowerCase();
+            const val = k === 'Side' ? p.side : p[key];
+            $('valPad' + k).textContent = val;
+            $('inputPad' + k).value = val;
+        });
+        $('valFontScale').textContent = p.fontScale;
+        $('inputFontScale').value = p.fontScale;
+        $('valSeal').textContent = p.seal;
+        $('inputSeal').value = p.seal;
+        const b = $('documentBounds');
+        b.style.padding = p.top + 'px ' + p.side + 'px ' + p.bottom + 'px';
+        b.style.fontSize = (p.fontScale / 100 * 16) + 'px';
+        $('sealDefault').style.width = $('sealDefault').style.height = p.seal + 'px';
+        const img = $('sealImg');
+        img.style.width = img.style.height = p.seal + 'px';
+    }
+
+    function applyPositions() {
+        Object.keys(state.positions).forEach((id) => {
+            const el = $(id);
+            if (!el) return;
+            const pos = state.positions[id];
+            el.style.transform = 'translate(' + pos.x + 'px,' + pos.y + 'px)';
+            el.setAttribute('data-x', pos.x);
+            el.setAttribute('data-y', pos.y);
+        });
+    }
+
+    function applyVisibility() {
+        $('toggleHeaderCheck').checked = state.visibility.header !== false;
+        $('toggleFooterCheck').checked = state.visibility.footer !== false;
+        $('toggleSealCheck').checked = state.visibility.seal !== false;
+        $('dragBlockHeader').style.display = state.visibility.header !== false ? 'flex' : 'none';
+        $('dragBlockFooter').style.display = state.visibility.footer !== false ? 'block' : 'none';
+        $('sealLayer').style.display = state.visibility.seal !== false ? 'block' : 'none';
+    }
+
+    function applyLock() {
+        document.body.classList.add('edit-mode');
+        document.body.classList.remove('lock-mode');
+    }
+
+    function applySealSrc() {
+        const img = $('sealImg'), def = $('sealDefault');
+        if (state.sealSrc) {
+            img.src = state.sealSrc;
+            img.classList.remove('hidden');
+            def.classList.add('hidden');
+        } else {
+            img.classList.add('hidden');
+            def.classList.remove('hidden');
+        }
+    }
+
+    function applyBg() {
+        const img = $('bgFrameImg');
+        if (!state.bgImageSrc) {
+            img.removeAttribute('src');
+            img.style.display = 'none';
+            return;
+        }
+        img.crossOrigin = 'anonymous';
+        img.src = state.bgImageSrc;
+        img.style.display = 'block';
+    }
+
+    function snapshot() {
+        readFields();
+        return {
+            slot: state.slot,
+            office: state.office,
+            type: state.type,
+            fields: state.fields,
+            padding: state.padding,
+            positions: state.positions,
+            visibility: state.visibility,
+            locked: state.locked,
+            bgImageSrc: state.bgImageSrc,
+            sealSrc: state.sealSrc,
+            content: collectContent()
+        };
+    }
+
+    function allStore() {
+        try { return JSON.parse(localStorage.getItem(STORE)) || { slots: {}, active: 1 }; }
+        catch { return { slots: {}, active: 1 }; }
+    }
+
+    function persist(show) {
+        try {
+            const db = allStore();
+            db.active = state.slot;
+            const snap = snapshot();
+            if ((snap.bgImageSrc || '').length > 1800000) snap.bgImageSrc = 'image_7133bb.jpg';
+            if ((snap.sealSrc || '').length > 800000) snap.sealSrc = '';
+            db.slots[state.slot] = snap;
+            localStorage.setItem(STORE, JSON.stringify(db));
+            paintSlots();
+            if (show) toast('💾 Слот ' + state.slot + ' збережено');
+        } catch (e) {
+            console.error(e);
+            toast('❌ Не збережено (файл фону завеликий)');
+        }
+    }
+
+    function scheduleSave() {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => persist(false), 450);
+    }
+
+    function loadSlot(n) {
+        const db = allStore();
+        state = defaultState();
+        state.slot = n;
+        if (db.slots[n]) {
+            const s = db.slots[n];
+            state = Object.assign(defaultState(), s, { slot: n });
+            state.fields = Object.assign(defaultState().fields, s.fields || {});
+            state.padding = Object.assign(defaultState().padding, s.padding || {});
+            state.positions = Object.assign(defaultState().positions, s.positions || {});
+            state.visibility = Object.assign(defaultState().visibility, s.visibility || {});
+        }
+        writeFields();
+        applyPadding();
+        applyPositions();
+        applyVisibility();
+        applyLock();
+        applyBg();
+        applySealSrc();
+        if (state.content) applyContent(state.content);
+        else defaultPoints();
+        applyMeta();
+        applyType(false);
+        paintSlots();
+    }
+
+    function paintSlots() {
+        const db = allStore();
+        const bar = $('slotBar');
+        bar.innerHTML = '';
+        for (let i = 1; i <= 5; i++) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'slot-btn px-2.5 py-1.5 rounded-lg text-xs bg-gray-800 border border-gray-600' + (i === state.slot ? ' active' : '');
+            b.textContent = i + (db.slots[i] ? '' : '');
+            b.title = db.slots[i] ? 'Слот ' + i + ' зайнятий' : 'Порожній слот ' + i;
+            b.addEventListener('click', () => { persist(false); loadSlot(i); toast('Слот ' + i); });
+            bar.appendChild(b);
+        }
+    }
+
+    function fillTypes(office, keepType) {
+        const sel = $('fldType');
+        if (!sel) return;
+        const keys = OFFICE_DOCS[office] || OFFICE_DOCS.governor;
+        sel.innerHTML = '';
+        keys.forEach((k) => {
+            if (!TYPES[k]) return;
+            const o = document.createElement('option');
+            o.value = k;
+            o.textContent = TYPES[k].label;
+            sel.appendChild(o);
+        });
+        if (keepType && keys.indexOf(keepType) !== -1) sel.value = keepType;
+        else if (keys[0]) {
+            sel.value = keys[0];
+            state.type = keys[0];
+        }
+    }
+
+    function initTypes() {
+        fillTypes(state.office || 'governor', state.type);
+    }
+
+    function enterOffice(office) {
+        state.office = office || 'governor';
+        if ($('fldOffice')) $('fldOffice').value = state.office;
+        fillTypes(state.office, null);
+        applyType(true);
+        applyMeta();
+        if (state.office === 'court') {
+            state.bgImageSrc = COURT_BG;
+        } else if (state.bgImageSrc === COURT_BG) {
+            state.bgImageSrc = '';
+        }
+        applyBg();
+        if ($('officeBadge')) $('officeBadge').textContent = OFFICE_NAMES[state.office] || '';
+        $('homeScreen').classList.add('hidden');
+        $('workspace').classList.remove('hidden');
+        scheduleSave();
+    }
+
+    function leaveOffice() {
+        $('workspace').classList.add('hidden');
+        $('homeScreen').classList.remove('hidden');
+    }
+
+    function initDrag() {
+        ['dragBlockHeader', 'dragBlockBody', 'dragBlockFooter', 'sealLayer'].forEach((id) => {
+            const block = $(id);
+            let dragging = false, sx = 0, sy = 0, cx = 0, cy = 0;
+            const start = (e) => {
+                if (state.locked) return;
+                const t = e.target;
+                if (t.closest('[contenteditable="true"]') || t.closest('button') || t.isContentEditable) return;
+                dragging = true;
+                block.classList.add('is-dragging');
+                cx = parseFloat(block.getAttribute('data-x')) || 0;
+                cy = parseFloat(block.getAttribute('data-y')) || 0;
+                const p = e.touches ? e.touches[0] : e;
+                sx = p.clientX - cx; sy = p.clientY - cy;
+                document.addEventListener('mousemove', move);
+                document.addEventListener('touchmove', move, { passive: false });
+                document.addEventListener('mouseup', end);
+                document.addEventListener('touchend', end);
+            };
+            const move = (e) => {
+                if (!dragging) return;
+                e.preventDefault();
+                const p = e.touches ? e.touches[0] : e;
+                cx = p.clientX - sx; cy = p.clientY - sy;
+                block.setAttribute('data-x', cx); block.setAttribute('data-y', cy);
+                block.style.transform = 'translate(' + cx + 'px,' + cy + 'px)';
+            };
+            const end = () => {
+                if (!dragging) return;
+                dragging = false;
+                block.classList.remove('is-dragging');
+                state.positions[id] = { x: cx, y: cy };
+                persist(false);
+                document.removeEventListener('mousemove', move);
+                document.removeEventListener('touchmove', move);
+                document.removeEventListener('mouseup', end);
+                document.removeEventListener('touchend', end);
+            };
+            block.addEventListener('mousedown', start);
+            block.addEventListener('touchstart', start, { passive: true });
+        });
+    }
+
+    function ansiEscape() {
+        readFields();
+        const t = TYPES[state.type];
+        const pts = Array.from(document.querySelectorAll('#decreePointsList .point-text')).map((el) => el.textContent);
+        const red = '\u001b[1;31m', gold = '\u001b[1;33m', blue = '\u001b[1;34m', gray = '\u001b[1;30m', yel = '\u001b[0;33m', rst = '\u001b[0m';
+        const line = gray + '────────────────────────────────────────' + rst;
+        let out = '```ansi\n';
+        out += red + t.title(state.fields.number) + rst + '\n';
+        out += gold + $('decreeSubject').textContent + rst + '\n';
+        out += line + '\n';
+        out += blue + 'Місце' + rst + ': Штат San-Andreas • м. ' + (state.fields.city || 'Los-Santos') + '\n';
+        out += blue + 'Дата' + rst + ': ' + state.fields.date + '\n';
+        if (state.fields.stamp) out += yel + state.fields.stamp + rst + '\n';
+        out += line + '\n';
+        out += $('decreePreamble').textContent + '\n\n';
+        pts.forEach((p) => { out += gold + p + rst + '\n'; });
+        out += '\n' + $('decreeEffectiveText').textContent + '\n';
+        out += line + '\n';
+        out += blue + $('signOfficerTitle').textContent + rst + ' — ' + gold + state.fields.signer + rst + '\n';
+        out += gray + $('decreeCopies').textContent + rst + '\n';
+        out += '```';
+        return out;
+    }
+
+    function copyAnsi() {
+        const text = ansiEscape();
+        navigator.clipboard.writeText(text).then(() => toast('💬 ANSI скопійовано')).catch(() => {
+            prompt('Скопіюй вручну:', text);
+        });
+    }
+
+    function exportJson() {
+        const blob = new Blob([JSON.stringify(snapshot(), null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'akt_slot' + state.slot + '_' + Date.now() + '.json';
+        a.click();
+        toast('⬇️ JSON завантажено');
+    }
+
+    function canvasToBlob(canvas) {
+        return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    }
+
+    function openDsModal() {
+        const box = $('dsChannelBtns');
+        box.innerHTML = '';
+        const list = DISCORD_CHANNELS.filter((ch) => !ch.offices || ch.offices.indexOf(state.office) !== -1);
+        list.forEach((ch, i) => {
+            const lab = document.createElement('label');
+            lab.className = 'flex items-center gap-2 text-sm text-[#f3e6c8] bg-black/30 border border-amber-200/15 rounded-lg px-3 py-2 cursor-pointer';
+            lab.innerHTML = '<input type="radio" name="dsChan" class="accent-amber-500" value="' + ch.id + '"' + (i === 0 ? ' checked' : '') + '> ' + ch.name;
+            box.appendChild(lab);
+        });
+        $('dsModal').classList.remove('hidden');
+    }
+
+    function closeDsModal() {
+        $('dsModal').classList.add('hidden');
+    }
+
+    async function sendToDiscord() {
+        const chosen = Array.from(document.querySelectorAll('#dsChannelBtns input:checked')).map((el) => el.value);
+        const targets = DISCORD_CHANNELS.filter((ch) => chosen.indexOf(ch.id) !== -1 && ch.webhook && ch.webhook.indexOf('/webhooks/') !== -1);
+        if (!chosen.length) {
+            toast('❌ Обери канал');
+            return;
+        }
+        if (!targets.length) {
+            toast('❌ У коді немає webhook для цього каналу');
+            return;
+        }
+        toast('⌛ Надсилаю в ' + targets.length + ' канал(и)…');
+        try {
+            const canvas = await html2canvas($('decreeDocument'), {
+                scale: 2.5, useCORS: true, allowTaint: true, backgroundColor: null,
+                ignoreElements: (el) => el.classList && (el.classList.contains('no-print') || el.classList.contains('drag-handle'))
+            });
+            const blob = await canvasToBlob(canvas);
+            if (!blob) throw new Error('blob');
+            const t = TYPES[state.type] || TYPES.nakaz;
+            const fname = (t.label + '_' + (state.fields.number || '')).replace(/\s+/g, '_') + '.png';
+            readFields();
+            const topic = ($('decreeSubject') ? $('decreeSubject').textContent.trim() : '');
+            const caption = [
+                '**' + t.label + ' №' + (state.fields.number || '—') + '**',
+                topic ? '*' + topic + '*' : '',
+                '',
+                'Підпис: ' + (state.fields.officer || '') + ' **' + (state.fields.signer || '') + '**'
+            ].filter((line, i, arr) => !(line === '' && i !== 2)).join('\n');
+            let ok = 0, fail = 0;
+            for (const ch of targets) {
+                try {
+                    const form = new FormData();
+                    form.append('file', blob, fname);
+                    form.append('payload_json', JSON.stringify({
+                        username: 'Канцелярія San-Andreas',
+                        content: caption
+                    }));
+                    const res = await fetch(ch.webhook, { method: 'POST', body: form });
+                    if (res.ok) ok++; else fail++;
+                } catch (err) {
+                    console.error(ch.name, err);
+                    fail++;
+                }
+            }
+            if (fail && !ok) toast('❌ Не вдалося надіслати');
+            else if (fail) toast('⚠️ Відправлено: ' + ok + ', помилок: ' + fail);
+            else toast('✅ Надіслано в: ' + targets.map((c) => c.name).join(', '));
+        } catch (e) {
+            console.error(e);
+            toast('❌ Не вдалося зібрати PNG');
+        }
+    }
+
+    function exportPng() {
+        toast('⌛ PNG…');
+        html2canvas($('decreeDocument'), {
+            scale: 3, useCORS: true, allowTaint: true, backgroundColor: null,
+            ignoreElements: (el) => el.classList && (el.classList.contains('no-print') || el.classList.contains('drag-handle'))
+        }).then((canvas) => {
+            const a = document.createElement('a');
+            a.download = (TYPES[state.type].label + '_' + state.fields.number).replace(/\s+/g, '_') + '.png';
+            a.href = canvas.toDataURL('image/png');
+            a.click();
+            toast('✅ PNG готово');
+        }).catch((e) => { console.error(e); toast('❌ Експорт не вдався'); });
+    }
+
+    function addPoint(sub, text) {
+        $('decreePointsList').appendChild(pointEl(text || (sub ? 'Уточнення…' : 'Новий пункт…'), sub));
+        renumber();
+        scheduleSave();
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        initTypes();
+        initDrag();
+        const db = allStore();
+        loadSlot(db.active || 1);
+        if ($('officeBadge')) $('officeBadge').textContent = OFFICE_NAMES[state.office] || '';
+
+        document.querySelectorAll('.office-card').forEach((btn) => {
+            btn.addEventListener('click', () => enterOffice(btn.getAttribute('data-office')));
+        });
+        if ($('btnHome')) $('btnHome').addEventListener('click', leaveOffice);
+
+        loadTypeTemplates();
+        $('fldOffice').addEventListener('change', () => {
+            readFields();
+            fillTypes(state.office, null);
+            applyType(true);
+            applyMeta();
+            scheduleSave();
+        });
+        $('fldType').addEventListener('change', () => { readFields(); applyType(true); applyMeta(); scheduleSave(); });
+        ['fldNumber','fldDate','fldCity','fldName','fldId','fldIdKind','fldPost','fldPostId','fldOfficer','fldSigner','fldSignText','fldCase','fldRole','fldHearing','fldVenue'].forEach((id) => {
+            $(id).addEventListener('change', () => { readFields(); applyMeta(); scheduleSave(); });
+        });
+        $('btnApplyVars').addEventListener('click', applyVarsToDoc);
+        $('btnToday').addEventListener('click', () => { $('fldDate').value = today(); readFields(); applyMeta(); scheduleSave(); });
+        $('btnSliders').addEventListener('click', () => $('slidersPanel').classList.toggle('hidden'));
+        $('btnSave').addEventListener('click', () => persist(true));
+        $('btnPng').addEventListener('click', exportPng);
+        $('btnAnsi').addEventListener('click', copyAnsi);
+        $('btnDiscord').addEventListener('click', openDsModal);
+        if ($('dsCancel')) $('dsCancel').addEventListener('click', closeDsModal);
+        if ($('dsConfirm')) $('dsConfirm').addEventListener('click', () => { closeDsModal(); sendToDiscord(); });
+        $('btnReset').addEventListener('click', () => {
+            if (!confirm('Очистити поточний слот?')) return;
+            const n = state.slot;
+            const db = allStore();
+            delete db.slots[n];
+            localStorage.setItem(STORE, JSON.stringify(db));
+            loadSlot(n);
+            defaultPoints();
+            applyType(true);
+            applyMeta();
+            persist(false);
+            toast('Слот очищено');
+        });
+        $('btnAddPoint').addEventListener('click', () => addPoint(false));
+        $('btnAddSub').addEventListener('click', () => addPoint(true));
+        loadTypeTemplates();
+        $('decreePointsList').addEventListener('click', (e) => {
+            const btn = e.target.closest('.btn-del-point');
+            if (!btn) return;
+            btn.closest('.decree-point').remove();
+            renumber();
+            scheduleSave();
+        });
+        document.addEventListener('input', (e) => { if (e.target && e.target.isContentEditable) scheduleSave(); });
+
+        ['inputPadTop','inputPadSide','inputPadBottom','inputFontScale','inputSeal'].forEach((id) => {
+            $(id).addEventListener('input', () => {
+                state.padding = {
+                    top: +$('inputPadTop').value,
+                    side: +$('inputPadSide').value,
+                    bottom: +$('inputPadBottom').value,
+                    fontScale: +$('inputFontScale').value,
+                    seal: +$('inputSeal').value
+                };
+                applyPadding();
+                scheduleSave();
+            });
+        });
+
+        $('toggleHeaderCheck').addEventListener('change', () => { state.visibility.header = $('toggleHeaderCheck').checked; applyVisibility(); persist(false); });
+        $('toggleFooterCheck').addEventListener('change', () => { state.visibility.footer = $('toggleFooterCheck').checked; applyVisibility(); persist(false); });
+        $('toggleSealCheck').addEventListener('change', () => { state.visibility.seal = $('toggleSealCheck').checked; applyVisibility(); persist(false); });
+
+        function openBgModal() {
+            const box = $('bgPresetList');
+            box.innerHTML = '';
+            const list = BG_PRESETS[state.office] || [];
+            if (!list.length) {
+                box.innerHTML = '<p class="text-xs text-gray-400">Для цього кабінету готових фонів ще немає.</p>';
+            } else {
+                list.forEach((bg) => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'ghost-btn text-left px-3 py-2 rounded-lg text-sm';
+                    b.textContent = bg.name;
+                    b.addEventListener('click', () => {
+                        state.bgImageSrc = bg.src;
+                        applyBg();
+                        persist(true);
+                        $('bgModal').classList.add('hidden');
+                        toast('Фон встановлено');
+                    });
+                    box.appendChild(b);
+                });
+            }
+            $('bgModal').classList.remove('hidden');
+        }
+        $('btnPickBg').addEventListener('click', openBgModal);
+        $('bgModalClose').addEventListener('click', () => $('bgModal').classList.add('hidden'));
+        $('btnClearBg').addEventListener('click', () => {
+            state.bgImageSrc = '';
+            applyBg();
+            persist(true);
+            toast('Фон прибрано');
+        });
+        $('bgUploader').addEventListener('change', (ev) => {
+            const file = ev.target.files && ev.target.files[0];
+            if (!file) return;
+            if (file.size > 2.5 * 1024 * 1024) { toast('❌ Фон > 2.5 МБ'); return; }
+            const r = new FileReader();
+            r.onload = (e) => {
+                state.bgImageSrc = e.target.result;
+                applyBg();
+                persist(true);
+                if ($('bgModal')) $('bgModal').classList.add('hidden');
+                toast('Фон з комп’ютера встановлено');
+            };
+            r.readAsDataURL(file);
+        });
+        $('btnClearSeal').addEventListener('click', () => {
+            state.sealSrc = '';
+            state.visibility.seal = false;
+            applySealSrc();
+            applyVisibility();
+            persist(true);
+            toast('Печатку прибрано');
+        });
+        $('sealUploader').addEventListener('change', (ev) => {
+            const file = ev.target.files && ev.target.files[0];
+            if (!file) return;
+            const r = new FileReader();
+            r.onload = (e) => {
+                state.sealSrc = e.target.result;
+                state.visibility.seal = true;
+                applySealSrc();
+                applyVisibility();
+                persist(true);
+            };
+            r.readAsDataURL(file);
+        });
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                e.preventDefault(); persist(true);
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault(); addPoint(false);
+            }
+        });
+    });
+})();
+</script>
+<script>
+(function () {
+  const user = (typeof requireAuth === "function") ? requireAuth() : null;
+  if (!user) return;
+  const roleOffice = {
+    governor: ["governor", "directors", "prosecutor", "court"],
+    official: ["directors"],
+    court: ["court"]
+  };
+  const allowed = roleOffice[(user.roles || [])[0]] || roleOffice.official;
+  if ((user.roles || []).includes("governor")) {
+    /* all */
+  } else {
+    document.querySelectorAll(".office-card").forEach((btn) => {
+      if (allowed.indexOf(btn.getAttribute("data-office")) === -1) btn.style.display = "none";
+    });
+  }
+  const signer = document.getElementById("fldSigner");
+  const signText = document.getElementById("fldSignText");
+  if (signer && !signer.value) signer.value = user.username;
+  if (signText && user.username) signText.value = user.username;
+
+  function collectText() {
+    const pts = Array.from(document.querySelectorAll("#decreePointsList .point-text")).map((el) => el.textContent.trim());
+    const pre = (document.getElementById("decreePreamble") || {}).textContent || "";
+    const sub = (document.getElementById("decreeSubject") || {}).textContent || "";
+    const eff = (document.getElementById("decreeEffectiveText") || {}).textContent || "";
+    return [sub, pre, pts.map((p, i) => (i + 1) + ". " + p).join("\n"), eff].filter(Boolean).join("\n\n");
+  }
+
+  const pubBtn = document.getElementById("btnPublishSite");
+  if (pubBtn) {
+    pubBtn.addEventListener("click", function () {
+      const typeSel = document.getElementById("fldType");
+      const typeKey = typeSel ? typeSel.value : "nakaz";
+      const number = (document.getElementById("fldNumber") || {}).value || "";
+      const date = (document.getElementById("fldDate") || {}).value || "";
+      const titleEl = document.getElementById("decreeSubject");
+      const typeLabel = typeSel && typeSel.options[typeSel.selectedIndex] ? typeSel.options[typeSel.selectedIndex].text : "Акт";
+      const onHome = !!(document.getElementById("chkPublishHome") && document.getElementById("chkPublishHome").checked);
+      const doc = {
+        id: "act-" + Date.now().toString(36),
+        type: typeLabel,
+        typeKey: typeKey,
+        number: number,
+        date: date,
+        title: typeLabel + " №" + number,
+        subject: titleEl ? titleEl.textContent.trim() : "",
+        body: "Канцелярія штату Сан-Андреас",
+        status: onHome ? "ok" : "draft",
+        publishHome: onHome,
+        text: collectText(),
+        author: user.username,
+        office: (document.getElementById("fldOffice") || {}).value || "governor"
+      };
+      saveDoc(doc);
+      alert(onHome ? "Опубліковано на головній і в законодавчій базі." : "Збережено в базі сайту без виводу на головну.");
+    });
+  }
+})();
+</script>
+</body>
+</html>
+

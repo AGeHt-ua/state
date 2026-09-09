@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Конституція штату San Andreas</title>
+  <link rel="stylesheet" href="../../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">Законодавча база штату Сан-Андреас</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../../">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Конституція штату</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../../">Головна</a>
+      <a href="../">Законодавча база</a>
+      <a href="../?type=Конституція штату">Конституція</a>
+    </div>
+  </nav>
+  <main class="wrap article">
+    <div class="crumbs"><a href="../../">Головна</a> / <a href="../">Законодавча база</a> / КС-01</div>
+    <article class="const-doc" id="root"></article>
+  </main>
+  <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
+  <script src="../../assets/accounts.js"></script>
+  <script src="../../assets/app.js"></script>
+  <script src="../../assets/store.js"></script>
+  <script src="../../assets/constitution.js"></script>
+  <script>
+    const root = document.getElementById("root");
+    root.innerHTML = `
+      <p class="const-kicker">Основний закон штату · КС-01 · чинний</p>
+      <h2 class="const-title">Конституція Штату San Andreas</h2>
+      <table class="meta-table">
+        <tr><th>Вид</th><td>Конституція штату</td></tr>
+        <tr><th>Номер</th><td>КС-01</td></tr>
+        <tr><th>Статус</th><td><span class="badge ok">Чинний</span></td></tr>
+        <tr><th>Суб’єкт ухвалення</th><td>Народ штату San Andreas (Ukraine GTA 5 RP)</td></tr>
+      </table>
+    ` + formatConstitution(CONSTITUTION_SRC);
+    if (location.hash) {
+      const el = document.querySelector(location.hash);
+      if (el) el.scrollIntoView();
+    }
+  </script>
+</body>
+</html>

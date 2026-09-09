@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Учасники — State</title>
+  <link rel="stylesheet" href="../../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">Кабінет Губернатора</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../../">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Учасники та ролі</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../">Кабінет</a>
+      <a href="../docs/">Документи</a>
+      <a href="./">Учасники</a>
+      <a href="#" id="logout">Вийти</a>
+    </div>
+  </nav>
+  <main class="wrap">
+    <h2 class="page-title">Зареєстровані учасники</h2>
+    <p class="lead">Призначення ролі відкриває кабінет. Без ролі людина бачить лише екран очікування.</p>
+    <section class="card" id="people-box"></section>
+  </main>
+  <script src="../../assets/accounts.js"></script>
+  <script src="../../assets/app.js"></script>
+  <script src="../../assets/store.js"></script>
+  <script>
+    const me = requireGovernor();
+    if (!me) throw new Error("auth");
+    const box = document.getElementById("people-box");
+    function draw() {
+      const rows = allUsers().map((u) => {
+        const role = (u.roles && u.roles[0]) || "pending";
+        const opts = Object.keys(ROLE_LABELS).map((k) =>
+          `<option value="${k}" ${k === role ? "selected" : ""}>${ROLE_LABELS[k]}</option>`
+        ).join("");
+        return `<tr class="people-row">
+          <td>${u.name || "—"}</td>
+          <td>${u.login}</td>
+          <td><select data-login="${u.login}">${opts}</select></td>
+          <td><button class="btn" type="button" data-save="${u.login}">Зберегти</button></td>
+        </tr>`;
+      }).join("");
+      box.innerHTML = `<table class="meta-table">
+        <tr><th>Ім’я</th><th>Логін</th><th>Роль</th><th></th></tr>
+        ${rows}
+      </table>`;
+      box.querySelectorAll("[data-save]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const login = btn.getAttribute("data-save");
+          const role = box.querySelector(`select[data-login="${login}"]`).value;
+          const user = allUsers().find((x) => x.login === login);
+          saveUser(Object.assign({}, user, { roles: [role] }));
+          if (me.login === login) saveLS("state_session", Object.assign(currentUser(), { roles: [role] }));
+          btn.textContent = "Збережено";
+        });
+      });
+    }
+    draw();
+  </script>
+</body>
+</html>

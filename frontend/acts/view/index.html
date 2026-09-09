@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Документ — State</title>
+  <link rel="stylesheet" href="../../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">Законодавча база штату Сан-Андреас</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../../">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Картка документа</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../../">Головна</a>
+      <a href="../">Законодавча база</a>
+    </div>
+  </nav>
+  <main class="wrap article" id="doc-root"></main>
+  <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
+  <script src="../../assets/accounts.js"></script>
+  <script src="../../assets/app.js"></script>
+  <script src="../../assets/store.js"></script>
+  <script>
+    const id = new URLSearchParams(location.search).get("id");
+    const doc = getDoc(id);
+    const root = document.getElementById("doc-root");
+    if (!doc) {
+      root.innerHTML = "<h2 class='page-title'>Документ не знайдено</h2><p><a href='../'>До списку</a></p>";
+    } else {
+      document.title = doc.title;
+      root.innerHTML = `
+        <div class="crumbs"><a href="../../">Головна</a> / <a href="../">Законодавча база</a> / ${doc.number}</div>
+        <h2 class="page-title">${doc.title}</h2>
+        <table class="meta-table">
+          <tr><th>Вид</th><td>${doc.type}</td></tr>
+          <tr><th>Номер</th><td>${doc.number}</td></tr>
+          <tr><th>Дата</th><td>${doc.date}</td></tr>
+          <tr><th>Статус</th><td><span class="badge ${badgeClass(doc.status)}">${DOC_STATUSES[doc.status]}</span></td></tr>
+          <tr><th>Орган</th><td>${doc.body || "—"}</td></tr>
+          <tr><th>Автор</th><td>${doc.author || "—"}</td></tr>
+        </table>
+        <div>${String(doc.text || "").replace(/\n/g, "<br>")}</div>
+      `;
+    }
+  </script>
+</body>
+</html>

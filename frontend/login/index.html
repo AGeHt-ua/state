@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Вхід — State</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">Офіційний портал Уряду штату Сан-Андреас</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Вхід до кабінету</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../">Головна</a>
+      <a href="../acts/">Законодавча база</a>
+      <a href="../login/">Кабінет</a>
+    </div>
+  </nav>
+  <main class="wrap">
+    <h2 class="page-title">Вхід до кабінету</h2>
+    <section class="card">
+      <form id="login-form">
+        <table class="meta-table">
+          <tr><th>Логін</th><td><input name="login" required autocomplete="username"></td></tr>
+          <tr><th>Пароль</th><td><input name="password" type="password" required autocomplete="current-password"></td></tr>
+        </table>
+        <p class="lead" id="login-error" style="color:#8a2b2b;"></p>
+        <div class="form-actions">
+          <button class="btn gold" type="submit">Увійти</button>
+          <a class="btn ghost" href="../register/">Немає акаунта — реєстрація</a>
+        </div>
+      </form>
+    </section>
+  </main>
+  <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
+  <script src="../assets/accounts.js"></script>
+  <script src="../assets/app.js"></script>
+  <script src="../assets/store.js"></script>
+  <script>
+    if (currentUser() && isStaff(currentUser())) location.href = pathTo("cabinet/");
+    document.getElementById("login-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      const user = loginWithPassword(data.get("login"), data.get("password"));
+      if (!user) {
+        document.getElementById("login-error").textContent = "Невірний логін або пароль.";
+        return;
+      }
+      location.href = isStaff(user) ? pathTo("cabinet/") : pathTo("cabinet/pending/");
+    });
+  </script>
+</body>
+</html>
