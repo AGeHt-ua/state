@@ -18,6 +18,7 @@ const SEED_DOCS = [
     type: "Конституція штату",
     number: "КС-01",
     date: "2026-09-08",
+    publishedAt: "2026-09-08T12:00:00",
     status: "ok",
     body: "Уряд штату Сан-Андреас",
     title: "Конституція штату Сан-Андреас",
@@ -29,6 +30,7 @@ const SEED_DOCS = [
     type: "Закон",
     number: "З-17",
     date: "2026-09-09",
+    publishedAt: "2026-09-09T10:30:00",
     status: "ok",
     body: "Уряд штату Сан-Андреас",
     title: "Закон про діяльність Уряду",
@@ -188,7 +190,24 @@ function publishedDocs() {
 }
 
 function homeDocs() {
-  return allDocs().filter((d) => d.status === "ok" && d.publishHome !== false);
+  return allDocs()
+    .filter((d) => d.status === "ok" && d.publishHome !== false)
+    .sort((a, b) => String(b.publishedAt || b.date).localeCompare(String(a.publishedAt || a.date)));
+}
+
+function formatDocWhen(doc) {
+  const raw = doc.publishedAt || doc.date || "";
+  const d = new Date(raw);
+  if (!isNaN(d.getTime()) && String(raw).includes("T")) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return pad(d.getDate()) + "." + pad(d.getMonth() + 1) + "." + d.getFullYear() +
+      " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [y, m, day] = raw.split("-");
+    return day + "." + m + "." + y;
+  }
+  return raw;
 }
 
 const ACT_SECTIONS = [
@@ -219,6 +238,7 @@ function getDoc(id) {
 }
 
 function saveDoc(doc) {
+  if (!doc.publishedAt) doc.publishedAt = new Date().toISOString();
   const extra = loadLS("state_docs", []);
   const i = extra.findIndex((d) => d.id === doc.id);
   if (i >= 0) extra[i] = doc;
