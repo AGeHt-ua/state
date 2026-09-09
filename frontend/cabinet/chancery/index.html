@@ -75,15 +75,17 @@
             text-transform: uppercase;
         }
         .cabinet-layout.chancery-page {
-            grid-template-columns: 200px minmax(0, 1fr) minmax(480px, 560px);
-            width: min(1720px, calc(100% - 12px));
+            grid-template-columns: 200px 210mm minmax(340px, 1fr);
+            width: calc(100% - 16px);
+            max-width: none;
             margin: 0 auto;
+            align-items: start;
         }
         .chancery-page .certificate-container {
-            width: 100%;
-            max-width: 175mm;
-            min-height: 248mm;
-            margin: 0 auto;
+            width: 210mm;
+            min-height: 297mm;
+            max-width: 210mm;
+            margin: 0;
         }
         .doc-nav-label {
             display: block;
@@ -97,11 +99,12 @@
         .doc-panel {
             background: #fff;
             border: 1px solid #d9d1bc;
-            padding: 12px;
+            padding: 16px 18px 24px;
             position: sticky;
             top: 12px;
             max-height: calc(100vh - 24px);
             overflow: auto;
+            font-family: Arial, Helvetica, sans-serif;
         }
         .doc-panel .chancery {
             background: transparent;
@@ -134,16 +137,22 @@
             padding: 0 !important;
         }
         .doc-panel .flex.flex-wrap.items-center.gap-1.justify-end {
-            display: flex !important;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin: 8px 0 12px;
+            display: grid !important;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 8px 0 4px;
         }
+        .doc-panel #btnPublishSite { grid-column: 1 / -1; }
         .doc-panel .gold-btn,
-        .doc-panel .ghost-btn {
+        .doc-panel .ghost-btn,
+        .doc-panel .btn {
             border-radius: 0 !important;
-            font-family: Arial, sans-serif;
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-size: 13px !important;
+            font-weight: 700;
+            padding: 9px 12px !important;
         }
+        .doc-panel .gold-btn { background: #c9a227 !important; color: #102040 !important; border: 0 !important; }
         .doc-panel #officeBadge {
             display: block;
             font-family: Arial, sans-serif;
@@ -160,15 +169,23 @@
         .doc-panel .text-gray-300,
         .doc-panel .text-\[\#f3e6c8\] { color: #102040 !important; }
         .doc-panel h2, .doc-panel .sec-title {
-            font-family: "Times New Roman", serif;
-            font-size: 15px;
+            font-family: "Times New Roman", Times, serif;
+            font-size: 18px;
+            font-weight: 700;
             letter-spacing: 0;
             text-transform: none;
             color: #102040;
-            margin: 0 0 8px;
-            border-bottom: 1px solid #d9d1bc;
+            margin: 18px 0 10px;
+            border-bottom: 2px solid #c9a227;
             padding-bottom: 6px;
         }
+        .doc-panel #sec-act h2 { margin-top: 0; }
+        .doc-panel #slotBar { display: flex !important; gap: 6px; margin: 0 0 12px; }
+        .doc-panel .slot-btn {
+            min-width: 32px; height: 32px; border-radius: 0;
+            background: #fff; border: 1px solid #d9d1bc; color: #102040;
+        }
+        .doc-panel .slot-btn.active { background: #102040; border-color: #102040; color: #fff; }
         .doc-block {
             margin-bottom: 12px;
             padding-bottom: 8px;
@@ -178,15 +195,17 @@
             color: #5c6578; font-size: 12px; font-weight: 500;
             font-family: Arial, sans-serif;
         }
-        .panel input, .panel select, .panel textarea {
+        .panel input, .panel select, .panel textarea,
+        .doc-panel input, .doc-panel select {
             background: #fff;
             border: 1px solid #d9d1bc;
             color: #1a1f2b;
             border-radius: 0;
-            padding: 6px 8px;
-            font-size: 13px;
+            padding: 9px 10px;
+            font-size: 14px;
             width: 100%;
             outline: none;
+            font-family: Arial, Helvetica, sans-serif;
         }
         .panel input:focus, .panel select:focus {
             border-color: #c9a227;
@@ -197,16 +216,17 @@
             font-size: 12px;
             padding: 7px 10px;
         }
+        #tplBar { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
         #tplBar button {
-            background: #fff;
+            background: #f6f1e4;
             border: 1px solid #d9d1bc;
             color: #102040;
-            padding: 4px 8px;
+            padding: 7px 10px;
             border-radius: 0;
-            font-size: 11px;
-            font-family: Arial, sans-serif;
+            font-size: 12px;
+            font-family: Arial, Helvetica, sans-serif;
         }
-        #tplBar button:hover { border-color: #c9a227; background: #f6f1e4; }
+        #tplBar button:hover { border-color: #c9a227; background: #efe4c4; }
         #homeScreen { display: none !important; }
         @media (max-width: 1100px) {
             .cabinet-layout.chancery-page { grid-template-columns: 1fr; }
@@ -233,15 +253,15 @@
             background: linear-gradient(180deg, #f0d19a, #c9953a);
             color: #1a1206; border-color: #e8b86d; font-weight: 700;
         }
-        #tplBar button {
-            background: #101218;
-            border: 1px solid rgba(232,184,109,.22);
-            color: #ead9b6;
-            padding: 3px 8px;
-            border-radius: 999px;
-            font-size: 10px;
+        .doc-panel #tplBar button {
+            background: #f6f1e4;
+            border: 1px solid #d9d1bc;
+            color: #102040;
+            padding: 7px 10px;
+            border-radius: 0;
+            font-size: 12px;
         }
-        #tplBar button:hover { border-color: #e8b86d; color: #fff; }
+        .doc-panel #tplBar button:hover { border-color: #c9a227; background: #efe4c4; color: #102040; }
         #homeScreen { width: 100%; max-width: 920px; padding: 24px 16px 40px; }
         .office-card {
             background: linear-gradient(180deg, rgba(20,22,28,.95), rgba(10,11,14,.98));
