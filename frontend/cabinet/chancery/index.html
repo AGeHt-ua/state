@@ -75,8 +75,14 @@
             text-transform: uppercase;
         }
         .cabinet-layout.chancery-page {
-            grid-template-columns: 220px minmax(0, 1fr) 360px;
-            width: min(1540px, calc(100% - 16px));
+            grid-template-columns: 200px minmax(0, 1fr) minmax(480px, 560px);
+            width: min(1720px, calc(100% - 12px));
+            margin: 0 auto;
+        }
+        .chancery-page .certificate-container {
+            width: 100%;
+            max-width: 175mm;
+            min-height: 248mm;
             margin: 0 auto;
         }
         .doc-nav-label {
@@ -291,10 +297,10 @@
   <div class="cabinet-layout chancery-page">
     <aside class="side-nav no-print">
       <a href="../">Профіль</a>
-      <a class="create active" href="./">Створити документ</a>
       <a href="../docs/">Опубліковані документи</a>
       <a href="../people/" id="nav-people">Учасники</a>
       <a href="../../acts/">Законодавча база</a>
+      <a class="create active" href="./">Створити документ</a>
     </aside>
     <div id="editor-root">
 <section id="homeScreen" class="no-print font-sans-ui text-white">
