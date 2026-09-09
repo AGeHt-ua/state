@@ -48,6 +48,11 @@
         </p>
       </aside>
     </div>
+    <section class="card" style="margin-top:24px">
+      <h3>Останні додані документи</h3>
+      <p class="lead">Нові акти з канцелярії з’являються тут із датою і часом публікації.</p>
+      <div id="home-feed"></div>
+    </section>
   </main>
   <footer class="footer">
     <div class="footer-inner">
@@ -60,18 +65,24 @@
   <script src="assets/store.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
-      const box = document.getElementById("home-acts");
-      const items = homeDocs().slice(0, 5);
-      box.innerHTML = items.map((a) => `
+      const items = homeDocs().slice(0, 8);
+      const row = (a) => `
         <article class="act-row">
-          <div class="act-num">${a.number}</div>
+          <div class="act-num">${formatDocWhen(a)}</div>
           <div>
             <h3><a href="${docHref(a)}">${a.title}</a></h3>
-            <div class="act-meta">${a.type} · ${a.date}</div>
+            <div class="act-meta">${a.type} · ${a.number}${a.author ? " · " + a.author : ""}</div>
           </div>
           <span class="badge ${badgeClass(a.status)}">${DOC_STATUSES[a.status]}</span>
-        </article>
-      `).join("");
+        </article>`;
+      const box = document.getElementById("home-acts");
+      if (box) box.innerHTML = items.slice(0, 3).map(row).join("");
+      const feed = document.getElementById("home-feed");
+      if (feed) {
+        feed.innerHTML = items.length
+          ? items.map(row).join("")
+          : "<p class='lead'>Поки немає опублікованих актів.</p>";
+      }
     });
   </script>
 </body>
