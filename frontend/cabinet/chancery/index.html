@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Канцелярія — State</title>
+    <link rel="stylesheet" href="../../assets/styles.css" />
     <script src="../../assets/accounts.js"></script>
     <script src="../../assets/app.js"></script>
     <script src="../../assets/store.js"></script>
@@ -15,7 +16,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         :root { --paper: #f7f4ed; --ink: #050505; }
-        body { font-family: 'Cormorant Garamond', serif; background: #0f1012; color: var(--ink); }
+        body { font-family: "Times New Roman", Georgia, serif; background: #fbf8f1 !important; color: #1a1f2b; }
         .font-sans-ui { font-family: 'Inter', sans-serif; }
         .font-playfair { font-family: 'Playfair Display', serif; }
         .font-signature { font-family: 'Great Vibes', cursive; }
@@ -61,11 +62,10 @@
             color: #7a1f1f; font-family: 'Cinzel', serif; line-height: 1.15; box-shadow: 0 0 0 3px rgba(122,31,31,.15);
         }
         .chancery {
-            background:
-                radial-gradient(1200px 400px at 10% -20%, rgba(232,184,109,.12), transparent 50%),
-                linear-gradient(180deg, #14161c 0%, #0c0d11 100%);
-            border: 1px solid rgba(232,184,109,.28);
-            box-shadow: 0 20px 50px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04);
+            background: #102040;
+            border: 1px solid #c9a227;
+            box-shadow: none;
+            border-radius: 0;
         }
         .chancery .sec-title {
             font-family: 'Cinzel', serif;
@@ -151,7 +151,30 @@
         }
     </style>
 </head>
-<body class="py-2 min-h-screen flex flex-col items-center edit-mode">
+<body class="edit-mode">
+  <div class="topbar" id="top-office">Канцелярія штату Сан-Андреас</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../../">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p id="hdr-office">Канцелярія</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../../">Головна</a>
+      <a href="../../acts/">Законодавча база</a>
+      <a href="../">Кабінет</a>
+      <a href="./">Канцелярія</a>
+      <a href="../docs/">Опубліковані</a>
+      <a href="#" id="logout">Вийти</a>
+    </div>
+  </nav>
+  <div class="wrap" style="width:100%">
 <section id="homeScreen" class="no-print font-sans-ui text-white">
     <p class="sec-title text-center mb-2">State of San-Andreas</p>
     <h1 class="font-playfair text-3xl md:text-4xl text-center text-[#f3e6c8] mb-2">Апарат управління</h1>
@@ -1462,8 +1485,11 @@
   const card = document.querySelector('.office-card[data-office="' + office + '"]');
   if (card) card.click();
   else if (document.getElementById("fldOffice")) document.getElementById("fldOffice").value = office;
+  const title = (typeof officeTitle === "function") ? officeTitle(user) : "";
   const badge = document.getElementById("officeBadge");
-  if (badge && typeof officeTitle === "function") badge.textContent = officeTitle(user);
+  if (badge) badge.textContent = title;
+  if (document.getElementById("top-office")) document.getElementById("top-office").textContent = title;
+  if (document.getElementById("hdr-office")) document.getElementById("hdr-office").textContent = title + " · канцелярія";
   const signer = document.getElementById("fldSigner");
   const signText = document.getElementById("fldSignText");
   if (signer) signer.value = user.username;
@@ -1511,5 +1537,13 @@
   }
 })();
 </script>
+  </div>
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© 2026 State | Ukraine GTA 5 RP</span>
+      <span>Канцелярія посадовця</span>
+    </div>
+  </footer>
 </body>
 </html>
+
