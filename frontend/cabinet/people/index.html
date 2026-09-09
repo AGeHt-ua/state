@@ -29,7 +29,7 @@
   </nav>
   <main class="wrap">
     <h2 class="page-title">Зареєстровані учасники</h2>
-    <p class="lead">Призначення ролі відкриває кабінет. Без ролі людина бачить лише екран очікування.</p>
+    <p class="lead">Апарат управління відкриває кабінет. Посаду адміністратор може виправити.</p>
     <section class="card" id="people-box"></section>
   </main>
   <script src="../../assets/accounts.js"></script>
@@ -49,19 +49,21 @@
           <td>${u.name || "—"}</td>
           <td>${u.login}</td>
           <td><select data-login="${u.login}">${opts}</select></td>
+          <td><input data-post="${u.login}" value="${(u.post || "").replace(/"/g, "&quot;")}" placeholder="Посада"></td>
           <td><button class="btn" type="button" data-save="${u.login}">Зберегти</button></td>
         </tr>`;
       }).join("");
       box.innerHTML = `<table class="meta-table">
-        <tr><th>Ім’я</th><th>Логін</th><th>Роль</th><th></th></tr>
+        <tr><th>Ім’я</th><th>Логін</th><th>Апарат управління</th><th>Посада</th><th></th></tr>
         ${rows}
       </table>`;
       box.querySelectorAll("[data-save]").forEach((btn) => {
         btn.addEventListener("click", () => {
           const login = btn.getAttribute("data-save");
           const role = box.querySelector(`select[data-login="${login}"]`).value;
+          const post = box.querySelector(`input[data-post="${login}"]`).value;
           const user = allUsers().find((x) => x.login === login);
-          saveUser(Object.assign({}, user, { roles: [role] }));
+          saveUser(Object.assign({}, user, { roles: [role], post }));
           if (me.login === login) saveLS("state_session", Object.assign(currentUser(), { roles: [role] }));
           btn.textContent = "Збережено";
         });
