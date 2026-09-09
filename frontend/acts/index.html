@@ -17,37 +17,71 @@
           <p>Законодавство і органи влади штату</p>
         </div>
       </a>
-      <form class="search" id="site-search">
-        <input name="q" type="search" placeholder="Пошук за назвою або номером акта" />
-        <button type="submit">Знайти</button>
-      </form>
     </div>
   </header>
   <nav class="nav">
     <div class="nav-inner">
       <a href="../">Головна</a>
-      <a href="../acts/">Законодавча база</a>
+      <a href="./">Законодавча база</a>
       <a href="../structure/">Органи влади</a>
       <a href="../login/">Кабінет</a>
     </div>
   </nav>
   <main class="wrap">
     <div class="crumbs"><a href="../">Головна</a> / Законодавча база</div>
-    <h2 class="page-title">Законодавча база</h2>
-    <p class="lead">Розділи за видами актів. Нові документи з канцелярії з’являються тут після публікації.</p>
-    <p id="sec-nav" class="form-actions" style="margin-bottom:16px"></p>
-    <section class="card" id="acts-list"></section>
+    <div class="cabinet-layout">
+      <aside class="side-nav" id="sec-nav"></aside>
+      <div>
+        <h2 class="page-title" style="margin-top:0">Законодавча база</h2>
+        <p class="lead">Оберіть вид акта зліва. У списку можна сортувати й фільтрувати за апаратом.</p>
+        <section class="card" style="margin-bottom:16px">
+          <form id="sort-form" class="form-actions" style="align-items:center">
+            <label class="muted">Сортування
+              <select name="sort" style="min-width:200px">
+                <option value="date-desc">Дата: новіші</option>
+                <option value="date-asc">Дата: старіші</option>
+                <option value="title">Назва</option>
+                <option value="type">Вид акта</option>
+                <option value="office">Апарат управління</option>
+              </select>
+            </label>
+            <label class="muted">Апарат
+              <select name="office" style="min-width:240px">
+                <option value="all">Усі апарати</option>
+                <option value="governor">Кабінет Губернатора</option>
+                <option value="directors">Кабінет Директорів</option>
+                <option value="prosecutor">Кабінет Прокуратури</option>
+                <option value="court">Кабінет Судової влади</option>
+              </select>
+            </label>
+          </form>
+        </section>
+        <section class="card" id="acts-list"></section>
+      </div>
+    </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
   <script src="../assets/accounts.js"></script>
   <script src="../assets/app.js"></script>
   <script src="../assets/store.js"></script>
   <script>
+    const params = new URLSearchParams(location.search);
+    const cur = params.get("type") || "all";
     const nav = document.getElementById("sec-nav");
-    const cur = new URLSearchParams(location.search).get("type") || "all";
-    nav.innerHTML = ACT_SECTIONS.map((s) =>
-      `<a class="btn ${s.key===cur?"gold":"ghost"}" href="?type=${encodeURIComponent(s.key)}">${s.label}</a>`
-    ).join("");
+    nav.innerHTML = ACT_SECTIONS.map((s) => {
+      const p = new URLSearchParams(params);
+      p.set("type", s.key);
+      return `<a class="${s.key===cur?"active":""}" href="?${p.toString()}">${s.label}</a>`;
+    }).join("");
+    const form = document.getElementById("sort-form");
+    form.sort.value = params.get("sort") || "date-desc";
+    form.office.value = params.get("office") || "all";
+    form.addEventListener("change", () => {
+      const p = new URLSearchParams(location.search);
+      p.set("sort", form.sort.value);
+      p.set("office", form.office.value);
+      location.search = p.toString();
+    });
   </script>
 </body>
 </html>
