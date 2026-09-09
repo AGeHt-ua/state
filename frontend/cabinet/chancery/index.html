@@ -74,160 +74,8 @@
             color: #e8b86d;
             text-transform: uppercase;
         }
-        .cabinet-layout.chancery-page {
-            grid-template-columns: 200px 210mm minmax(340px, 1fr);
-            width: calc(100% - 16px);
-            max-width: none;
-            margin: 0 auto;
-            align-items: start;
-        }
-        .chancery-page .certificate-container {
-            width: 210mm;
-            min-height: 297mm;
-            max-width: 210mm;
-            margin: 0;
-        }
-        .doc-nav-label {
-            display: block;
-            padding: 8px 16px 4px;
-            font-family: Arial, sans-serif;
-            font-size: 11px;
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            color: #5c6578;
-        }
-        .doc-panel {
-            background: #fff;
-            border: 1px solid #d9d1bc;
-            padding: 16px 18px 24px;
-            position: sticky;
-            top: 12px;
-            max-height: calc(100vh - 24px);
-            overflow: auto;
-            font-family: Arial, Helvetica, sans-serif;
-        }
-        .doc-panel .chancery {
-            background: transparent;
-            border: 0;
-            color: #1a1f2b;
-        }
-        .doc-panel .panel,
-        .doc-panel .panel .grid,
-        .doc-panel .grid {
-            display: block !important;
-        }
-        .doc-panel .panel label,
-        .doc-panel label {
-            display: block !important;
-            width: 100% !important;
-            margin: 0 0 10px !important;
-        }
-        .doc-panel .panel label > input,
-        .doc-panel .panel label > select,
-        .doc-panel .panel label > div {
-            width: 100%;
-        }
-        .doc-panel #btnHome,
-        .doc-panel h1.font-playfair {
-            display: none !important;
-        }
-        .doc-panel .flex.flex-wrap.justify-between {
-            display: block !important;
-            border: 0 !important;
-            padding: 0 !important;
-        }
-        .doc-panel .flex.flex-wrap.items-center.gap-1.justify-end {
-            display: grid !important;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin: 8px 0 4px;
-        }
-        .doc-panel #btnPublishSite { grid-column: 1 / -1; }
-        .doc-panel .gold-btn,
-        .doc-panel .ghost-btn,
-        .doc-panel .btn {
-            border-radius: 0 !important;
-            font-family: Arial, Helvetica, sans-serif !important;
-            font-size: 13px !important;
-            font-weight: 700;
-            padding: 9px 12px !important;
-        }
-        .doc-panel .gold-btn { background: #c9a227 !important; color: #102040 !important; border: 0 !important; }
-        .doc-panel #officeBadge {
-            display: block;
-            font-family: Arial, sans-serif;
-            font-size: 12px;
-            color: #5c6578;
-            margin-bottom: 8px;
-        }
-        .doc-panel .ghost-btn {
-            background: #fff;
-            border: 1px solid #102040;
-            color: #102040;
-        }
-        .doc-panel .text-amber-100\/80,
-        .doc-panel .text-gray-300,
-        .doc-panel .text-\[\#f3e6c8\] { color: #102040 !important; }
-        .doc-panel h2, .doc-panel .sec-title {
-            font-family: "Times New Roman", Times, serif;
-            font-size: 18px;
-            font-weight: 700;
-            letter-spacing: 0;
-            text-transform: none;
-            color: #102040;
-            margin: 18px 0 10px;
-            border-bottom: 2px solid #c9a227;
-            padding-bottom: 6px;
-        }
-        .doc-panel #sec-act h2 { margin-top: 0; }
-        .doc-panel #slotBar { display: flex !important; gap: 6px; margin: 0 0 12px; }
-        .doc-panel .slot-btn {
-            min-width: 32px; height: 32px; border-radius: 0;
-            background: #fff; border: 1px solid #d9d1bc; color: #102040;
-        }
-        .doc-panel .slot-btn.active { background: #102040; border-color: #102040; color: #fff; }
-        .doc-block {
-            margin-bottom: 12px;
-            padding-bottom: 8px;
-        }
-        .panel label {
-            display: flex; flex-direction: column; gap: 3px;
-            color: #5c6578; font-size: 12px; font-weight: 500;
-            font-family: Arial, sans-serif;
-        }
-        .panel input, .panel select, .panel textarea,
-        .doc-panel input, .doc-panel select {
-            background: #fff;
-            border: 1px solid #d9d1bc;
-            color: #1a1f2b;
-            border-radius: 0;
-            padding: 9px 10px;
-            font-size: 14px;
-            width: 100%;
-            outline: none;
-            font-family: Arial, Helvetica, sans-serif;
-        }
-        .panel input:focus, .panel select:focus {
-            border-color: #c9a227;
-            box-shadow: 0 0 0 2px rgba(201,162,39,.2);
-        }
-        .doc-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-        .doc-actions .gold-btn, .doc-actions .ghost-btn, .doc-actions .btn {
-            font-size: 12px;
-            padding: 7px 10px;
-        }
-        #tplBar { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
-        #tplBar button {
-            background: #f6f1e4;
-            border: 1px solid #d9d1bc;
-            color: #102040;
-            padding: 7px 10px;
-            border-radius: 0;
-            font-size: 12px;
-            font-family: Arial, Helvetica, sans-serif;
-        }
-        #tplBar button:hover { border-color: #c9a227; background: #efe4c4; }
         #homeScreen { display: none !important; }
+
         @media (max-width: 1100px) {
             .cabinet-layout.chancery-page { grid-template-columns: 1fr; }
         }
@@ -350,26 +198,21 @@
 <div id="workspace" class="hidden w-full flex flex-col items-center">
 <header class="no-print w-full max-w-6xl mb-2 px-2 font-sans-ui text-white">
     <div class="chancery rounded-xl p-2.5">
-        <div class="flex flex-wrap justify-between items-center gap-2 pb-2 border-b border-amber-200/10">
-            <div class="flex items-center gap-3">
-                <button type="button" id="btnHome" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">← Кабінети</button>
-                <h1 class="font-playfair text-lg text-[#f3e6c8] tracking-wide">Канцелярія</h1>
-                <span id="officeBadge" class="text-[10px] uppercase tracking-widest text-amber-200/70"></span>
-                <div class="flex items-center gap-1">
-                    <span class="text-[9px] uppercase tracking-widest text-amber-200/60">Слот</span>
-                    <div id="slotBar" class="flex gap-0.5"></div>
-                </div>
-            </div>
-            <div class="flex flex-wrap items-center gap-1 justify-end">
-                <label class="flex items-center gap-1 text-[11px] text-amber-100/80 px-2"><input type="checkbox" id="chkPublishHome" class="accent-amber-500"> На головну сайту</label>
-                <button type="button" id="btnPublishSite" class="gold-btn px-2.5 py-1 rounded-lg text-[11px]">Опублікувати на сайт</button>
-                <button type="button" id="btnSave" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">Зберегти</button>
-                <button type="button" id="btnSliders" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">Поля</button>
-                <button type="button" id="btnReset" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">Скинути</button>
-                <button type="button" id="btnPng" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">PNG</button>
-                <button type="button" id="btnAnsi" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">Discord-текст</button>
-                <button type="button" id="btnDiscord" class="gold-btn px-2.5 py-1 rounded-lg text-[11px] hidden">Надіслати в DS</button>
-            </div>
+        <div class="doc-head">
+            <span id="officeBadge"></span>
+            <div id="slotBar"></div>
+        </div>
+        <div class="action-row">
+            <button type="button" id="btnHome" class="tool-btn" hidden>Кабінети</button>
+            <button type="button" id="btnSave" class="tool-btn">Зберегти</button>
+            <button type="button" id="btnSliders" class="tool-btn">Поля</button>
+            <button type="button" id="btnReset" class="tool-btn">Скинути</button>
+            <button type="button" id="btnPng" class="tool-btn">PNG</button>
+            <button type="button" id="btnAnsi" class="tool-btn">Discord-текст</button>
+            <button type="button" id="btnDiscord" class="tool-btn hidden">Надіслати в DS</button>
+        </div>
+        <div class="checks">
+            <label><input type="checkbox" id="chkPublishHome"> На головну сайту</label>
         </div>
         <div class="panel grid grid-cols-1 lg:grid-cols-2 gap-1.5 mt-2">
             <section id="sec-doc" class="doc-block">
@@ -388,9 +231,9 @@
                         <input id="fldNumber" value="415/2026">
                     </label>
                     <label id="wrapDate">Дата видання
-                        <div class="flex gap-1">
+                        <div class="date-row">
                             <input id="fldDate" value="09.09.2026">
-                            <button type="button" id="btnToday" class="ghost-btn px-2 rounded-xl text-[10px] shrink-0">Сьогодні</button>
+                            <button type="button" id="btnToday" class="tool-btn">Сьогодні</button>
                         </div>
                     </label>
                     <label id="wrapCity">Місто
@@ -460,23 +303,23 @@
         </div>
 
         <div id="sec-tpl" class="doc-block">
-            <div class="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
-                <h2 class="sec-title">Заготовки</h2>
-                <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-300">
-                    <button type="button" id="btnPickBg" class="ghost-btn px-2 py-0.5 rounded-lg">+ Фон документу</button>
-                    <button type="button" id="btnClearBg" class="ghost-btn px-2 py-0.5 rounded-lg" title="Прибрати фон">✕</button>
-                    <label class="ghost-btn px-2 py-0.5 rounded-lg cursor-pointer">Печатка PNG
-                        <input type="file" id="sealUploader" accept="image/*" class="hidden">
-                    </label>
-                    <button type="button" id="btnClearSeal" class="ghost-btn px-2 py-0.5 rounded-lg" title="Прибрати печатку">✕</button>
-                    <label class="flex items-center gap-1.5"><input type="checkbox" id="toggleHeaderCheck" checked class="accent-amber-500"> Шапка</label>
-                    <label class="flex items-center gap-1.5"><input type="checkbox" id="toggleFooterCheck" checked class="accent-amber-500"> Блок підпису</label>
-                    <label class="flex items-center gap-1.5"><input type="checkbox" id="toggleSealCheck" checked class="accent-amber-500"> Печатка</label>
-                </div>
+            <h2 class="sec-title">Заготовки</h2>
+            <div class="tool-row">
+                <button type="button" id="btnPickBg" class="tool-btn">+ Фон</button>
+                <button type="button" id="btnClearBg" class="tool-btn icon" title="Прибрати фон">✕</button>
+                <label class="tool-btn" for="sealUploader">+ Печатка</label>
+                <input type="file" id="sealUploader" accept="image/*" class="hidden">
+                <button type="button" id="btnClearSeal" class="tool-btn icon" title="Прибрати печатку">✕</button>
             </div>
-            <div id="tplBar" class="flex flex-wrap gap-1.5"></div>
-            <div class="form-actions" style="margin-top:12px">
+            <div class="checks">
+                <label><input type="checkbox" id="toggleHeaderCheck" checked> Шапка</label>
+                <label><input type="checkbox" id="toggleFooterCheck" checked> Блок підпису</label>
+                <label><input type="checkbox" id="toggleSealCheck" checked> Печатка</label>
+            </div>
+            <div id="tplBar"></div>
+            <div class="form-actions">
               <button type="button" id="btnApplyVars" class="btn gold">Оновити</button>
+              <button type="button" id="btnPublishSite" class="btn ok">Опублікувати на сайт</button>
             </div>
         </div>
     </div>
@@ -1653,16 +1496,9 @@
     const aside = document.createElement("aside");
     aside.id = "docPanel";
     aside.className = "doc-panel no-print panel";
-    const pub = document.createElement("div");
-    pub.id = "sec-act";
-    pub.className = "doc-block";
-    pub.innerHTML = "<h2 class='sec-title'>Публікація</h2>";
-    aside.appendChild(pub);
     aside.appendChild(box);
     if (sliders) aside.appendChild(sliders);
     layout.appendChild(aside);
-    const bar = box.querySelector(".flex.flex-wrap.justify-between");
-    if (bar) pub.appendChild(bar);
   }
 
   if (user.photo) {
