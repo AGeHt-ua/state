@@ -49,6 +49,7 @@
             <tr><th>Логін</th><td id="f-login">—</td></tr>
             <tr><th>Апарат управління</th><td id="f-office">—</td></tr>
             <tr><th>Посада</th><td id="f-post">—</td></tr>
+            <tr><th>Номер паспорта</th><td id="f-pass">—</td></tr>
           </table>
         </div>
       </section>
@@ -68,6 +69,7 @@
       document.getElementById("f-login").textContent = user.login;
       document.getElementById("f-office").textContent = title;
       document.getElementById("f-post").textContent = user.post || "не вказано";
+      document.getElementById("f-pass").textContent = user.passport || "не вказано";
       const img = document.getElementById("avatar");
       img.src = user.photo || "";
       if (!user.photo) img.alt = "немає фото";
