@@ -7,14 +7,14 @@
   <link rel="stylesheet" href="../assets/styles.css" />
 </head>
 <body>
-  <div class="topbar">Службовий кабінет штату Сан-Андреас</div>
+  <div class="topbar" id="top-office">Службовий кабінет штату Сан-Андреас</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../">
         <div class="crest">SA</div>
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
-          <p>Апарат управління</p>
+          <p id="hdr-office">Кабінет</p>
         </div>
       </a>
     </div>
@@ -25,29 +25,30 @@
       <a href="../acts/">Законодавча база</a>
       <a href="./">Кабінет</a>
       <a href="chancery/">Канцелярія</a>
+      <a href="docs/">Опубліковані</a>
       <a href="people/" id="nav-people">Учасники</a>
       <a href="#" id="logout">Вийти</a>
     </div>
   </nav>
   <main class="wrap">
-    <h2 class="page-title">Апарат управління</h2>
+    <h2 class="page-title" id="page-h">Кабінет</h2>
     <p class="lead" id="who-line"></p>
     <div class="grid-2">
       <a class="card" href="chancery/" style="display:block">
-        <h3>Канцелярія</h3>
-        <p class="lead">Бланки з підписом, печаткою і заготовками. Галочка «На головну сайту» публікує акт.</p>
+        <h3>Канцелярія цього кабінету</h3>
+        <p class="lead" id="chan-lead">Бланки вашого органу. Кабінет не обирається — він уже призначений роллю.</p>
+      </a>
+      <a class="card" href="docs/" style="display:block">
+        <h3>Опубліковані документи</h3>
+        <p class="lead" id="docs-count">Ваші акти. Редагує лише автор.</p>
       </a>
       <a class="card" href="people/" id="people-card" style="display:block">
         <h3>Учасники та ролі</h3>
-        <p class="lead" id="people-count">Призначення посад зареєстрованим.</p>
+        <p class="lead" id="people-count">Призначення кабінету зареєстрованим.</p>
       </a>
       <a class="card" href="../acts/" style="display:block">
         <h3>Законодавча база</h3>
-        <p class="lead">Конституція, закони, накази, укази, ордери, судові акти.</p>
-      </a>
-      <a class="card" href="docs/" style="display:block">
-        <h3>Реєстр актів</h3>
-        <p class="lead" id="docs-count">Чернетки й опубліковані документи.</p>
+        <p class="lead">Публічні акти штату.</p>
       </a>
     </div>
   </main>
@@ -57,17 +58,27 @@
   <script>
     const user = requireAuth();
     if (user) {
+      const title = officeTitle(user);
+      document.getElementById("top-office").textContent = title;
+      document.getElementById("hdr-office").textContent = title;
+      document.getElementById("page-h").textContent = title;
       document.getElementById("who-line").textContent =
-        user.username + " · " + (user.roles || []).map(roleLabel).join(", ");
-      document.getElementById("docs-count").textContent = "У реєстрі " + allDocs().length + " актів.";
-      if (!hasRole(user, "governor")) {
-        document.getElementById("nav-people").style.display = "none";
-        document.getElementById("people-card").style.display = "none";
+        user.username + " · логін " + user.login;
+      document.getElementById("chan-lead").textContent =
+        "Відкривається одразу канцелярія: " + title + ".";
+      const mine = cabinetCreatedDocs().filter((d) => d.ownerLogin === user.login || d.author === user.username);
+      document.getElementById("docs-count").textContent =
+        "Ваших актів: " + mine.length + ".";
+      if (!hasRole(user, "governor") || (user.roles || [])[0] !== "governor") {
+        if ((user.roles || [])[0] !== "governor") {
+          document.getElementById("nav-people").style.display = "none";
+          document.getElementById("people-card").style.display = "none";
+        }
       } else {
         const list = allUsers();
         const wait = list.filter((u) => (u.roles || [])[0] === "pending").length;
         document.getElementById("people-count").textContent =
-          list.length + " учасників, очікують роль: " + wait + ".";
+          list.length + " учасників, очікують кабінет: " + wait + ".";
       }
     }
   </script>
