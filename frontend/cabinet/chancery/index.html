@@ -41,8 +41,28 @@
             justify-content: center; font-size: 11px; font-weight: 700; opacity: 0; pointer-events: none;
         }
         .edit-mode .draggable-block:hover .drag-handle, .edit-mode .seal-layer:hover .drag-handle { opacity: 1; }
+        .resize-handle {
+            position: absolute; right: 2px; bottom: 2px; width: 14px; height: 14px;
+            cursor: nwse-resize; opacity: 0; pointer-events: none; z-index: 5;
+            background: linear-gradient(135deg, transparent 50%, #d97706 50%);
+            border-radius: 2px;
+        }
+        .edit-mode .draggable-block:hover .resize-handle,
+        .edit-mode .decree-point:hover .resize-handle { opacity: 1; pointer-events: auto; }
         .lock-mode .draggable-block, .lock-mode .seal-layer { cursor: default; outline: none !important; background: transparent !important; }
-        .lock-mode .drag-handle { display: none !important; }
+        .lock-mode .drag-handle, .lock-mode .resize-handle { display: none !important; }
+        #fmtBar {
+            position: fixed; z-index: 80; display: none;
+            flex-wrap: wrap; align-items: center; gap: 4px;
+            background: #102040; border: 1px solid #c9a227;
+            padding: 6px 8px; color: #fff;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+        #fmtBar.is-on { display: flex; }
+        #fmtBar button {
+            background: #fff; border: 1px solid #c9a227; color: #102040;
+            font-size: 11px; font-weight: 700; padding: 4px 7px; cursor: pointer;
+        }
         .decree-text-dark { color: var(--ink); text-shadow: 0 0 1px rgba(255,255,255,.35); }
         [contenteditable="true"] {
             outline: 1px dashed transparent; border-radius: 3px; padding: 2px 4px; cursor: text; user-select: text;
@@ -133,7 +153,7 @@
             .no-print { display: none !important; }
             .certificate-container { margin: 0; box-shadow: none; width: 100%; min-height: 100vh; }
             .draggable-block, .seal-layer { outline: none !important; background: transparent !important; cursor: default; }
-            .drag-handle { display: none !important; }
+            .drag-handle, .resize-handle, #fmtBar { display: none !important; }
             [contenteditable="true"] { outline: none !important; background: transparent !important; }
         }
     </style>
@@ -370,12 +390,25 @@
     </div>
 </div>
 <div id="toastNotification" class="no-print fixed bottom-5 right-5 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-2xl text-sm font-sans-ui opacity-0 pointer-events-none translate-y-3 transition-all">Збережено</div>
+<div id="fmtBar" class="no-print">
+    <span>Текст</span>
+    <button type="button" data-fmt="smaller">A−</button>
+    <button type="button" data-fmt="bigger">A+</button>
+    <button type="button" data-fmt="left">Ліво</button>
+    <button type="button" data-fmt="center">Центр</button>
+    <button type="button" data-fmt="right">Право</button>
+    <button type="button" data-fmt="justify">Ширина</button>
+    <button type="button" data-fmt="bold">Ж</button>
+    <button type="button" data-fmt="italic">К</button>
+    <button type="button" data-fmt="reset">Скинути стиль</button>
+</div>
 
 <main class="certificate-container" id="decreeDocument">
     <img id="bgFrameImg" src="image_7133bb.jpg" alt="" class="absolute inset-0 w-full h-full object-fill pointer-events-none z-0" onerror="this.style.display='none'">
     <div class="document-bounds relative z-10 min-h-full flex flex-col justify-between" id="documentBounds">
         <div id="dragBlockHeader" class="draggable-block flex flex-col items-center decree-text-dark text-center" data-x="0" data-y="0">
             <div class="drag-handle">⠿</div>
+            <div class="resize-handle"></div>
             <div id="decreePlace" contenteditable="true" class="text-[0.85em] tracking-wide mb-1 text-gray-700">Штат San-Andreas • м. Los-Santos</div>
             <h2 id="decreeNumber" contenteditable="true" class="text-[1.5em] font-extrabold tracking-wide mb-3 font-playfair uppercase">Наказ №415/2026</h2>
             <div id="decreeSubject" contenteditable="true" class="text-[1.25em] font-bold max-w-xl italic leading-snug px-2">“Про призначення на посаду Заступника Директора департаменту культури”</div>
@@ -383,6 +416,7 @@
 
         <div id="dragBlockBody" class="draggable-block decree-text-dark my-4" data-x="0" data-y="0">
             <div class="drag-handle">⠿</div>
+            <div class="resize-handle"></div>
             <p id="decreePreamble" contenteditable="true" class="text-center text-[1.15em] font-medium leading-relaxed mb-6">Я, Губернатор штату, керуючись Конституцією та іншими нормативно-правовими актами.</p>
             <div id="decreePointsList" class="space-y-4 text-[1.15em] font-medium text-justify"></div>
             <div class="no-print text-center mt-3">
@@ -395,6 +429,7 @@
 
         <div id="dragBlockFooter" class="draggable-block decree-text-dark pt-2" data-x="0" data-y="0">
             <div class="drag-handle">⠿</div>
+            <div class="resize-handle"></div>
             <div class="flex justify-between items-end relative min-h-[90px]">
                 <div class="text-left leading-tight pl-5">
                     <div id="signOfficerTitle" contenteditable="true" class="font-bold text-[1.2em]">Губернатор штату</div>
@@ -408,6 +443,7 @@
 
     <div id="sealLayer" class="seal-layer" data-x="520" data-y="920" style="left:0;top:0;transform:translate(520px,920px);">
         <div class="drag-handle">⠿</div>
+        <div class="resize-handle"></div>
         <div id="sealDefault" class="official-seal">
             <div style="font-size:22px;line-height:1">✦</div>
             <div style="font-size:9px;letter-spacing:.08em;margin-top:2px">STATE OF</div>
@@ -635,6 +671,7 @@
             sealLayer: { x: 520, y: 920 }
         },
         visibility: { header: true, footer: true, seal: true },
+        sizes: {},
         locked: false,
         bgImageSrc: 'image_7133bb.jpg',
         sealSrc: '',
@@ -845,11 +882,13 @@
 
     function pointEl(text, sub) {
         const wrap = document.createElement('div');
-        wrap.className = 'decree-point flex items-start group relative' + (sub ? ' pl-8' : '');
+        wrap.className = 'decree-point draggable-block flex items-start group relative' + (sub ? ' pl-8' : '');
         wrap.dataset.sub = sub ? '1' : '0';
-        wrap.innerHTML = '<span contenteditable="true" class="point-text w-full leading-relaxed"></span>' +
+        wrap.innerHTML = '<div class="resize-handle"></div>' +
+            '<span contenteditable="true" class="point-text w-full leading-relaxed"></span>' +
             '<button type="button" class="btn-del-point no-print opacity-0 group-hover:opacity-100 text-red-500 font-bold ml-1 text-xs px-1">✕</button>';
         wrap.querySelector('.point-text').textContent = text;
+        bindResize(wrap, 'point-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));
         return wrap;
     }
 
@@ -963,6 +1002,129 @@
         });
     }
 
+    function applySizes() {
+        const sizes = state.sizes || {};
+        Object.keys(sizes).forEach((id) => {
+            const el = $(id) || document.querySelector('[data-size-id="' + id + '"]');
+            if (!el) return;
+            const s = sizes[id];
+            if (s.w) el.style.width = s.w + 'px';
+            if (s.h) el.style.minHeight = s.h + 'px';
+        });
+    }
+
+    function bindResize(block, key) {
+        if (!block) return;
+        let handle = block.querySelector(':scope > .resize-handle');
+        if (!handle) {
+            handle = document.createElement('div');
+            handle.className = 'resize-handle';
+            block.appendChild(handle);
+        }
+        if (handle.dataset.bound === '1') return;
+        handle.dataset.bound = '1';
+        block.setAttribute('data-size-id', key);
+        let on = false, sx = 0, sy = 0, sw = 0, sh = 0;
+        const start = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            on = true;
+            const r = block.getBoundingClientRect();
+            sw = r.width; sh = r.height;
+            const p = e.touches ? e.touches[0] : e;
+            sx = p.clientX; sy = p.clientY;
+            document.addEventListener('mousemove', move);
+            document.addEventListener('mouseup', end);
+            document.addEventListener('touchmove', move, { passive: false });
+            document.addEventListener('touchend', end);
+        };
+        const move = (e) => {
+            if (!on) return;
+            e.preventDefault();
+            const p = e.touches ? e.touches[0] : e;
+            const w = Math.max(120, sw + (p.clientX - sx));
+            const h = Math.max(36, sh + (p.clientY - sy));
+            block.style.width = w + 'px';
+            block.style.minHeight = h + 'px';
+            if (!state.sizes) state.sizes = {};
+            state.sizes[key] = { w: w, h: h };
+        };
+        const end = () => {
+            if (!on) return;
+            on = false;
+            persist(false);
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', end);
+            document.removeEventListener('touchmove', move);
+            document.removeEventListener('touchend', end);
+        };
+        handle.addEventListener('mousedown', start);
+        handle.addEventListener('touchstart', start, { passive: false });
+    }
+
+    function initResize() {
+        ['dragBlockHeader', 'dragBlockBody', 'dragBlockFooter', 'sealLayer'].forEach((id) => bindResize($(id), id));
+        document.querySelectorAll('#decreePointsList .decree-point').forEach((el, i) => bindResize(el, 'point-' + i));
+    }
+
+    function initFmtBar() {
+        const bar = $('fmtBar');
+        if (!bar) return;
+        let lastEdit = null;
+        document.addEventListener('focusin', (e) => {
+            if (e.target && e.target.isContentEditable && $('decreeDocument').contains(e.target)) lastEdit = e.target;
+        });
+        function currentEdit() {
+            const a = document.activeElement;
+            if (a && a.isContentEditable && $('decreeDocument').contains(a)) return a;
+            return lastEdit;
+        }
+        function fmtPx(el) {
+            const n = parseFloat(window.getComputedStyle(el).fontSize);
+            return isNaN(n) ? 16 : n;
+        }
+        function hideFmt() { bar.classList.remove('is-on'); }
+        function showFmt() {
+            const sel = window.getSelection();
+            if (!sel || sel.isCollapsed || !sel.rangeCount) { hideFmt(); return; }
+            const node = sel.anchorNode;
+            const el = node && node.nodeType === 3 ? node.parentElement : node;
+            if (!el || !$('decreeDocument').contains(el)) { hideFmt(); return; }
+            const r = sel.getRangeAt(0).getBoundingClientRect();
+            if (!r.width && !r.height) { hideFmt(); return; }
+            bar.classList.add('is-on');
+            const x = Math.min(window.innerWidth - bar.offsetWidth - 8, Math.max(8, r.left + r.width / 2 - bar.offsetWidth / 2));
+            const y = Math.max(8, r.top - bar.offsetHeight - 8);
+            bar.style.left = x + 'px';
+            bar.style.top = y + 'px';
+        }
+        document.addEventListener('mouseup', () => setTimeout(showFmt, 10));
+        document.addEventListener('keyup', showFmt);
+        bar.querySelectorAll('[data-fmt]').forEach((btn) => {
+            btn.addEventListener('mousedown', (e) => e.preventDefault());
+            btn.addEventListener('click', () => {
+                const el = currentEdit();
+                if (!el) { toast('Клікни текст на бланку'); return; }
+                const act = btn.getAttribute('data-fmt');
+                if (act === 'bigger') el.style.fontSize = Math.min(48, fmtPx(el) + 2) + 'px';
+                if (act === 'smaller') el.style.fontSize = Math.max(10, fmtPx(el) - 2) + 'px';
+                if (act === 'left') el.style.textAlign = 'left';
+                if (act === 'center') el.style.textAlign = 'center';
+                if (act === 'right') el.style.textAlign = 'right';
+                if (act === 'justify') el.style.textAlign = 'justify';
+                if (act === 'bold') el.style.fontWeight = (el.style.fontWeight === '700' || el.style.fontWeight === 'bold') ? '400' : '700';
+                if (act === 'italic') el.style.fontStyle = el.style.fontStyle === 'italic' ? 'normal' : 'italic';
+                if (act === 'reset') {
+                    el.style.fontSize = '';
+                    el.style.textAlign = '';
+                    el.style.fontWeight = '';
+                    el.style.fontStyle = '';
+                }
+                scheduleSave();
+            });
+        });
+    }
+
     function applyVisibility() {
         $('toggleHeaderCheck').checked = state.visibility.header !== false;
         $('toggleFooterCheck').checked = state.visibility.footer !== false;
@@ -1010,6 +1172,7 @@
             fields: state.fields,
             padding: state.padding,
             positions: state.positions,
+            sizes: state.sizes || {},
             visibility: state.visibility,
             locked: state.locked,
             bgImageSrc: state.bgImageSrc,
@@ -1055,11 +1218,13 @@
             state.fields = Object.assign(defaultState().fields, s.fields || {});
             state.padding = Object.assign(defaultState().padding, s.padding || {});
             state.positions = Object.assign(defaultState().positions, s.positions || {});
+            state.sizes = Object.assign({}, s.sizes || {});
             state.visibility = Object.assign(defaultState().visibility, s.visibility || {});
         }
         writeFields();
         applyPadding();
         applyPositions();
+        applySizes();
         applyVisibility();
         applyLock();
         applyBg();
@@ -1139,7 +1304,7 @@
             const start = (e) => {
                 if (state.locked) return;
                 const t = e.target;
-                if (t.closest('[contenteditable="true"]') || t.closest('button') || t.isContentEditable) return;
+                if (t.closest('[contenteditable="true"]') || t.closest('button') || t.closest('.resize-handle') || t.isContentEditable) return;
                 dragging = true;
                 block.classList.add('is-dragging');
                 cx = parseFloat(block.getAttribute('data-x')) || 0;
@@ -1251,7 +1416,7 @@
         try {
             const canvas = await html2canvas($('decreeDocument'), {
                 scale: 2.5, useCORS: true, allowTaint: true, backgroundColor: null,
-                ignoreElements: (el) => el.classList && (el.classList.contains('no-print') || el.classList.contains('drag-handle'))
+                ignoreElements: (el) => el.classList && (el.classList.contains('no-print') || el.classList.contains('drag-handle') || el.classList.contains('resize-handle') || el.id === 'fmtBar')
             });
             const blob = await canvasToBlob(canvas);
             if (!blob) throw new Error('blob');
@@ -1294,7 +1459,7 @@
         toast('⌛ PNG…');
         html2canvas($('decreeDocument'), {
             scale: 3, useCORS: true, allowTaint: true, backgroundColor: null,
-            ignoreElements: (el) => el.classList && (el.classList.contains('no-print') || el.classList.contains('drag-handle'))
+            ignoreElements: (el) => el.classList && (el.classList.contains('no-print') || el.classList.contains('drag-handle') || el.classList.contains('resize-handle') || el.id === 'fmtBar')
         }).then((canvas) => {
             const a = document.createElement('a');
             a.download = (TYPES[state.type].label + '_' + state.fields.number).replace(/\s+/g, '_') + '.png';
@@ -1313,6 +1478,8 @@
     window.addEventListener('DOMContentLoaded', () => {
         initTypes();
         initDrag();
+        initResize();
+        initFmtBar();
         const db = allStore();
         loadSlot(db.active || 1);
         if ($('officeBadge')) $('officeBadge').textContent = OFFICE_NAMES[state.office] || '';
