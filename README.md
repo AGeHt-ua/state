@@ -19,17 +19,17 @@ cd frontend
 python3 -m http.server 8080
 ```
 
-Головна: `http://localhost:8080/state/main/`
+Головна: `http://localhost:8080/`
 
 Маршрути:
-- `/state/main/` — головна
-- `/state/acts/` — законодавча база
-- `/state/acts/<id>/` — картка акта
-- `/state/structure/` — органи влади
-- `/state/login/` — вхід
-- `/state/cabinet/` — кабінет
-- `/state/cabinet/acts/` — чернетки
-- `/state/cabinet/court/` — суд
+- `/` — головна
+- `/acts/` — законодавча база
+- `/acts/<id>/` — картка акта
+- `/structure/` — органи влади
+- `/login/` — вхід
+- `/cabinet/` — кабінет
+- `/cabinet/acts/` — чернетки
+- `/cabinet/court/` — суд
 
 ## Cloudflare Worker
 
