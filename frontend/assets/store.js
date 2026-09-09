@@ -126,22 +126,27 @@ function saveUser(user) {
     name: user.name,
     roles: user.roles || ["pending"],
     post: user.post || "",
-    photo: user.photo || ""
+    photo: user.photo || "",
+    passport: (i >= 0 && extra[i].passport) ? extra[i].passport : (user.passport || "")
   };
   if (i >= 0) extra[i] = Object.assign({}, extra[i], row);
   else extra.push(row);
   saveLS("state_users", extra);
 }
 
-function registerUser({ login, password, name, post }) {
+function registerUser({ login, password, name, post, passport }) {
   login = String(login || "").trim().toLowerCase();
-  if (!login || !password || !name) return { ok: false, error: "Заповни всі поля." };
+  passport = String(passport || "").replace(/\s+/g, "");
+  if (!login || !password || !name || !passport) return { ok: false, error: "Заповни всі поля, включно з номером паспорта." };
+  if (!/^\d{4,12}$/.test(passport)) return { ok: false, error: "Номер паспорта — лише цифри (4–12)." };
   if (allUsers().some((u) => u.login === login)) return { ok: false, error: "Такий логін уже зайнятий." };
+  if (allUsers().some((u) => String(u.passport || "") === passport)) return { ok: false, error: "Такий номер паспорта вже зареєстровано." };
   saveUser({
     login,
     password,
     name: String(name).trim(),
     post: String(post || "").trim(),
+    passport,
     roles: ["pending"]
   });
   return { ok: true };
@@ -158,6 +163,8 @@ function loginWithPassword(login, password) {
     username: found.name || found.login,
     roles: found.roles || ["pending"],
     post: found.post || "",
+    passport: found.passport || "",
+    passport: fresh.passport || "",
     photo: found.photo || "",
     source: "manual"
   };
@@ -176,6 +183,8 @@ function currentUser() {
     username: fresh.name,
     roles: fresh.roles || [],
     post: fresh.post || "",
+    passport: found.passport || "",
+    passport: fresh.passport || "",
     photo: fresh.photo || "",
     source: "manual"
   };
@@ -277,8 +286,13 @@ const ACT_SECTIONS = [
 function docsBySection(section) {
   const list = publishedDocs();
   if (!section || section === "all") return list;
-  if (section === "Ордер") return list.filter((d) => /ордер/i.test(d.type));
-  return list.filter((d) => d.type === section);
+  const t = (d) => String(d.type || "");
+  if (section === "Ордер") return list.filter((d) => /ордер/i.test(t(d)));
+  if (section === "Закон") return list.filter((d) => /закон/i.test(t(d)));
+  if (section === "Конституція штату") return list.filter((d) => /конституц/i.test(t(d)));
+  if (section === "Наказ Голови ВС") return list.filter((d) => /наказ.*вс|голови\s*вс/i.test(t(d)));
+  if (section === "Наказ") return list.filter((d) => /наказ/i.test(t(d)) && !/вс/i.test(t(d)));
+  return list.filter((d) => t(d) === section || t(d).indexOf(section) === 0);
 }
 
 function getDoc(id) {
