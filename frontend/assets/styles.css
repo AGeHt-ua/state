@@ -389,3 +389,190 @@ textarea { min-height: 220px; resize: vertical; }
 @media (max-width: 800px) {
   .cabinet-layout { grid-template-columns: 1fr; }
 }
+
+.cabinet-layout.chancery-page {
+  grid-template-columns: 200px 210mm minmax(320px, 1fr);
+  width: calc(100% - 16px);
+  max-width: none;
+  margin: 0 auto;
+}
+.chancery-page .certificate-container {
+  width: 210mm;
+  min-height: 297mm;
+  max-width: 210mm;
+  margin: 0;
+}
+.doc-panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  padding: 16px 18px 20px;
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.doc-panel .chancery {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  box-shadow: none;
+}
+.doc-panel #btnHome,
+.doc-panel h1.font-playfair { display: none !important; }
+.doc-panel .panel,
+.doc-panel .panel .grid,
+.doc-panel .grid { display: block !important; }
+.doc-panel h2,
+.doc-panel .sec-title {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--navy-900);
+  letter-spacing: 0;
+  text-transform: none;
+  margin: 18px 0 10px;
+  padding: 0 0 6px;
+  border-bottom: 2px solid var(--gold);
+}
+.doc-panel .doc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.doc-panel #officeBadge {
+  display: block;
+  font-size: 13px;
+  color: var(--navy-900);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.doc-panel #slotBar { display: flex; gap: 4px; }
+.doc-panel .slot-btn {
+  min-width: 28px;
+  height: 28px;
+  border-radius: 0;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--navy-900);
+  font-size: 12px;
+  font-weight: 700;
+}
+.doc-panel .slot-btn.active {
+  background: var(--navy-900);
+  border-color: var(--navy-900);
+  color: #fff;
+}
+.doc-panel .action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.doc-panel label {
+  display: block;
+  width: 100%;
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.doc-panel label.tool-btn {
+  width: auto;
+  margin: 0;
+  color: var(--navy-900);
+}
+.doc-panel input,
+.doc-panel select,
+.doc-panel textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 0;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.doc-panel input:focus,
+.doc-panel select:focus { border-color: var(--gold); outline: none; }
+.doc-panel .date-row { display: flex; gap: 8px; }
+.doc-panel .date-row input { flex: 1; }
+.doc-panel .tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.doc-panel .tool-btn,
+.doc-panel .ghost-btn,
+.doc-panel .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--navy-900);
+  background: #fff;
+  color: var(--navy-900);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: Arial, Helvetica, sans-serif;
+  border-radius: 0;
+  cursor: pointer;
+  width: auto;
+}
+.doc-panel .tool-btn.icon {
+  width: 34px;
+  padding: 0;
+}
+.doc-panel .btn.gold { background: var(--gold); border-color: var(--gold); color: var(--navy-950); }
+.doc-panel .btn.ok,
+.doc-panel #btnPublishSite {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #fff;
+}
+.doc-panel .checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin: 8px 0 12px;
+}
+.doc-panel .checks label {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  width: auto !important;
+  margin: 0 !important;
+  color: var(--ink);
+  font-weight: 500;
+}
+.doc-panel .checks input { width: 15px; height: 15px; padding: 0; }
+#tplBar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+#tplBar button {
+  height: 32px;
+  padding: 0 10px;
+  background: #f6f1e4;
+  border: 1px solid var(--line);
+  color: var(--navy-900);
+  font-size: 12px;
+  font-family: Arial, Helvetica, sans-serif;
+  border-radius: 0;
+}
+#tplBar button:hover { border-color: var(--gold); }
+.doc-panel #slidersPanel {
+  background: #f6f1e4;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 0;
+  margin-top: 10px;
+  padding: 10px;
+}
+@media (max-width: 1100px) {
+  .cabinet-layout.chancery-page { grid-template-columns: 1fr; }
+}
