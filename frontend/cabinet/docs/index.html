@@ -21,45 +21,55 @@
   </header>
   <nav class="nav">
     <div class="nav-inner">
+      <a href="../../">Головна</a>
       <a href="../">Кабінет</a>
-      <a href="../chancery/">Канцелярія</a>
-      <a href="./">Опубліковані</a>
       <a href="#" id="logout">Вийти</a>
     </div>
   </nav>
   <main class="wrap">
-    <h2 class="page-title">Опубліковані документи</h2>
-    <p class="lead">Редагувати можна лише акт, який створили ви. Інші — лише перегляд.</p>
-    <section class="card" id="form-card">
-      <form id="doc-form">
-        <input type="hidden" name="id">
-        <table class="meta-table">
-          <tr><th>Вид</th><td><select name="type"></select></td></tr>
-          <tr><th>Номер</th><td><input name="number" required></td></tr>
-          <tr><th>Дата</th><td><input name="date" required></td></tr>
-          <tr><th>Назва</th><td><input name="title" required></td></tr>
-          <tr><th>Орган</th><td><input name="body"></td></tr>
-          <tr><th>На головну</th><td><label><input type="checkbox" name="publishHome"> так</label></td></tr>
-          <tr><th>Статус</th><td>
-            <select name="status">
-              <option value="draft">Проєкт</option>
-              <option value="ok">Чинний</option>
-              <option value="dead">Втратив чинність</option>
-            </select>
-          </td></tr>
-          <tr><th>Текст</th><td><textarea name="text" required></textarea></td></tr>
-        </table>
-        <div class="form-actions">
-          <button class="btn gold" type="submit">Зберегти</button>
-          <a class="btn ghost" href="./">До списку</a>
-        </div>
-        <p class="muted" id="saved-msg"></p>
-      </form>
-    </section>
-    <section class="card" style="margin-top:18px">
-      <h3>Акти цього кабінету</h3>
-      <div id="doc-list"></div>
-    </section>
+    <div class="cabinet-layout">
+      <aside class="side-nav">
+        <a href="../">Профіль</a>
+        <a class="create" href="../chancery/">Створити документ</a>
+        <a class="active" href="./">Опубліковані документи</a>
+        <a href="../people/" id="nav-people">Учасники</a>
+        <a href="../../acts/">Законодавча база</a>
+      </aside>
+      <div>
+        <h2 class="page-title">Опубліковані документи</h2>
+        <p class="lead">Редагувати можна лише акт, який створили ви. Інші — лише перегляд.</p>
+        <section class="card" id="form-card">
+          <form id="doc-form">
+            <input type="hidden" name="id">
+            <table class="meta-table">
+              <tr><th>Вид</th><td><select name="type"></select></td></tr>
+              <tr><th>Номер</th><td><input name="number" required></td></tr>
+              <tr><th>Дата</th><td><input name="date" required></td></tr>
+              <tr><th>Назва</th><td><input name="title" required></td></tr>
+              <tr><th>Орган</th><td><input name="body"></td></tr>
+              <tr><th>На головну</th><td><label><input type="checkbox" name="publishHome"> так</label></td></tr>
+              <tr><th>Статус</th><td>
+                <select name="status">
+                  <option value="draft">Проєкт</option>
+                  <option value="ok">Чинний</option>
+                  <option value="dead">Втратив чинність</option>
+                </select>
+              </td></tr>
+              <tr><th>Текст</th><td><textarea name="text" required></textarea></td></tr>
+            </table>
+            <div class="form-actions">
+              <button class="btn gold" type="submit">Зберегти</button>
+              <a class="btn ghost" href="./">До списку</a>
+            </div>
+            <p class="muted" id="saved-msg"></p>
+          </form>
+        </section>
+        <section class="card" style="margin-top:18px">
+          <h3>Акти цього кабінету</h3>
+          <div id="doc-list"></div>
+        </section>
+      </div>
+    </div>
   </main>
   <script src="../../assets/accounts.js"></script>
   <script src="../../assets/app.js"></script>
@@ -137,7 +147,7 @@
         </span>
       </article>`;
     }).join("") : "<p class='lead'>У цьому кабінеті ще немає актів.</p>") +
-      `<p class="form-actions"><a class="btn gold" href="../chancery/">Новий акт у канцелярії</a></p>`;
+      `<p class="form-actions"><a class="btn gold" href="../chancery/">Створити документ</a></p>`;
   </script>
 </body>
 </html>
