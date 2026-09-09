@@ -213,7 +213,6 @@
                 </div>
             </div>
             <div class="flex flex-wrap items-center gap-1 justify-end">
-                <button type="button" id="btnApplyVars" class="gold-btn px-2.5 py-1 rounded-lg text-[11px]">Внести в бланк</button>
                 <label class="flex items-center gap-1 text-[11px] text-amber-100/80 px-2"><input type="checkbox" id="chkPublishHome" class="accent-amber-500"> На головну сайту</label>
                 <button type="button" id="btnPublishSite" class="gold-btn px-2.5 py-1 rounded-lg text-[11px]">Опублікувати на сайт</button>
                 <button type="button" id="btnSave" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">Зберегти</button>
@@ -221,7 +220,7 @@
                 <button type="button" id="btnReset" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">Скинути</button>
                 <button type="button" id="btnPng" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">PNG</button>
                 <button type="button" id="btnAnsi" class="ghost-btn px-2 py-1 rounded-lg text-[11px]">Discord-текст</button>
-                <button type="button" id="btnDiscord" class="gold-btn px-2.5 py-1 rounded-lg text-[11px]">Надіслати в DS</button>
+                <button type="button" id="btnDiscord" class="gold-btn px-2.5 py-1 rounded-lg text-[11px] hidden">Надіслати в DS</button>
             </div>
         </div>
         <div class="panel grid grid-cols-1 lg:grid-cols-2 gap-1.5 mt-2">
@@ -328,6 +327,9 @@
                 </div>
             </div>
             <div id="tplBar" class="flex flex-wrap gap-1.5"></div>
+            <div class="form-actions" style="margin-top:12px">
+              <button type="button" id="btnApplyVars" class="btn gold">Оновити</button>
+            </div>
         </div>
     </div>
 
@@ -1494,6 +1496,26 @@
   const signText = document.getElementById("fldSignText");
   if (signer) signer.value = user.username;
   if (signText) signText.value = user.username;
+  const officer = document.getElementById("fldOfficer");
+  if (officer && user.post) officer.value = user.post;
+  if (user.photo) {
+    window.state = window.state || {};
+    const sealImg = document.getElementById("sealImg") || document.querySelector("#sealLayer img");
+    if (typeof applySealSrc === "function") {
+      /* applied below after editor ready */
+    }
+    setTimeout(() => {
+      try {
+        if (typeof state !== "undefined") {
+          state.sealSrc = user.photo;
+          state.visibility = state.visibility || {};
+          state.visibility.seal = true;
+          if (typeof applySealSrc === "function") applySealSrc();
+          if (typeof applyVisibility === "function") applyVisibility();
+        }
+      } catch (e) {}
+    }, 400);
+  }
 
   function collectText() {
     const pts = Array.from(document.querySelectorAll("#decreePointsList .point-text")).map((el) => el.textContent.trim());
@@ -1532,7 +1554,11 @@
         office: office
       };
       saveDoc(doc);
-      alert(onHome ? "Опубліковано на головній і в законодавчій базі." : "Збережено в базі сайту без виводу на головну.");
+      const sendDs = confirm((onHome ? "Опубліковано на сайті." : "Збережено в базі.") + "\n\nНадіслати цей акт у Discord?");
+      if (sendDs) {
+        const ds = document.getElementById("btnDiscord");
+        if (ds) ds.click();
+      }
     });
   }
 })();
