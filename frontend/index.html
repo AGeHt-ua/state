@@ -36,23 +36,26 @@
     <p class="lead">Публічна база актів Уряду та судових органів. Кабінет — для посадовців штату.</p>
     <div class="grid-2">
       <section class="card">
-        <h3>Останні документи</h3>
+        <h3>На головній</h3>
+        <p class="lead">Тільки акти з галочкою «публікувати на головну».</p>
         <div id="home-acts"></div>
       </section>
-      <aside class="card">
-        <h3>Кабінет посадовця</h3>
-        <p class="lead">Вхід за логіном, виданим Урядом. Новий учасник подає заявку на реєстрацію.</p>
-        <p>
-          <a class="btn gold" href="login/">Увійти</a>
-          <a class="btn ghost" href="register/">Реєстрація</a>
-        </p>
-      </aside>
+      <div>
+        <aside class="card">
+          <h3>Кабінет посадовця</h3>
+          <p class="lead">Вхід за логіном, виданим Урядом. Новий учасник подає заявку на реєстрацію.</p>
+          <p>
+            <a class="btn gold" href="login/">Увійти</a>
+            <a class="btn ghost" href="register/">Реєстрація</a>
+          </p>
+        </aside>
+        <section class="card" style="margin-top:16px">
+          <h3>Додано з кабінету</h3>
+          <p class="lead">Усі нові акти канцелярії — дата і час.</p>
+          <div id="cabinet-feed"></div>
+        </section>
+      </div>
     </div>
-    <section class="card" style="margin-top:24px">
-      <h3>Останні додані документи</h3>
-      <p class="lead">Нові акти з канцелярії з’являються тут із датою і часом публікації.</p>
-      <div id="home-feed"></div>
-    </section>
   </main>
   <footer class="footer">
     <div class="footer-inner">
@@ -65,7 +68,6 @@
   <script src="assets/store.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
-      const items = homeDocs().slice(0, 8);
       const row = (a) => `
         <article class="act-row">
           <div class="act-num">${formatDocWhen(a)}</div>
@@ -73,15 +75,19 @@
             <h3><a href="${docHref(a)}">${a.title}</a></h3>
             <div class="act-meta">${a.type} · ${a.number}${a.author ? " · " + a.author : ""}</div>
           </div>
-          <span class="badge ${badgeClass(a.status)}">${DOC_STATUSES[a.status]}</span>
+          <span class="badge ${badgeClass(a.status)}">${DOC_STATUSES[a.status] || a.status}</span>
         </article>`;
+      const home = homeDocs().slice(0, 6);
       const box = document.getElementById("home-acts");
-      if (box) box.innerHTML = items.slice(0, 3).map(row).join("");
-      const feed = document.getElementById("home-feed");
+      if (box) {
+        box.innerHTML = home.length ? home.map(row).join("") : "<p class='lead'>Немає актів для головної.</p>";
+      }
+      const created = cabinetCreatedDocs().slice(0, 8);
+      const feed = document.getElementById("cabinet-feed");
       if (feed) {
-        feed.innerHTML = items.length
-          ? items.map(row).join("")
-          : "<p class='lead'>Поки немає опублікованих актів.</p>";
+        feed.innerHTML = created.length
+          ? created.map(row).join("")
+          : "<p class='lead'>З канцелярії ще нічого не додавали в цьому браузері.</p>";
       }
     });
   </script>
