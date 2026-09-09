@@ -13,6 +13,13 @@ const OFFICE_BY_ROLE = {
   court: "court"
 };
 
+const OFFICE_NAMES = {
+  governor: "Кабінет Губернатора",
+  directors: "Кабінет Директорів Департаменту",
+  prosecutor: "Кабінет Прокуратури",
+  court: "Кабінет Судової влади"
+};
+
 function userOffice(user) {
   const role = ((user && user.roles) || []).find((r) => r !== "pending") || "official";
   return OFFICE_BY_ROLE[role] || "directors";
@@ -306,24 +313,39 @@ function docHref(doc) {
   return pathTo("acts/view/?id=" + encodeURIComponent(doc.id));
 }
 
+function officeName(code) {
+  return OFFICE_NAMES[code] || code || "—";
+}
+
 function renderActList(targetId, query = "") {
   const root = document.getElementById(targetId);
   if (!root) return;
-  const q = query.trim().toLowerCase();
-  const section = new URLSearchParams(location.search).get("type") || "all";
-  const items = docsBySection(section).filter((a) =>
-    !q || `${a.title} ${a.number} ${a.type} ${a.body || ""}`.toLowerCase().includes(q)
+  const params = new URLSearchParams(location.search);
+  const q = (query || params.get("q") || "").trim().toLowerCase();
+  const section = params.get("type") || "all";
+  const office = params.get("office") || "all";
+  const sort = params.get("sort") || "date-desc";
+  let items = docsBySection(section).filter((a) =>
+    !q || `${a.title} ${a.number} ${a.type} ${a.body || ""} ${a.author || ""}`.toLowerCase().includes(q)
   );
+  if (office !== "all") items = items.filter((a) => (a.office || "") === office);
+  items.sort((a, b) => {
+    if (sort === "date-asc") return String(a.publishedAt || a.date).localeCompare(String(b.publishedAt || b.date));
+    if (sort === "title") return String(a.title).localeCompare(String(b.title), "uk");
+    if (sort === "office") return String(officeName(a.office) + a.title).localeCompare(officeName(b.office) + b.title, "uk");
+    if (sort === "type") return String(a.type + a.title).localeCompare(b.type + b.title, "uk");
+    return String(b.publishedAt || b.date).localeCompare(String(a.publishedAt || a.date));
+  });
   if (!items.length) {
     root.innerHTML = "<p class='lead'>Документів не знайдено.</p>";
     return;
   }
   root.innerHTML = items.map((a) => `
     <article class="act-row">
-      <div class="act-num">${a.number}<br>${a.date}</div>
+      <div class="act-num">${a.number}<br>${formatDocWhen(a)}</div>
       <div>
         <h3><a href="${docHref(a)}">${a.title}</a></h3>
-        <div class="act-meta">${a.type} · ${a.body || ""}</div>
+        <div class="act-meta">${a.type} · ${officeName(a.office) !== "—" ? officeName(a.office) : (a.body || "")}</div>
       </div>
       <span class="badge ${badgeClass(a.status)}">${DOC_STATUSES[a.status] || a.status}</span>
     </article>
