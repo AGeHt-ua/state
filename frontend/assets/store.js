@@ -23,6 +23,7 @@ const SEED_DOCS = [
     body: "Уряд штату Сан-Андреас",
     title: "Конституція штату Сан-Андреас",
     text: "Ми, народ штату San Andreas (Ukraine GTA 5), розуміючи цінність свободи, порядку та справедливості, ухвалюємо цю Конституцію.",
+    publishHome: true,
     seeded: true
   },
   {
@@ -35,6 +36,7 @@ const SEED_DOCS = [
     body: "Уряд штату Сан-Андреас",
     title: "Закон про діяльність Уряду",
     text: "Цей Закон визначає організацію роботи Уряду штату.",
+    publishHome: true,
     seeded: true
   },
   {
@@ -191,7 +193,13 @@ function publishedDocs() {
 
 function homeDocs() {
   return allDocs()
-    .filter((d) => d.status === "ok" && d.publishHome !== false)
+    .filter((d) => d.status === "ok" && d.publishHome === true)
+    .sort((a, b) => String(b.publishedAt || b.date).localeCompare(String(a.publishedAt || a.date)));
+}
+
+function cabinetCreatedDocs() {
+  return allDocs()
+    .filter((d) => !d.seeded)
     .sort((a, b) => String(b.publishedAt || b.date).localeCompare(String(a.publishedAt || a.date)));
 }
 
