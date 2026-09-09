@@ -21,16 +21,26 @@
   </header>
   <nav class="nav">
     <div class="nav-inner">
+      <a href="../../">Головна</a>
       <a href="../">Кабінет</a>
-      <a href="../docs/">Документи</a>
-      <a href="./">Учасники</a>
       <a href="#" id="logout">Вийти</a>
     </div>
   </nav>
   <main class="wrap">
-    <h2 class="page-title">Зареєстровані учасники</h2>
-    <p class="lead">Апарат управління відкриває кабінет. Посаду адміністратор може виправити.</p>
-    <section class="card" id="people-box"></section>
+    <div class="cabinet-layout">
+      <aside class="side-nav">
+        <a href="../">Профіль</a>
+        <a class="create" href="../chancery/">Створити документ</a>
+        <a href="../docs/">Опубліковані документи</a>
+        <a class="active" href="./">Учасники</a>
+        <a href="../../acts/">Законодавча база</a>
+      </aside>
+      <div>
+        <h2 class="page-title">Зареєстровані учасники</h2>
+        <p class="lead">Апарат управління відкриває кабінет. Посаду адміністратор може виправити.</p>
+        <section class="card" id="people-box"></section>
+      </div>
+    </div>
   </main>
   <script src="../../assets/accounts.js"></script>
   <script src="../../assets/app.js"></script>
@@ -50,11 +60,12 @@
           <td>${u.login}</td>
           <td><select data-login="${u.login}">${opts}</select></td>
           <td><input data-post="${u.login}" value="${(u.post || "").replace(/"/g, "&quot;")}" placeholder="Посада"></td>
+          <td>${u.passport || "—"}</td>
           <td><button class="btn" type="button" data-save="${u.login}">Зберегти</button></td>
         </tr>`;
       }).join("");
       box.innerHTML = `<table class="meta-table">
-        <tr><th>Ім’я</th><th>Логін</th><th>Апарат управління</th><th>Посада</th><th></th></tr>
+        <tr><th>Ім’я</th><th>Логін</th><th>Апарат управління</th><th>Посада</th><th>Паспорт</th><th></th></tr>
         ${rows}
       </table>`;
       box.querySelectorAll("[data-save]").forEach((btn) => {
