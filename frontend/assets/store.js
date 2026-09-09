@@ -5,32 +5,38 @@ const ROLE_LABELS = {
   court: "Кабінет Судової влади",
   pending: "Очікує призначення"
 };
+
 const OFFICE_BY_ROLE = {
   governor: "governor",
   official: "directors",
   prosecutor: "prosecutor",
   court: "court"
 };
+
 const OFFICE_NAMES = {
   governor: "Кабінет Губернатора",
   directors: "Кабінет Директорів Департаменту",
   prosecutor: "Кабінет Прокуратури",
   court: "Кабінет Судової влади"
 };
+
 function userOffice(user) {
   const role = ((user && user.roles) || []).find((r) => r !== "pending") || "official";
   return OFFICE_BY_ROLE[role] || "directors";
 }
+
 function officeTitle(user) {
   const role = ((user && user.roles) || [])[0] || "pending";
   return ROLE_LABELS[role] || ROLE_LABELS.pending;
 }
+
 const DOC_TYPES = ["Конституція штату", "Закон", "Указ", "Розпорядження", "Статут органу"];
 const DOC_STATUSES = {
   ok: "Чинний",
   draft: "Проєкт",
   dead: "Втратив чинність"
 };
+
 const SEED_DOCS = [
   {
     id: "const-sa-01",
@@ -70,6 +76,7 @@ const SEED_DOCS = [
     seeded: true
   }
 ];
+
 function loadLS(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -78,9 +85,32 @@ function loadLS(key, fallback) {
     return fallback;
   }
 }
+
 function saveLS(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    try {
+      if (key === "state_session") {
+        const slim = Object.assign({}, value);
+        delete slim.photo;
+        localStorage.setItem(key, JSON.stringify(slim));
+        return;
+      }
+      if (key === "state_users" && Array.isArray(value)) {
+        const slim = value.map((u) => {
+          const row = Object.assign({}, u);
+          delete row.photo;
+          return row;
+        });
+        localStorage.setItem(key, JSON.stringify(slim));
+        return;
+      }
+    } catch (e2) {}
+    console.warn("localStorage full", key);
+  }
 }
+
 function allUsers() {
   const extra = loadLS("state_users", []);
   const seed = (window.STATE_ACCOUNTS || []).map((a) => ({
@@ -89,8 +119,8 @@ function allUsers() {
     name: a.name || a.login,
     roles: a.roles && a.roles.includes("governor") ? a.roles : remapSeedRoles(a),
     post: a.post || "",
-    passport: a.passport || "",
     photo: a.photo || "",
+    passport: a.passport || "",
     seeded: true
   }));
   const byLogin = {};
@@ -98,6 +128,7 @@ function allUsers() {
   extra.forEach((u) => { byLogin[u.login] = Object.assign({}, byLogin[u.login] || {}, u); });
   return Object.values(byLogin);
 }
+
 function remapSeedRoles(a) {
   const roles = a.roles || [];
   if (roles.includes("governor")) return roles;
@@ -106,6 +137,7 @@ function remapSeedRoles(a) {
   if (roles.includes("admin_stub")) return ["official"];
   return roles.length ? roles : ["pending"];
 }
+
 function saveUser(user) {
   const extra = loadLS("state_users", []);
   const i = extra.findIndex((u) => u.login === user.login);
@@ -122,6 +154,7 @@ function saveUser(user) {
   else extra.push(row);
   saveLS("state_users", extra);
 }
+
 function registerUser({ login, password, name, post, passport }) {
   login = String(login || "").trim().toLowerCase();
   passport = String(passport || "").replace(/\s+/g, "");
@@ -139,6 +172,7 @@ function registerUser({ login, password, name, post, passport }) {
   });
   return { ok: true };
 }
+
 function loginWithPassword(login, password) {
   const found = allUsers().find(
     (a) => a.login === String(login).trim().toLowerCase() && a.password === String(password)
@@ -150,43 +184,46 @@ function loginWithPassword(login, password) {
     username: found.name || found.login,
     roles: found.roles || ["pending"],
     post: found.post || "",
-    photo: found.photo || "",
     passport: found.passport || "",
     source: "manual"
   };
   saveLS("state_session", session);
+  session.photo = found.photo || "";
   return session;
 }
+
 function currentUser() {
   const raw = loadLS("state_session", null);
   if (!raw || !raw.login && !raw.id) return null;
   const fresh = allUsers().find((u) => u.login === (raw.login || raw.id));
   if (!fresh) return raw;
-  const session = {
+  return {
     id: fresh.login,
     login: fresh.login,
     username: fresh.name,
     roles: fresh.roles || [],
     post: fresh.post || "",
-    photo: fresh.photo || "",
     passport: fresh.passport || "",
+    photo: fresh.photo || "",
     source: "manual"
   };
-  saveLS("state_session", session);
-  return session;
 }
+
 function logout() {
   localStorage.removeItem("state_session");
 }
+
 function hasRole(user, role) {
   const roles = (user && user.roles) || [];
   if (roles.includes("governor")) return true;
   return roles.includes(role);
 }
+
 function isStaff(user) {
   const roles = (user && user.roles) || [];
   return ["governor", "official", "prosecutor", "court"].some((r) => roles.includes(r));
 }
+
 function requireAuth(neededRole) {
   const user = currentUser();
   if (!user) {
@@ -203,9 +240,11 @@ function requireAuth(neededRole) {
   }
   return user;
 }
+
 function requireGovernor() {
   return requireAuth("governor");
 }
+
 function allDocs() {
   const extra = loadLS("state_docs", []);
   const byId = {};
@@ -213,19 +252,23 @@ function allDocs() {
   extra.forEach((d) => { byId[d.id] = d; });
   return Object.values(byId).sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
+
 function publishedDocs() {
   return allDocs().filter((d) => d.status === "ok" || d.status === "draft" || d.status === "dead");
 }
+
 function homeDocs() {
   return allDocs()
     .filter((d) => d.status === "ok" && d.publishHome === true)
     .sort((a, b) => String(b.publishedAt || b.date).localeCompare(String(a.publishedAt || a.date)));
 }
+
 function cabinetCreatedDocs() {
   return allDocs()
     .filter((d) => !d.seeded)
     .sort((a, b) => String(b.publishedAt || b.date).localeCompare(String(a.publishedAt || a.date)));
 }
+
 function formatDocWhen(doc) {
   const raw = doc.publishedAt || doc.date || "";
   const d = new Date(raw);
@@ -240,6 +283,7 @@ function formatDocWhen(doc) {
   }
   return raw;
 }
+
 const ACT_SECTIONS = [
   { key: "all", label: "Усі акти" },
   { key: "Конституція штату", label: "Конституція" },
@@ -255,6 +299,7 @@ const ACT_SECTIONS = [
   { key: "Повістка", label: "Повістки" },
   { key: "Ухвала суду", label: "Ухвали" }
 ];
+
 function docsBySection(section) {
   const list = publishedDocs();
   if (!section || section === "all") return list;
@@ -266,9 +311,11 @@ function docsBySection(section) {
   if (section === "Наказ") return list.filter((d) => /наказ/i.test(t(d)) && !/вс/i.test(t(d)));
   return list.filter((d) => t(d) === section || t(d).indexOf(section) === 0);
 }
+
 function getDoc(id) {
   return allDocs().find((d) => d.id === id) || null;
 }
+
 function saveDoc(doc) {
   if (!doc.publishedAt) doc.publishedAt = new Date().toISOString();
   const extra = loadLS("state_docs", []);
@@ -278,24 +325,30 @@ function saveDoc(doc) {
   saveLS("state_docs", extra);
   return doc;
 }
+
 function newDocId() {
   return "act-" + Date.now().toString(36);
 }
+
 function roleLabel(code) {
   return ROLE_LABELS[code] || code;
 }
+
 function badgeClass(status) {
   return status === "ok" ? "ok" : status === "draft" ? "draft" : "dead";
 }
+
 function docHref(doc) {
   if (doc.seeded && !loadLS("state_docs", []).some((d) => d.id === doc.id)) {
     return pathTo("acts/" + doc.id + "/");
   }
   return pathTo("acts/view/?id=" + encodeURIComponent(doc.id));
 }
+
 function officeName(code) {
   return OFFICE_NAMES[code] || code || "—";
 }
+
 function renderActList(targetId, query = "") {
   const root = document.getElementById(targetId);
   if (!root) return;
