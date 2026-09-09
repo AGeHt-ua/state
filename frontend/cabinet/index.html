@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="../assets/styles.css" />
 </head>
 <body>
-  <div class="topbar" id="top-office">Службовий кабінет штату Сан-Андреас</div>
+  <div class="topbar" id="top-office">Службовий кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../">
@@ -24,32 +24,34 @@
       <a href="../">Головна</a>
       <a href="../acts/">Законодавча база</a>
       <a href="./">Кабінет</a>
-      <a href="chancery/">Канцелярія</a>
-      <a href="docs/">Опубліковані</a>
-      <a href="people/" id="nav-people">Учасники</a>
       <a href="#" id="logout">Вийти</a>
     </div>
   </nav>
   <main class="wrap">
-    <h2 class="page-title" id="page-h">Кабінет</h2>
-    <p class="lead" id="who-line"></p>
-    <div class="grid-2">
-      <a class="card" href="chancery/" style="display:block">
-        <h3>Канцелярія цього кабінету</h3>
-        <p class="lead" id="chan-lead">Бланки вашого органу. Кабінет не обирається — він уже призначений роллю.</p>
-      </a>
-      <a class="card" href="docs/" style="display:block">
-        <h3>Опубліковані документи</h3>
-        <p class="lead" id="docs-count">Ваші акти. Редагує лише автор.</p>
-      </a>
-      <a class="card" href="people/" id="people-card" style="display:block">
-        <h3>Учасники та ролі</h3>
-        <p class="lead" id="people-count">Призначення кабінету зареєстрованим.</p>
-      </a>
-      <a class="card" href="../acts/" style="display:block">
-        <h3>Законодавча база</h3>
-        <p class="lead">Публічні акти штату.</p>
-      </a>
+    <div class="cabinet-layout">
+      <aside class="side-nav">
+        <a class="active" href="./">Профіль</a>
+        <a href="chancery/">Канцелярія</a>
+        <a href="docs/">Опубліковані документи</a>
+        <a href="people/" id="nav-people">Учасники</a>
+        <a href="../acts/">Законодавча база</a>
+      </aside>
+      <section class="card">
+        <h2 class="page-title" style="margin-top:0" id="page-h">Профіль</h2>
+        <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+          <div>
+            <img class="profile-photo" id="avatar" alt="Фото" src="">
+            <p class="muted" style="margin-top:8px">Фото на бланках</p>
+            <input type="file" id="photo" accept="image/*">
+          </div>
+          <table class="meta-table" style="flex:1;min-width:260px">
+            <tr><th>Ім’я</th><td id="f-name">—</td></tr>
+            <tr><th>Логін</th><td id="f-login">—</td></tr>
+            <tr><th>Апарат управління</th><td id="f-office">—</td></tr>
+            <tr><th>Посада</th><td id="f-post">—</td></tr>
+          </table>
+        </div>
+      </section>
     </div>
   </main>
   <script src="../assets/accounts.js"></script>
@@ -62,24 +64,27 @@
       document.getElementById("top-office").textContent = title;
       document.getElementById("hdr-office").textContent = title;
       document.getElementById("page-h").textContent = title;
-      document.getElementById("who-line").textContent =
-        user.username + " · логін " + user.login;
-      document.getElementById("chan-lead").textContent =
-        "Відкривається одразу канцелярія: " + title + ".";
-      const mine = cabinetCreatedDocs().filter((d) => d.ownerLogin === user.login || d.author === user.username);
-      document.getElementById("docs-count").textContent =
-        "Ваших актів: " + mine.length + ".";
-      if (!hasRole(user, "governor") || (user.roles || [])[0] !== "governor") {
-        if ((user.roles || [])[0] !== "governor") {
-          document.getElementById("nav-people").style.display = "none";
-          document.getElementById("people-card").style.display = "none";
-        }
-      } else {
-        const list = allUsers();
-        const wait = list.filter((u) => (u.roles || [])[0] === "pending").length;
-        document.getElementById("people-count").textContent =
-          list.length + " учасників, очікують кабінет: " + wait + ".";
+      document.getElementById("f-name").textContent = user.username;
+      document.getElementById("f-login").textContent = user.login;
+      document.getElementById("f-office").textContent = title;
+      document.getElementById("f-post").textContent = user.post || "не вказано";
+      const img = document.getElementById("avatar");
+      img.src = user.photo || "";
+      if (!user.photo) img.alt = "немає фото";
+      if ((user.roles || [])[0] !== "governor") {
+        document.getElementById("nav-people").style.display = "none";
       }
+      document.getElementById("photo").addEventListener("change", (ev) => {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+        const r = new FileReader();
+        r.onload = () => {
+          const full = allUsers().find((u) => u.login === user.login);
+          saveUser(Object.assign({}, full, { photo: r.result }));
+          img.src = r.result;
+        };
+        r.readAsDataURL(file);
+      });
     }
   </script>
 </body>
