@@ -234,6 +234,39 @@
         <div class="checks">
             <label><input type="checkbox" id="chkPublishHome"> На головну сайту</label>
         </div>
+        <div id="slidersPanel" class="hidden">
+            <label>Верх <span id="valPadTop">140</span>
+                <input type="range" id="inputPadTop" min="50" max="350" value="140">
+            </label>
+            <label>Низ <span id="valPadBottom">135</span>
+                <input type="range" id="inputPadBottom" min="20" max="250" value="135">
+            </label>
+            <label>Боки <span id="valPadSide">95</span>
+                <input type="range" id="inputPadSide" min="20" max="180" value="95">
+            </label>
+            <label>Шрифт <span id="valFontScale">110</span>%
+                <input type="range" id="inputFontScale" min="70" max="160" value="110">
+            </label>
+            <label>Печатка <span id="valSeal">118</span>px
+                <input type="range" id="inputSeal" min="70" max="180" value="118">
+            </label>
+        </div>
+        <div id="sec-tpl" class="doc-block">
+            <h2 class="sec-title">Заготовки</h2>
+            <div class="tool-row">
+                <button type="button" id="btnPickBg" class="tool-btn">+ Фон</button>
+                <button type="button" id="btnClearBg" class="tool-btn icon" title="Прибрати фон">✕</button>
+                <label class="tool-btn" for="sealUploader">+ Печатка</label>
+                <input type="file" id="sealUploader" accept="image/*" class="hidden">
+                <button type="button" id="btnClearSeal" class="tool-btn icon" title="Прибрати печатку">✕</button>
+            </div>
+            <div class="checks">
+                <label><input type="checkbox" id="toggleHeaderCheck" checked> Шапка</label>
+                <label><input type="checkbox" id="toggleFooterCheck" checked> Блок підпису</label>
+                <label><input type="checkbox" id="toggleSealCheck" checked> Печатка</label>
+            </div>
+            <div id="tplBar"></div>
+        </div>
         <div class="panel grid grid-cols-1 lg:grid-cols-2 gap-1.5 mt-2">
             <section id="sec-doc" class="doc-block">
                 <h2 class="sec-title mb-1.5">1. Документ</h2>
@@ -321,46 +354,9 @@
                 </div>
             </section>
         </div>
-
-        <div id="sec-tpl" class="doc-block">
-            <h2 class="sec-title">Заготовки</h2>
-            <div class="tool-row">
-                <button type="button" id="btnPickBg" class="tool-btn">+ Фон</button>
-                <button type="button" id="btnClearBg" class="tool-btn icon" title="Прибрати фон">✕</button>
-                <label class="tool-btn" for="sealUploader">+ Печатка</label>
-                <input type="file" id="sealUploader" accept="image/*" class="hidden">
-                <button type="button" id="btnClearSeal" class="tool-btn icon" title="Прибрати печатку">✕</button>
-            </div>
-            <div class="checks">
-                <label><input type="checkbox" id="toggleHeaderCheck" checked> Шапка</label>
-                <label><input type="checkbox" id="toggleFooterCheck" checked> Блок підпису</label>
-                <label><input type="checkbox" id="toggleSealCheck" checked> Печатка</label>
-            </div>
-            <div id="tplBar"></div>
-            <div class="form-actions">
-              <button type="button" id="btnApplyVars" class="btn gold">Оновити</button>
-              <button type="button" id="btnPublishSite" class="btn ok">Опублікувати на сайт</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="slidersPanel" class="hidden bg-gray-800 border border-gray-700 rounded-xl p-3 mt-2 text-xs text-white">
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <label>Верх <span id="valPadTop" class="text-amber-400">140</span>
-                <input type="range" id="inputPadTop" min="50" max="350" value="140" class="w-full accent-amber-500">
-            </label>
-            <label>Низ <span id="valPadBottom" class="text-amber-400">135</span>
-                <input type="range" id="inputPadBottom" min="20" max="250" value="135" class="w-full accent-amber-500">
-            </label>
-            <label>Боки <span id="valPadSide" class="text-amber-400">95</span>
-                <input type="range" id="inputPadSide" min="20" max="180" value="95" class="w-full accent-amber-500">
-            </label>
-            <label>Шрифт <span id="valFontScale" class="text-amber-400">110</span>%
-                <input type="range" id="inputFontScale" min="70" max="160" value="110" class="w-full accent-amber-500">
-            </label>
-            <label>Печатка <span id="valSeal" class="text-amber-400">118</span>px
-                <input type="range" id="inputSeal" min="70" max="180" value="118" class="w-full accent-amber-500">
-            </label>
+        <div class="form-actions">
+          <button type="button" id="btnApplyVars" class="btn gold">Оновити</button>
+          <button type="button" id="btnPublishSite" class="btn ok">Опублікувати на сайт</button>
         </div>
     </div>
 </header>
@@ -679,6 +675,7 @@
     });
 
     let state = defaultState();
+    window.state = state;
     let saveTimer = null;
 
     const $ = (id) => document.getElementById(id);
@@ -868,16 +865,19 @@
 
     function applyVarsToDoc() {
         readFields();
-        applyType(true);
+        applyType(false);
         applyMeta();
         const t = TYPES[state.type];
-        $('decreeNumber').textContent = t.title(state.fields.number);
-        $('decreeSubject').textContent = t.subject(state.fields.post);
+        if ($('decreeNumber')) $('decreeNumber').textContent = t.title(state.fields.number);
+        if ($('decreeSubject')) $('decreeSubject').textContent = t.subject(state.fields.post);
+        if ($('decreePreamble')) $('decreePreamble').textContent = applyTokens($('decreePreamble').textContent);
+        if ($('decreeEffectiveText')) $('decreeEffectiveText').textContent = applyTokens($('decreeEffectiveText').textContent);
+        if ($('decreeCopies')) $('decreeCopies').textContent = applyTokens($('decreeCopies').textContent);
         document.querySelectorAll('#decreePointsList .point-text').forEach((el) => {
             el.textContent = applyTokens(el.textContent);
         });
         scheduleSave();
-        toast('Змінні підставлено');
+        toast('Поля підставлено в бланк');
     }
 
     function pointEl(text, sub) {
@@ -972,23 +972,24 @@
     }
 
     function applyPadding() {
-        const p = state.padding;
+        const p = state.padding || defaultState().padding;
         ['Top','Bottom','Side'].forEach((k) => {
             const key = k.toLowerCase();
             const val = k === 'Side' ? p.side : p[key];
-            $('valPad' + k).textContent = val;
-            $('inputPad' + k).value = val;
+            if ($('valPad' + k)) $('valPad' + k).textContent = val;
+            if ($('inputPad' + k)) $('inputPad' + k).value = val;
         });
-        $('valFontScale').textContent = p.fontScale;
-        $('inputFontScale').value = p.fontScale;
-        $('valSeal').textContent = p.seal;
-        $('inputSeal').value = p.seal;
+        if ($('valFontScale')) $('valFontScale').textContent = p.fontScale;
+        if ($('inputFontScale')) $('inputFontScale').value = p.fontScale;
+        if ($('valSeal')) $('valSeal').textContent = p.seal;
+        if ($('inputSeal')) $('inputSeal').value = p.seal;
         const b = $('documentBounds');
+        if (!b) return;
         b.style.padding = p.top + 'px ' + p.side + 'px ' + p.bottom + 'px';
         b.style.fontSize = (p.fontScale / 100 * 16) + 'px';
-        $('sealDefault').style.width = $('sealDefault').style.height = p.seal + 'px';
+        if ($('sealDefault')) $('sealDefault').style.width = $('sealDefault').style.height = p.seal + 'px';
         const img = $('sealImg');
-        img.style.width = img.style.height = p.seal + 'px';
+        if (img) img.style.width = img.style.height = p.seal + 'px';
     }
 
     function applyPositions() {
@@ -1234,6 +1235,7 @@
         applyMeta();
         applyType(false);
         paintSlots();
+        window.state = state;
     }
 
     function paintSlots() {
@@ -1278,7 +1280,7 @@
         state.office = office || 'governor';
         if ($('fldOffice')) $('fldOffice').value = state.office;
         fillTypes(state.office, null);
-        applyType(true);
+        applyType(false);
         applyMeta();
         if (state.office === 'court') {
             state.bgImageSrc = COURT_BG;
@@ -1628,11 +1630,19 @@
                 e.preventDefault(); addPoint(false);
             }
         });
+        window.chanceryApi = {
+            enterOffice: enterOffice,
+            applySealSrc: applySealSrc,
+            applyVisibility: applyVisibility,
+            persist: persist,
+            getState: function () { return state; }
+        };
     });
 })();
 </script>
 <script>
 (function () {
+  function bootCabinet() {
   const user = (typeof requireAuth === "function") ? requireAuth() : null;
   if (!user) return;
   const office = (typeof userOffice === "function") ? userOffice(user) : "governor";
@@ -1642,9 +1652,14 @@
   if (work) work.classList.remove("hidden");
   const btnHome = document.getElementById("btnHome");
   if (btnHome) btnHome.style.display = "none";
-  const card = document.querySelector('.office-card[data-office="' + office + '"]');
-  if (card) card.click();
-  else if (document.getElementById("fldOffice")) document.getElementById("fldOffice").value = office;
+  const fldOffice = document.getElementById("fldOffice");
+  if (fldOffice) fldOffice.value = office;
+  if (window.chanceryApi && typeof window.chanceryApi.enterOffice === "function") {
+    window.chanceryApi.enterOffice(office);
+  } else {
+    const card = document.querySelector('.office-card[data-office="' + office + '"]');
+    if (card) card.click();
+  }
   const title = (typeof officeTitle === "function") ? officeTitle(user) : "";
   const badge = document.getElementById("officeBadge");
   if (badge) badge.textContent = title;
@@ -1664,25 +1679,19 @@
     aside.id = "docPanel";
     aside.className = "doc-panel no-print panel";
     aside.appendChild(box);
-    if (sliders) aside.appendChild(sliders);
     layout.appendChild(aside);
   }
 
   if (user.photo) {
-    window.state = window.state || {};
-    const sealImg = document.getElementById("sealImg") || document.querySelector("#sealLayer img");
-    if (typeof applySealSrc === "function") {
-      /* applied below after editor ready */
-    }
     setTimeout(() => {
       try {
-        if (typeof state !== "undefined") {
-          state.sealSrc = user.photo;
-          state.visibility = state.visibility || {};
-          state.visibility.seal = true;
-          if (typeof applySealSrc === "function") applySealSrc();
-          if (typeof applyVisibility === "function") applyVisibility();
-        }
+        const st = (window.chanceryApi && window.chanceryApi.getState()) || window.state;
+        if (!st) return;
+        st.sealSrc = user.photo;
+        st.visibility = st.visibility || {};
+        st.visibility.seal = true;
+        if (window.chanceryApi && window.chanceryApi.applySealSrc) window.chanceryApi.applySealSrc();
+        if (window.chanceryApi && window.chanceryApi.applyVisibility) window.chanceryApi.applyVisibility();
       } catch (e) {}
     }, 400);
   }
@@ -1730,6 +1739,12 @@
         if (ds) ds.click();
       }
     });
+  }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bootCabinet);
+  } else {
+    bootCabinet();
   }
 })();
 </script>
