@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Вхід — State | Ukraine GTA 5 RP</title>
+  <link rel="stylesheet" href="../../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">Офіційний портал Уряду штату Сан-Андреас · Ukraine GTA 5 RP</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../main/">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Законодавство і органи влади штату</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../main/">Головна</a>
+      <a href="../acts/">Законодавча база</a>
+      <a href="../structure/">Органи влади</a>
+      <a href="../login/">Кабінет</a>
+    </div>
+  </nav>
+  <main class="wrap">
+    <h2 class="page-title">Авторизація</h2>
+    <section class="card">
+      <p class="lead">Бойовий Discord OAuth підключимо після створення застосунку в Developer Portal. Зараз — локальна заглушка сесії.</p>
+      <div class="notice">Заглушка не ходить у Discord. Натискання створює тестового користувача з роллю <b>admin_stub</b>.</div>
+      <p>
+        <button class="btn gold" id="stub-login" type="button">Увійти як тестовий урядовець</button>
+        <a class="btn ghost" href="#" id="real-login">Увійти через Discord (пізніше)</a>
+      </p>
+    </section>
+  </main>
+  <footer class="footer">
+    <div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div>
+  </footer>
+  <script src="../../assets/app.js"></script>
+  <script>
+    document.getElementById("stub-login").addEventListener("click", () => {
+      localStorage.setItem("state_session", JSON.stringify({
+        id: "stub",
+        username: "Dominic Castro",
+        roles: ["admin_stub"],
+        source: "stub"
+      }));
+      location.href = pathTo("cabinet/");
+    });
+    document.getElementById("real-login").addEventListener("click", (e) => {
+      e.preventDefault();
+      const worker = window.STATE_WORKER_URL || "";
+      if (!worker) {
+        alert("Cloudflare Worker ще не підключено. Використайте тестовий вхід.");
+        return;
+      }
+      location.href = worker.replace(/\/$/, "") + "/api/login";
+    });
+  </script>
+</body>
+</html>

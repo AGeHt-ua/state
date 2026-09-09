@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>State | Ukraine GTA 5 RP</title>
+  <link rel="stylesheet" href="../../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">Офіційний портал Уряду штату Сан-Андреас · Ukraine GTA 5 RP</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../main/">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Законодавство і органи влади штату</p>
+        </div>
+      </a>
+      <form class="search" id="site-search">
+        <input name="q" type="search" placeholder="Пошук за назвою або номером акта" />
+        <button type="submit">Знайти</button>
+      </form>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../main/">Головна</a>
+      <a href="../acts/">Законодавча база</a>
+      <a href="../structure/">Органи влади</a>
+      <a href="../login/">Кабінет</a>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <h2 class="page-title">Портал штату Сан-Андреас</h2>
+    <p class="lead">Публічна база актів Уряду та судових органів. Доступ до кабінетів — через Discord.</p>
+
+    <div class="grid-2">
+      <section class="card">
+        <h3>Останні документи</h3>
+        <div id="home-acts"></div>
+      </section>
+      <aside class="card">
+        <h3>Вхід до кабінету</h3>
+        <p class="lead">Авторизація Discord. Ролі підтягнемо з сервера пізніше — зараз заглушка.</p>
+        <a class="btn gold" href="../login/">Увійти через Discord</a>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>© 2026 State | Ukraine GTA 5 RP</span>
+      <span>Не є державним ресурсом України · ігровий портал RP</span>
+    </div>
+  </footer>
+  <script src="../../assets/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const box = document.getElementById("home-acts");
+      box.innerHTML = ACTS.slice(0, 3).map(a => `
+        <article class="act-row">
+          <div class="act-num">${a.number}</div>
+          <div>
+            <h3><a href="${pathTo(a.href)}">${a.title}</a></h3>
+            <div class="act-meta">${a.type} · ${a.date}</div>
+          </div>
+          <span class="badge ${badgeClass(a.status)}">${a.statusLabel}</span>
+        </article>
+      `).join("");
+    });
+  </script>
+</body>
+</html>

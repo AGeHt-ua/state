@@ -1,0 +1,9 @@
+name = "state-ukraine-gta5"
+main = "src/index.js"
+compatibility_date = "2026-09-09"
+
+[vars]
+FRONTEND_ORIGIN = "http://localhost:8080"
+DISCORD_CLIENT_ID = ""
+DISCORD_GUILD_ID = ""
+ROLE_MAP_JSON = "{\"admin_stub\":[\"cabinet\",\"acts\",\"court\"]}"
