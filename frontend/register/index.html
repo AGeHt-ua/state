@@ -28,11 +28,12 @@
   <main class="wrap">
     <h2 class="page-title">Реєстрація учасника</h2>
     <section class="card">
-      <p class="lead">Після реєстрації Губернатор призначає апарат управління. Посаду вказуєте самі; змінити її може адміністратор.</p>
+      <p class="lead">Після реєстрації Губернатор призначає апарат управління. Посаду можна змінити адміну. Номер паспорта більше не змінюється.</p>
       <form id="reg-form">
         <table class="meta-table">
           <tr><th>Ігрове ім’я</th><td><input name="name" required placeholder="Dominic Castro"></td></tr>
           <tr><th>Посада</th><td><input name="post" required placeholder="Голова Верховного Суду"></td></tr>
+          <tr><th>Номер паспорта</th><td><input name="passport" required placeholder="4158821" inputmode="numeric"></td></tr>
           <tr><th>Логін</th><td><input name="login" required placeholder="castro"></td></tr>
           <tr><th>Пароль</th><td><input name="password" type="password" required></td></tr>
         </table>
@@ -52,6 +53,7 @@
       const res = registerUser({
         name: data.get("name"),
         post: data.get("post"),
+        passport: data.get("passport"),
         login: data.get("login"),
         password: data.get("password")
       });
