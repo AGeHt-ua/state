@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Документи — State</title>
+  <title>Опубліковані документи — State</title>
   <link rel="stylesheet" href="../../assets/styles.css" />
 </head>
 <body>
-  <div class="topbar">Кабінет посадовця</div>
+  <div class="topbar" id="top-office">Кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
         <div class="crest">SA</div>
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
-          <p>Створення та публікація актів</p>
+          <p>Опубліковані документи</p>
         </div>
       </a>
     </div>
@@ -22,41 +22,42 @@
   <nav class="nav">
     <div class="nav-inner">
       <a href="../">Кабінет</a>
-      <a href="./">Документи</a>
+      <a href="../chancery/">Канцелярія</a>
+      <a href="./">Опубліковані</a>
       <a href="#" id="logout">Вийти</a>
     </div>
   </nav>
   <main class="wrap">
-    <h2 class="page-title" id="page-h">Документи</h2>
+    <h2 class="page-title">Опубліковані документи</h2>
+    <p class="lead">Редагувати можна лише акт, який створили ви. Інші — лише перегляд.</p>
     <section class="card" id="form-card">
       <form id="doc-form">
         <input type="hidden" name="id">
         <table class="meta-table">
-          <tr><th>Вид</th><td>
-            <select name="type"></select>
-          </td></tr>
-          <tr><th>Номер</th><td><input name="number" required placeholder="З-18"></td></tr>
+          <tr><th>Вид</th><td><select name="type"></select></td></tr>
+          <tr><th>Номер</th><td><input name="number" required></td></tr>
           <tr><th>Дата</th><td><input name="date" required></td></tr>
           <tr><th>Назва</th><td><input name="title" required></td></tr>
-          <tr><th>Орган</th><td><input name="body" placeholder="Уряд штату Сан-Андреас"></td></tr>
+          <tr><th>Орган</th><td><input name="body"></td></tr>
+          <tr><th>На головну</th><td><label><input type="checkbox" name="publishHome"> так</label></td></tr>
           <tr><th>Статус</th><td>
             <select name="status">
               <option value="draft">Проєкт</option>
-              <option value="ok">Чинний (опублікувати)</option>
+              <option value="ok">Чинний</option>
               <option value="dead">Втратив чинність</option>
             </select>
           </td></tr>
           <tr><th>Текст</th><td><textarea name="text" required></textarea></td></tr>
         </table>
         <div class="form-actions">
-          <button class="btn gold" type="submit">Зберегти / опублікувати</button>
+          <button class="btn gold" type="submit">Зберегти</button>
           <a class="btn ghost" href="./">До списку</a>
         </div>
         <p class="muted" id="saved-msg"></p>
       </form>
     </section>
-    <section class="card" id="list-card" style="margin-top:18px;">
-      <h3>Усі акти</h3>
+    <section class="card" style="margin-top:18px">
+      <h3>Акти цього кабінету</h3>
       <div id="doc-list"></div>
     </section>
   </main>
@@ -66,18 +67,20 @@
   <script>
     const user = requireAuth();
     if (!user) throw new Error("auth");
+    document.getElementById("top-office").textContent = officeTitle(user);
     const form = document.getElementById("doc-form");
-    const typeSel = form.type;
-    DOC_TYPES.forEach((t) => {
+    DOC_TYPES.concat(["Наказ","Указ","Розпорядження","Постанова","Доручення","Ордер","Повістка","Ухвала суду","Наказ Голови ВС"]).filter((v,i,a)=>a.indexOf(v)===i).forEach((t) => {
       const o = document.createElement("option");
-      o.value = t; o.textContent = t; typeSel.appendChild(o);
+      o.value = t; o.textContent = t; form.type.appendChild(o);
     });
-    const params = new URLSearchParams(location.search);
-    const editId = params.get("id");
-    const showNew = params.has("new") || editId;
+    const editId = new URLSearchParams(location.search).get("id");
     if (editId) {
       const doc = getDoc(editId);
-      if (doc) {
+      if (!doc) {
+        document.getElementById("form-card").style.display = "none";
+      } else if (doc.ownerLogin && doc.ownerLogin !== user.login && (user.roles || [])[0] !== "governor") {
+        document.getElementById("form-card").innerHTML = "<p class='lead'>Редагувати цей акт може лише автор.</p>";
+      } else if (doc) {
         form.id.value = doc.id;
         form.type.value = doc.type;
         form.number.value = doc.number;
@@ -86,18 +89,19 @@
         form.body.value = doc.body || "";
         form.status.value = doc.status;
         form.text.value = doc.text || "";
-        document.getElementById("page-h").textContent = "Редагування акта";
+        form.publishHome.checked = !!doc.publishHome;
       }
-    } else if (showNew) {
-      form.date.value = new Date().toISOString().slice(0, 10);
-      form.body.value = "Уряд штату Сан-Андреас";
-      document.getElementById("page-h").textContent = "Новий акт";
     } else {
       document.getElementById("form-card").style.display = "none";
     }
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      const doc = {
+      const prev = getDoc(form.id.value) || {};
+      if (prev.ownerLogin && prev.ownerLogin !== user.login && (user.roles || [])[0] !== "governor") {
+        document.getElementById("saved-msg").textContent = "Немає права редагувати.";
+        return;
+      }
+      const doc = Object.assign({}, prev, {
         id: form.id.value || newDocId(),
         type: form.type.value,
         number: form.number.value.trim(),
@@ -105,28 +109,35 @@
         title: form.title.value.trim(),
         body: form.body.value.trim(),
         status: form.status.value,
+        publishHome: form.publishHome.checked,
         text: form.text.value,
-        author: user.username,
+        author: prev.author || user.username,
+        ownerLogin: prev.ownerLogin || user.login,
+        office: prev.office || userOffice(user),
         seeded: false
-      };
+      });
       saveDoc(doc);
-      document.getElementById("saved-msg").textContent =
-        doc.status === "ok" ? "Опубліковано. Документ уже в законодавчій базі." : "Збережено як проєкт.";
-      location.href = pathTo("acts/view/?id=" + encodeURIComponent(doc.id));
+      location.href = "./";
     });
-    document.getElementById("doc-list").innerHTML = allDocs().map((d) => `
-      <article class="act-row">
-        <div class="act-num">${d.number}<br>${d.date}</div>
+    const mineOffice = userOffice(user);
+    const list = cabinetCreatedDocs().filter((d) =>
+      d.ownerLogin === user.login || d.office === mineOffice || (user.roles || [])[0] === "governor"
+    );
+    document.getElementById("doc-list").innerHTML = (list.length ? list.map((d) => {
+      const can = !d.ownerLogin || d.ownerLogin === user.login || (user.roles || [])[0] === "governor";
+      return `<article class="act-row">
+        <div class="act-num">${formatDocWhen(d)}</div>
         <div>
           <h3><a href="${docHref(d)}">${d.title}</a></h3>
-          <div class="act-meta">${d.type} · ${d.author || ""}</div>
+          <div class="act-meta">${d.type} · ${d.number} · ${d.author || ""}</div>
         </div>
         <span>
-          <span class="badge ${badgeClass(d.status)}">${DOC_STATUSES[d.status]}</span>
-          <a class="btn ghost" href="?id=${encodeURIComponent(d.id)}">Редагувати</a>
+          <span class="badge ${badgeClass(d.status)}">${DOC_STATUSES[d.status] || d.status}</span>
+          ${can ? `<a class="btn ghost" href="?id=${encodeURIComponent(d.id)}">Редагувати</a>` : ""}
         </span>
-      </article>
-    `).join("") + `<p class="form-actions"><a class="btn gold" href="?new=1">Створити акт</a></p>`;
+      </article>`;
+    }).join("") : "<p class='lead'>У цьому кабінеті ще немає актів.</p>") +
+      `<p class="form-actions"><a class="btn gold" href="../chancery/">Новий акт у канцелярії</a></p>`;
   </script>
 </body>
 </html>
