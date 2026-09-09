@@ -28,10 +28,11 @@
   <main class="wrap">
     <h2 class="page-title">Реєстрація учасника</h2>
     <section class="card">
-      <p class="lead">Після реєстрації Губернатор бачить заявку і призначає роль. Без ролі кабінет документів закритий.</p>
+      <p class="lead">Після реєстрації Губернатор призначає апарат управління. Посаду вказуєте самі; змінити її може адміністратор.</p>
       <form id="reg-form">
         <table class="meta-table">
           <tr><th>Ігрове ім’я</th><td><input name="name" required placeholder="Dominic Castro"></td></tr>
+          <tr><th>Посада</th><td><input name="post" required placeholder="Голова Верховного Суду"></td></tr>
           <tr><th>Логін</th><td><input name="login" required placeholder="castro"></td></tr>
           <tr><th>Пароль</th><td><input name="password" type="password" required></td></tr>
         </table>
@@ -50,6 +51,7 @@
       const data = new FormData(e.target);
       const res = registerUser({
         name: data.get("name"),
+        post: data.get("post"),
         login: data.get("login"),
         password: data.get("password")
       });
