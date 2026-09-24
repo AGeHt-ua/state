@@ -126,6 +126,8 @@
         office: prev.office || userOffice(user),
         seeded: false
       });
+      // Текст правили вручну — оформлена версія з редактора вже не відповідає йому
+      if (prev.html && prev.text !== doc.text) { delete doc.html; delete doc.editor; }
       saveDoc(doc);
       location.href = "./";
     });
@@ -143,7 +145,8 @@
         </div>
         <span>
           <span class="badge ${badgeClass(d.status)}">${DOC_STATUSES[d.status] || d.status}</span>
-          ${can ? `<a class="btn ghost" href="?id=${encodeURIComponent(d.id)}">Редагувати</a>` : ""}
+          ${can && d.editor ? `<a class="btn gold" href="../chancery/?id=${encodeURIComponent(d.id)}">У редакторі</a>` : ""}
+          ${can ? `<a class="btn ghost" href="?id=${encodeURIComponent(d.id)}">${d.editor ? "Картка" : "Редагувати"}</a>` : ""}
         </span>
       </article>`;
     }).join("") : "<p class='lead'>У цьому кабінеті ще немає актів.</p>") +
