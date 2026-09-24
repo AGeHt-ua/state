@@ -1093,8 +1093,8 @@
   }
   let layoutTimer = null;
   function scheduleLayout() {
-    cancelAnimationFrame(layoutTimer);
-    layoutTimer = requestAnimationFrame(layoutPages);
+    clearTimeout(layoutTimer);
+    layoutTimer = setTimeout(layoutPages, 30);
   }
 
   function updateSizer() {
@@ -1600,6 +1600,8 @@
     const prevZoom = zoom;
     selectImage(null);
     setZoom(100, true);
+    clearTimeout(layoutTimer);
+    layoutPages();
     document.body.classList.add('exporting');
     try {
       return await html2canvas(sheet, {
@@ -1617,16 +1619,39 @@
     const t = TYPES[state.type] || TYPES.nakaz;
     return (t.label + '_' + (state.fields.number || '')).replace(/[\\/:*?"<>|\s]+/g, '_').replace(/_+$/, '');
   }
+  /* Ріже знімок аркуша на окремі сторінки A4 (аркуш завжди має висоту pageCount × висота сторінки). */
+  function splitPages(full, scale) {
+    const pageH = pageSize().h * MM * scale;
+    const count = Math.max(1, Math.round(full.height / pageH));
+    const pages = [];
+    for (let i = 0; i < count; i++) {
+      const y0 = Math.round(i * pageH);
+      const y1 = i === count - 1 ? full.height : Math.round((i + 1) * pageH);
+      const c = document.createElement('canvas');
+      c.width = full.width;
+      c.height = y1 - y0;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(full, 0, y0, full.width, c.height, 0, 0, c.width, c.height);
+      pages.push(c);
+    }
+    return pages;
+  }
   async function exportPng() {
     if (typeof html2canvas !== 'function') { toast('Бібліотека html2canvas не завантажилась'); return; }
     toast('Готую PNG…');
     try {
-      const c = await renderSheet(3);
-      const a = document.createElement('a');
-      a.download = fileBase() + '.png';
-      a.href = c.toDataURL('image/png');
-      a.click();
-      toast('PNG збережено');
+      const pages = splitPages(await renderSheet(3), 3);
+      for (let i = 0; i < pages.length; i++) {
+        const a = document.createElement('a');
+        a.download = fileBase() + (pages.length > 1 ? '_стор' + (i + 1) : '') + '.png';
+        a.href = pages[i].toDataURL('image/png');
+        a.click();
+        // Пауза між завантаженнями, щоб браузер не відкинув частину файлів
+        if (i < pages.length - 1) await new Promise((r) => setTimeout(r, 400));
+      }
+      toast(pages.length > 1 ? 'Збережено сторінок: ' + pages.length : 'PNG збережено');
     } catch (e) {
       console.error(e);
       toast('Експорт не вдався (фон з іншого сайту блокує збереження?)');
@@ -1646,8 +1671,8 @@
     if (!targets.length) { toast('Для цього каналу не налаштовано webhook'); return; }
     toast('Надсилаю…');
     try {
-      const c = await renderSheet(2.5);
-      const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+      const pages = splitPages(await renderSheet(2.5), 2.5).slice(0, 10); // Discord: до 10 файлів у повідомленні
+      const blobs = await Promise.all(pages.map((p) => new Promise((res) => p.toBlob(res, 'image/png'))));
       const t = TYPES[state.type] || TYPES.nakaz;
       const h1 = editor.querySelector('h1');
       const subj = h1 && h1.nextElementSibling ? h1.nextElementSibling.textContent.trim() : '';
@@ -1656,7 +1681,7 @@
       let ok = 0;
       for (const ch of targets) {
         const form = new FormData();
-        form.append('file', blob, fileBase() + '.png');
+        blobs.forEach((b, i) => form.append('files[' + i + ']', b, fileBase() + (blobs.length > 1 ? '_стор' + (i + 1) : '') + '.png'));
         form.append('payload_json', JSON.stringify({ username: 'Канцелярія San-Andreas', content: caption }));
         try { const res = await fetch(ch.webhook, { method: 'POST', body: form }); if (res.ok) ok++; } catch (e) { console.error(e); }
       }
@@ -1671,6 +1696,8 @@
     printZoom = zoom;
     selectImage(null);
     setZoom(100, true);
+    clearTimeout(layoutTimer);
+    layoutPages();
   });
   window.addEventListener('afterprint', () => { if (printZoom) setZoom(printZoom, true); printZoom = null; });
 
