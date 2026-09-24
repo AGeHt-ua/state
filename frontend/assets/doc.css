@@ -1,0 +1,47 @@
+/* Стилі вмісту документа: спільні для редактора канцелярії та сторінки перегляду акта. */
+.doc-content {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 14pt;
+  line-height: 1.15;
+  color: #000;
+  text-align: left;
+  overflow-wrap: break-word;
+}
+.doc-content p,
+.doc-content div { margin: 0 0 6pt; }
+.doc-content h1 {
+  font-size: 18pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  margin: 0 0 8pt;
+}
+.doc-content h2 { font-size: 16pt; font-weight: 700; margin: 10pt 0 6pt; }
+.doc-content h3 { font-size: 14pt; font-weight: 700; margin: 8pt 0 4pt; }
+.doc-content ol { list-style: none; counter-reset: wd-item; margin: 0 0 6pt; padding: 0; }
+.doc-content ol ol,
+.doc-content ul ol { padding-left: 1.25cm; margin: 0; }
+.doc-content ol > li { counter-increment: wd-item; margin: 0 0 4pt; text-align: justify; }
+.doc-content ol > li::before { content: counters(wd-item, ".") ". "; }
+.doc-content ul { margin: 0 0 6pt; padding-left: 1.25cm; }
+.doc-content li ul { margin: 0; }
+.doc-content ul > li { margin: 0 0 3pt; }
+.doc-content table { border-collapse: collapse; width: 100%; margin: 0 0 6pt; }
+.doc-content td,
+.doc-content th { border: 1px solid #000; padding: 3pt 6pt; vertical-align: top; }
+.doc-content th { font-weight: 700; background: #f2f2f2; }
+.doc-content td > p:last-child,
+.doc-content th > p:last-child { margin-bottom: 0; }
+.doc-content table.noborder td,
+.doc-content table.noborder th,
+.doc-content table.sig td { border: 0; }
+.doc-content table.sig { margin-top: 18pt; }
+.doc-content table.sig td { vertical-align: bottom; padding: 0 2pt; width: 33.3%; }
+.doc-content .signature { font-family: "Great Vibes", cursive; font-size: 26pt; font-weight: 400; line-height: 1; }
+.doc-content hr { border: 0; border-top: 1px solid #000; margin: 6pt 0; }
+.doc-content .page-break { margin: 0; height: 0; break-after: page; page-break-after: always; }
+.doc-content img { max-width: 100%; height: auto; }
+.doc-content blockquote { margin: 0 0 6pt 1.25cm; }
+.doc-content a { color: #1a4fa0; text-decoration: underline; }
+.doc-content .fld.empty { display: none; }
