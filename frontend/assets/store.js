@@ -227,8 +227,32 @@ function loadLS(key, fallback) {
   }
 }
 
+// Сховище браузера ~5 МБ; фото профілю й зображення в документах швидко його заповнюють.
+// Запис ніколи не кидає помилку: при переповненні пробуємо зберегти без фото, інакше повертаємо false.
 function saveLS(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (err) {
+    try {
+      if (key === "state_session" && value && typeof value === "object") {
+        const slim = Object.assign({}, value);
+        delete slim.photo;
+        localStorage.setItem(key, JSON.stringify(slim));
+        return true;
+      }
+      if (key === "state_users" && Array.isArray(value)) {
+        localStorage.setItem(key, JSON.stringify(value.map((u) => {
+          const row = Object.assign({}, u);
+          delete row.photo;
+          return row;
+        })));
+        return true;
+      }
+    } catch (e2) { /* місця немає навіть без фото */ }
+    console.warn("localStorage full", key, err);
+    return false;
+  }
 }
 
 function allUsers() {
@@ -324,10 +348,10 @@ function loginWithPassword(login, password) {
     post: found.post || "",
     statId: found.statId || "",
     contact: found.contact || "",
-    photo: found.photo || "",
     source: "manual"
   };
   saveLS("state_session", session);
+  session.photo = found.photo || "";
   return session;
 }
 
@@ -346,10 +370,13 @@ function currentUser() {
     post: fresh.post || "",
     statId: fresh.statId || "",
     contact: fresh.contact || "",
-    photo: fresh.photo || "",
     source: "manual"
   };
-  saveLS("state_session", session);
+  // Фото береться з профілю й у сесію не пишеться; сесію перезаписуємо лише коли вона змінилась
+  const stored = Object.assign({}, raw);
+  delete stored.photo;
+  if (JSON.stringify(stored) !== JSON.stringify(session)) saveLS("state_session", session);
+  session.photo = fresh.photo || "";
   return session;
 }
 

@@ -481,10 +481,16 @@
       const db = JSON.parse(localStorage.getItem(STORE));
       if (db && db.slots) return normalizeDb(db);
     } catch (e) { /* пошкоджене сховище — почнемо заново */ }
-    // Шаблони з попередньої версії сайту лежали в одному спільному ключі — копіюємо їх користувачу
+    // Шаблони з попередньої версії сайту лежали в одному спільному ключі — переносимо (не копіюємо,
+    // щоб не займати місце у сховищі двічі) першому користувачу, який відкрив редактор
     try {
-      const shared = JSON.parse(localStorage.getItem(SHARED_STORE));
-      if (shared && shared.slots) return normalizeDb(JSON.parse(JSON.stringify(shared)));
+      const raw = localStorage.getItem(SHARED_STORE);
+      const shared = raw && JSON.parse(raw);
+      if (shared && shared.slots) {
+        localStorage.removeItem(SHARED_STORE);
+        try { localStorage.setItem(STORE, raw); } catch (e) { localStorage.setItem(SHARED_STORE, raw); }
+        return normalizeDb(shared);
+      }
     } catch (e) { /* немає спільних шаблонів */ }
     const db = { active: 1, slots: {} };
     try {
