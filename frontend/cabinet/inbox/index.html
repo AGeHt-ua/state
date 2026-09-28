@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Повідомлення — State</title>
+  <link rel="stylesheet" href="../../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar" id="top-office">Кабінет</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../../">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Погодження та повідомлення</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../../">Головна</a>
+      <a href="../../acts/">Законодавча база</a>
+      <a href="../../structure/">Органи влади</a>
+    </div>
+  </nav>
+  <main class="wrap">
+    <div class="cabinet-layout">
+      <aside class="side-nav">
+        <a href="../">Профіль</a>
+        <a href="../portal/">Портал послуг</a>
+        <a class="active" href="./">Повідомлення</a>
+        <a href="../appeals/" id="nav-appeals">Мої звернення</a>
+        <a href="../all/">Реєстр документів</a>
+        <a href="../docs/">Опубліковані документи</a>
+        <a href="../admin/" id="nav-admin">Адмін-панель</a>
+        <a class="create-doc-link" href="../create/">Створити документ</a>
+      </aside>
+      <section class="card">
+        <h2 class="page-title" style="margin-top:0">Повідомлення</h2>
+        <p class="lead" id="inbox-lead">Документи, які очікують підпису або погодження відповідним апаратом.</p>
+        <div id="inbox-list"></div>
+        <div id="appeal-inbox"></div>
+      </section>
+    </div>
+  </main>
+  <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
+  <script src="../../assets/accounts.js"></script>
+  <script src="../../assets/app.js"></script>
+  <script src="../../assets/store.js"></script>
+  <script>
+    const user = requireAuth();
+    if (!user) throw new Error("auth");
+    document.getElementById("top-office").textContent = isCitizen(user) ? "Кабінет громадянина" : officeTitle(user);
+    if (isCitizen(user)) {
+      document.querySelectorAll('a[href="../all/"], a[href="../docs/"], .create-doc-link').forEach((el) => { el.style.display = "none"; });
+      document.getElementById("inbox-lead").textContent = "Відповіді та оновлення за вашими зверненнями.";
+    }
+    if (!hasPermission(user, "managePeople") && !hasPermission(user, "manageStructure") && !hasPermission(user, "manageRoutes") && !hasPermission(user, "approveProfiles")) {
+      document.getElementById("nav-admin").style.display = "none";
+    }
+    const params = new URLSearchParams(location.search);
+    if (params.get("approve")) {
+      approveDoc(params.get("approve"), user);
+      location.href = "./";
+    }
+    if (params.get("return")) {
+      const doc = getDoc(params.get("return"));
+      if (doc) saveDoc(Object.assign({}, doc, {
+        status: "draft",
+        returnedAt: new Date().toISOString(),
+        returnedBy: user.login,
+        approverOffice: "",
+        approvalIndex: 0
+      }), {
+        user,
+        action: "Повернено на доопрацювання",
+        summary: "Документ повернено автору з маршруту погодження.",
+        versionLabel: "Проєкт"
+      });
+      location.href = "./";
+    }
+    const list = isCitizen(user) ? [] : reviewDocsFor(user);
+    document.getElementById("inbox-list").innerHTML = list.length ? list.map((d) => `
+      <article class="act-row">
+        <div class="act-num">${esc(d.number)}<br>${esc(formatDocWhen(d))}</div>
+        <div>
+          <h3><a href="${attr(docHref(d))}">${esc(d.title)}</a></h3>
+          <div class="act-meta">${esc(d.type)} · ${esc(officeName(d.office))} · автор: ${esc(d.author || "—")}</div>
+          <div class="route-line">${esc(d.approvalRouteName || "Маршрут погодження")} · ${esc(routeProgressLabel(d))}</div>
+        </div>
+        <span>
+          <span class="badge draft">На погодженні</span>
+          <a class="btn gold" href="?approve=${encodeURIComponent(d.id)}">Погодити</a>
+          <a class="btn ghost" href="?return=${encodeURIComponent(d.id)}">Повернути</a>
+        </span>
+      </article>
+    `).join("") : "<p class='lead'>Немає документів на погодження.</p>";
+    const appeals = isCitizen(user)
+      ? appealsForUser(user).filter((a) => a.status === "answered")
+      : pendingAppealsFor(user);
+    document.getElementById("appeal-inbox").innerHTML = appeals.length ? `
+      <h3>${isCitizen(user) ? "Відповіді на звернення" : "Нові звернення громадян"}</h3>
+      <div class="admin-list">
+        ${appeals.map((appeal) => `
+          <article class="admin-list-row is-attention">
+            <div class="admin-code">${esc(appeal.number)}</div>
+            <div class="admin-row-main">
+              <div class="admin-row-title">
+                <b>${esc(appeal.name)}</b>
+                <span class="badge ${appeal.status === "answered" ? "ok" : "draft"}">${esc(appealStatusLabel(appeal.status))}</span>
+              </div>
+              <div class="admin-row-meta"><span>${esc(officeName(appeal.office))}</span><span>${esc(appeal.contact || "без контакту")}</span></div>
+              <p>${esc(appeal.text)}</p>
+            </div>
+            <div class="admin-row-actions"><a class="btn gold" href="../appeals/">Відкрити</a></div>
+          </article>
+        `).join("")}
+      </div>` : "";
+  </script>
+</body>
+</html>

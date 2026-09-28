@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Адмін-панель — State</title>
+  <link rel="stylesheet" href="../../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">Кабінет Губернатора</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../../">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Структура, посади і доступи</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../../">Головна</a>
+      <a href="../../acts/">Законодавча база</a>
+      <a href="../../structure/">Органи влади</a>
+    </div>
+  </nav>
+  <main class="wrap">
+    <div class="cabinet-layout">
+      <aside class="side-nav">
+        <a href="../">Профіль</a>
+        <a href="../inbox/">Повідомлення</a>
+        <a href="../all/">Реєстр документів</a>
+        <a href="../docs/">Опубліковані документи</a>
+        <a class="active" href="./">Адмін-панель</a>
+        <a class="create-doc-link" href="../create/">Створити документ</a>
+      </aside>
+      <div class="admin-page">
+        <section class="admin-hero-panel">
+          <div>
+            <p class="eyebrow">Центр керування</p>
+            <h2 class="page-title">Адмін-панель</h2>
+            <p class="lead">Люди, апарати, посади, доступи і маршрути погодження зібрані в одному зрозумілому місці.</p>
+          </div>
+          <div class="admin-quick-actions">
+            <button class="btn gold" type="button" data-action="new-office">Новий апарат</button>
+            <button class="btn" type="button" data-action="new-position">Нова посада</button>
+            <button class="btn ghost" type="button" data-action="new-route">Новий маршрут</button>
+          </div>
+        </section>
+
+        <section class="admin-dashboard" id="admin-dashboard" aria-label="Стан системи"></section>
+
+        <section class="card admin-section" id="pending-section">
+          <div class="admin-section-head">
+            <div>
+              <p class="eyebrow">Потрібна дія</p>
+              <h3>Заявки на доступ</h3>
+              <p class="muted">Нових користувачів треба призначити на роль, апарат і посаду. До цього кабінет для них закритий.</p>
+            </div>
+          </div>
+          <div id="pending-box" class="admin-list"></div>
+        </section>
+
+        <section class="card admin-section" id="profile-requests-section">
+          <div class="admin-section-head">
+            <div>
+              <p class="eyebrow">Профілі</p>
+              <h3>Заявки на зміну профілю</h3>
+              <p class="muted">Ім’я, фото, контакт або Stat ID змінюються тільки після підтвердження відповідальною особою.</p>
+            </div>
+          </div>
+          <div id="profile-requests-box" class="admin-list"></div>
+        </section>
+
+        <section class="card admin-section" id="people-section">
+          <div class="admin-section-head">
+            <div>
+              <p class="eyebrow">Користувачі</p>
+              <h3>Посадовці та доступи</h3>
+              <p class="muted">Тут видно, хто є хто в системі. Посада визначає права: створення, погодження, публікація і редагування документів.</p>
+            </div>
+            <label class="admin-search">
+              <span>Пошук</span>
+              <input id="people-search" type="search" placeholder="Ім'я або логін">
+            </label>
+          </div>
+          <div id="people-box" class="admin-list"></div>
+        </section>
+
+        <section class="card admin-section" id="structure-section">
+          <div class="admin-section-head">
+            <div>
+              <p class="eyebrow">Організація</p>
+              <h3>Структура апаратів</h3>
+              <p class="muted">Апарат — це орган або підрозділ. Посади всередині апарату дають людям конкретні можливості в кабінеті.</p>
+            </div>
+            <button class="btn ghost" type="button" data-action="new-office">Додати апарат</button>
+          </div>
+          <div id="structure-box" class="admin-list"></div>
+        </section>
+
+        <section class="card admin-section" id="congress-section">
+          <div class="admin-section-head">
+            <div>
+              <p class="eyebrow">Конгрес</p>
+              <h3>Конгресмени та конгресні посади</h3>
+              <p class="muted">Конгресменом вважається користувач, якому призначена посада з ознакою “Член Конгресу” або правом голосування.</p>
+            </div>
+            <button class="btn ghost" type="button" data-action="new-congress-position">Нова конгресна посада</button>
+          </div>
+          <div id="congress-box" class="admin-list"></div>
+        </section>
+
+        <section class="card admin-section" id="routes-section">
+          <div class="admin-section-head">
+            <div>
+              <p class="eyebrow">Документообіг</p>
+              <h3>Маршрути погодження</h3>
+              <p class="muted">Маршрут вирішує, яка посада або який посадовець має погодити документ перед публікацією.</p>
+            </div>
+            <button class="btn gold" type="button" data-action="new-route">Створити маршрут</button>
+          </div>
+          <div id="route-box" class="admin-list"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <div class="modal-backdrop" id="office-modal" hidden>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="office-modal-title">
+      <button class="modal-close" type="button" data-close-modal aria-label="Закрити">×</button>
+      <h3 id="office-modal-title">Новий апарат</h3>
+      <p class="muted">Створіть орган або підрозділ: апарат губернатора, департамент, прокуратуру, суд чи іншу установу.</p>
+      <form id="office-form">
+        <label>Назва апарату
+          <input name="name" required placeholder="Фінансовий департамент">
+          <span class="field-help">Цю назву бачитимуть посадовці в кабінеті.</span>
+        </label>
+        <label>Технічний ID
+          <input name="id" placeholder="finance">
+          <span class="field-help">Заповнюється автоматично. Використовуйте англійські літери, цифри або дефіс.</span>
+        </label>
+        <label>Базова роль
+          <select name="role"></select>
+          <span class="field-help">Потрібна для системної групи доступу.</span>
+        </label>
+        <label class="inline-check"><input type="checkbox" name="canApprove"> апарат може погоджувати документи</label>
+        <div class="modal-actions">
+          <button class="btn gold" type="submit">Зберегти апарат</button>
+          <button class="btn ghost" type="button" data-close-modal>Скасувати</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="position-modal" hidden>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="position-modal-title">
+      <button class="modal-close" type="button" data-close-modal aria-label="Закрити">×</button>
+      <h3 id="position-modal-title">Нова посада</h3>
+      <p class="muted">Посада — це набір прав. Призначте її користувачу, і він отримає відповідні можливості в кабінеті.</p>
+      <form id="position-form">
+        <label>Назва посади
+          <input name="title" required placeholder="Керівник апарату">
+          <span class="field-help">Так посада відображатиметься в списках і профілях.</span>
+        </label>
+        <label>Технічний ID
+          <input name="id" placeholder="chief-of-staff">
+          <span class="field-help">Заповнюється автоматично з назви.</span>
+        </label>
+        <label>Апарат
+          <select name="office"></select>
+          <span class="field-help">До якого апарату належить посада.</span>
+        </label>
+        <label class="inline-check"><input type="checkbox" name="approvalRequired"> документи цієї посади потребують погодження</label>
+        <label>Хто погоджує
+          <select name="approverOffice"></select>
+          <span class="field-help">Сюди прийде документ на підпис, якщо погодження увімкнено.</span>
+        </label>
+        <label class="inline-check"><input type="checkbox" name="congressMember"> ця посада є членом Конгресу</label>
+        <span class="field-help">Користувач із такою посадою отримає статус конгресмена і право участі в голосуваннях Конгресу.</span>
+        <div class="hint">Права доступу: для звичайного посадовця зазвичай достатньо створення документів і редагування власних документів. Повне редагування та керування структурою залишайте адміністраторам.</div>
+        <div id="perm-box" class="pill-list permission-grid"></div>
+        <div class="modal-actions">
+          <button class="btn gold" type="submit">Зберегти посаду</button>
+          <button class="btn ghost" type="button" data-close-modal>Скасувати</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="user-modal" hidden>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
+      <button class="modal-close" type="button" data-close-modal aria-label="Закрити">×</button>
+      <h3 id="user-modal-title">Редагувати користувача</h3>
+      <p class="muted" id="user-modal-subtitle"></p>
+      <form id="user-form">
+        <input type="hidden" name="login">
+        <label>Роль
+          <select name="role"></select>
+          <span class="field-help">“Очікує призначення” блокує доступ до кабінету.</span>
+        </label>
+        <label>Апарат
+          <select name="office"></select>
+          <span class="field-help">Визначає, до якого органу належить людина.</span>
+        </label>
+        <label>Посада доступу
+          <select name="positionId"></select>
+          <span class="field-help">Саме ця посада дає права в системі.</span>
+        </label>
+        <label>Публічна посада
+          <input name="post" placeholder="Міністр фінансів">
+          <span class="field-help">Текстова назва для документів і профілю.</span>
+        </label>
+        <div class="modal-actions">
+          <button class="btn gold" type="submit">Зберегти доступ</button>
+          <button class="btn ghost" type="button" data-close-modal>Скасувати</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="route-modal" hidden>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="route-modal-title">
+      <button class="modal-close" type="button" data-close-modal aria-label="Закрити">×</button>
+      <h3 id="route-modal-title">Маршрут погодження</h3>
+      <p class="muted">Маршрут можна зробити загальним або прив'язати до конкретного апарату. Кроки обираються тільки з посад або конкретних посадовців, без ручного введення технічних кодів.</p>
+      <form id="route-form">
+        <label>Технічний ID
+          <input name="id" required placeholder="standard">
+          <span class="field-help">Коротка системна назва маршруту.</span>
+        </label>
+        <label>Назва маршруту
+          <input name="name" required placeholder="Автор → керівник апарату → губернатор → публікація">
+          <span class="field-help">Людська назва, яку легко зрозуміти адміну.</span>
+        </label>
+        <label>Для якого апарату
+          <select name="ownerOffice"></select>
+          <span class="field-help">Загальний маршрут бачать усі. Маршрут апарату бачать автори цього апарату.</span>
+        </label>
+        <input type="hidden" name="steps" required>
+        <div class="route-builder">
+          <div class="section-head">
+            <div>
+              <b>Кроки погодження</b>
+              <p class="muted">Наприклад: керівник апарату → Конгрес → Губернатор. Апарат як отримувач не використовується.</p>
+            </div>
+            <button class="btn ghost" type="button" id="btn-add-route-step">Додати крок</button>
+          </div>
+          <div id="route-step-list" class="route-step-list"></div>
+        </div>
+        <label class="inline-check"><input type="checkbox" name="active" checked> використовувати для нових документів</label>
+        <div class="modal-actions">
+          <button class="btn gold" type="submit">Зберегти маршрут</button>
+          <button class="btn ghost" type="button" data-close-modal>Скасувати</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
+  <script src="../../assets/accounts.js"></script>
+  <script src="../../assets/app.js"></script>
+  <script src="../../assets/store.js"></script>
+  <script>
+    const me = requireAuth();
+    if (!me) throw new Error("auth");
+    const canManagePeople = hasPermission(me, "managePeople");
+    const canManageStructure = hasPermission(me, "manageStructure");
+    const canManageRoutes = hasPermission(me, "manageRoutes") || canManageStructure;
+    const canApproveProfiles = hasPermission(me, "approveProfiles") || canManagePeople;
+    if (!canManagePeople && !canManageStructure && !canManageRoutes && !canApproveProfiles) location.href = "../../denied/";
+
+    const officeForm = document.getElementById("office-form");
+    const positionForm = document.getElementById("position-form");
+    const userForm = document.getElementById("user-form");
+    const routeForm = document.getElementById("route-form");
+    const peopleSearch = document.getElementById("people-search");
+    let officeIdTouched = false;
+    let positionIdTouched = false;
+    if (!canManageStructure) {
+      document.querySelectorAll('[data-action="new-office"], [data-action="new-position"]').forEach((el) => { el.style.display = "none"; });
+      document.getElementById("structure-section").style.display = "none";
+      document.getElementById("congress-section").style.display = "none";
+    }
+    if (!canManagePeople) {
+      document.getElementById("pending-section").style.display = "none";
+      document.getElementById("people-section").style.display = "none";
+    }
+    if (!canApproveProfiles) {
+      document.getElementById("profile-requests-section").style.display = "none";
+    }
+    if (!canManageRoutes) {
+      document.querySelectorAll('[data-action="new-route"]').forEach((el) => { el.style.display = "none"; });
+      document.getElementById("routes-section").style.display = "none";
+    }
+
+    function slugify(value) {
+      const map = { а:"a", б:"b", в:"v", г:"h", ґ:"g", д:"d", е:"e", є:"ye", ж:"zh", з:"z", и:"y", і:"i", ї:"yi", й:"y", к:"k", л:"l", м:"m", н:"n", о:"o", п:"p", р:"r", с:"s", т:"t", у:"u", ф:"f", х:"kh", ц:"ts", ч:"ch", ш:"sh", щ:"shch", ю:"yu", я:"ya", ь:"" };
+      return String(value || "").toLowerCase().split("").map((ch) => map[ch] || ch).join("")
+        .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 36);
+    }
+    function userRole(user) {
+      return (user.roles && user.roles[0]) || "pending";
+    }
+    function initials(user) {
+      return String(user.name || user.login || "?").split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+    }
+    function positionTitle(id) {
+      const position = positionById(id);
+      return position ? `${position.title} · ${officeName(position.office)}${isCongressPosition(position) ? " · Конгресмен" : ""}` : "Посаду доступу не вибрано";
+    }
+    function statusBadge(user) {
+      const role = userRole(user);
+      if (role === "pending") return `<span class="badge warn">Очікує призначення</span>`;
+      if (!user.positionId) return `<span class="badge dead">Без посади</span>`;
+      return `<span class="badge ok">Доступ активний</span>${isCongressMember(user) ? `<span class="badge draft">Конгресмен</span>` : ""}`;
+    }
+    function openModal(id) {
+      const modal = document.getElementById(id);
+      if (!modal) return;
+      modal.hidden = false;
+      const first = modal.querySelector("input:not([type='hidden']), select, button");
+      if (first) first.focus();
+    }
+    function closeModal(target) {
+      const modal = target && target.closest ? target.closest(".modal-backdrop") : target;
+      if (modal) modal.hidden = true;
+    }
+    function fillSelect(select, items, selectedValue) {
+      select.innerHTML = items.map((item) =>
+        `<option value="${attr(item.value)}" ${item.value === selectedValue ? "selected" : ""}>${esc(item.label)}</option>`
+      ).join("");
+    }
+    function roleItems() {
+      return Object.keys(ROLE_LABELS).map((value) => ({ value, label: ROLE_LABELS[value] }));
+    }
+    function officeItems() {
+      return allOffices().map((office) => ({ value: office.id, label: office.name }));
+    }
+    function positionItems() {
+      return [{ value: "", label: "Без посади" }].concat(allPositions().map((position) => ({
+        value: position.id,
+        label: `${position.title} · ${officeName(position.office)}`
+      })));
+    }
+    function fillOfficeSelects() {
+      fillSelect(officeForm.role, Object.keys(ROLE_LABELS).filter((role) => role !== "pending").map((value) => ({ value, label: ROLE_LABELS[value] })), officeForm.role.value || "official");
+      fillSelect(positionForm.office, officeItems(), positionForm.office.value || "directors");
+      fillSelect(positionForm.approverOffice, approvalPositionItems(), positionForm.approverOffice.value || "position:governor-chief");
+      const routeOwners = canManageStructure ? [{ value: "all", label: "Загальний для всіх апаратів" }].concat(officeItems()) : [{ value: userOffice(me), label: officeName(userOffice(me)) }];
+      fillSelect(routeForm.ownerOffice, routeOwners, routeForm.ownerOffice.value || userOffice(me));
+      fillSelect(userForm.role, roleItems(), userForm.role.value || "pending");
+      fillSelect(userForm.office, officeItems(), userForm.office.value || "directors");
+      fillSelect(userForm.positionId, positionItems(), userForm.positionId.value || "");
+    }
+    function routeStepItems() {
+      return [
+        { value: "congress", label: "Конгрес" }
+      ].concat(approvalPositionItems())
+        .concat(allUsers().filter((user) => hasPermission(user, "approveDocs")).map((user) => ({
+          value: "user:" + user.login,
+          label: (user.name || user.login) + " · " + (user.post || "посадовець") + " · " + officeName(user.office || userOffice(user))
+        })));
+    }
+    function approvalPositionItems() {
+      return allPositions().filter((position) => (position.permissions || []).includes("approveDocs")).map((position) => ({
+        value: "position:" + position.id,
+        label: position.title + " · " + officeName(position.office)
+      }));
+    }
+    function syncRouteSteps() {
+      routeForm.steps.value = Array.from(document.querySelectorAll("#route-step-list select")).map((select) => select.value).filter(Boolean).join(",");
+    }
+    function addRouteStep(value = "position:governor-chief") {
+      const row = document.createElement("div");
+      row.className = "route-step-row";
+      row.innerHTML = `
+        <select>${routeStepItems().map((item) => `<option value="${attr(item.value)}" ${item.value === value ? "selected" : ""}>${esc(item.label)}</option>`).join("")}</select>
+        <button class="btn ghost" type="button" data-remove-route-step>Прибрати</button>
+      `;
+      document.getElementById("route-step-list").appendChild(row);
+      row.querySelector("select").addEventListener("change", syncRouteSteps);
+      row.querySelector("[data-remove-route-step]").addEventListener("click", () => {
+        row.remove();
+        if (!document.querySelector("#route-step-list select")) addRouteStep();
+        syncRouteSteps();
+      });
+      syncRouteSteps();
+    }
+    function drawPerms(selected = []) {
+      document.getElementById("perm-box").innerHTML = Object.keys(PERMISSION_LABELS).map((perm) =>
+        `<label class="pill" title="${attr(permissionHelp(perm))}"><input type="checkbox" name="perm" value="${attr(perm)}" ${selected.includes(perm) ? "checked" : ""}> ${esc(PERMISSION_LABELS[perm])}</label>`
+      ).join("");
+    }
+    function permissionHelp(code) {
+      return {
+        createDocs: "Може відкривати редактор і створювати документи.",
+        publishDocs: "Може публікувати без маршруту погодження.",
+        approveDocs: "Бачить документи на підпис у повідомленнях.",
+        voteCongress: "Може голосувати за Конституцію, кодекси, закони та інші акти Конгресу.",
+        editOwnDocs: "Може редагувати документи, які створив сам.",
+        editAllDocs: "Може редагувати всі документи системи.",
+        managePeople: "Може призначати людей на посади.",
+        manageStructure: "Може створювати апарати, посади й маршрути.",
+        manageRoutes: "Може створювати маршрути погодження для свого апарату."
+      }[code] || "";
+    }
+    function drawDashboard() {
+      const users = allUsers();
+      const pending = users.filter((user) => userRole(user) === "pending").length;
+      const activeRoute = activeApprovalRoute(userOffice(me));
+      document.getElementById("admin-dashboard").innerHTML = [
+        ["Користувачі", users.length, "усі зареєстровані акаунти"],
+        ["Очікують", pending, pending ? "треба призначити доступ" : "нових заявок немає"],
+        ["Конгрес", congressMembers().length, "посадовці з правом голосу"],
+        ["Апарати", allOffices().length, "органи та підрозділи"],
+        ["Посади", allPositions().length, "набори прав доступу"],
+        ["Маршрут", activeRoute ? activeRoute.name : "Не вибрано", "активний порядок погодження"]
+      ].map(([label, value, text]) => `<article class="admin-stat"><span>${esc(label)}</span><b>${esc(value)}</b><small>${esc(text)}</small></article>`).join("");
+    }
+    function userRow(user, options = {}) {
+      return `<article class="admin-list-row ${options.pending ? "is-attention" : ""}">
+        <div class="user-avatar">${esc(initials(user))}</div>
+        <div class="admin-row-main">
+          <div class="admin-row-title">
+            <b>${esc(user.name || user.login)}</b>
+            ${statusBadge(user)}
+          </div>
+          <div class="admin-row-meta">
+            <span>${esc(user.login)}</span>
+            <span>${esc(roleLabel(userRole(user)))}</span>
+            <span>${esc(officeName(user.office || userOffice(user)))}</span>
+            <span>${esc(positionTitle(user.positionId))}</span>
+          </div>
+        </div>
+        <div class="admin-row-actions">
+          <button class="btn ${options.pending ? "gold" : "ghost"}" type="button" data-edit-user="${attr(user.login)}">${options.pending ? "Призначити" : "Редагувати"}</button>
+        </div>
+      </article>`;
+    }
+    function drawPending() {
+      const pending = allUsers().filter((user) => userRole(user) === "pending");
+      document.getElementById("pending-box").innerHTML = pending.length
+        ? pending.map((user) => userRow(user, { pending: true })).join("")
+        : `<div class="admin-empty">Заявок немає. Нові реєстрації з'являться тут автоматично.</div>`;
+    }
+    function drawProfileRequests() {
+      const requests = pendingProfileRequests();
+      document.getElementById("profile-requests-box").innerHTML = requests.length ? requests.map((request) => `
+        <article class="admin-list-row is-attention">
+          <div class="user-avatar">${esc(String(request.name || request.login || "?").slice(0, 2).toUpperCase())}</div>
+          <div class="admin-row-main">
+            <div class="admin-row-title">
+              <b>${esc(request.name || request.login)}</b>
+              <span class="badge warn">Очікує підтвердження</span>
+            </div>
+            <div class="admin-row-meta">
+              <span>${esc(request.login)}</span>
+              <span>Stat ID: ${esc(request.statId || "—")}</span>
+              <span>${esc(request.contact || "без контакту")}</span>
+              <span>${esc(request.post || "без посади")}</span>
+            </div>
+          </div>
+          <div class="admin-row-actions">
+            <button class="btn gold" type="button" data-profile-approve="${attr(request.id)}">Підтвердити</button>
+            <button class="btn ghost danger" type="button" data-profile-reject="${attr(request.id)}">Відхилити</button>
+          </div>
+        </article>
+      `).join("") : `<div class="admin-empty">Заявок на зміну профілю немає.</div>`;
+    }
+    function drawPeople() {
+      const query = peopleSearch.value.trim().toLowerCase();
+      const users = allUsers().filter((user) => {
+        const text = `${user.name || ""} ${user.login || ""} ${user.post || ""}`.toLowerCase();
+        return !query || text.includes(query);
+      });
+      document.getElementById("people-box").innerHTML = users.length
+        ? users.map((user) => userRow(user)).join("")
+        : `<div class="admin-empty">Нічого не знайдено. Спробуйте коротший запит.</div>`;
+    }
+    function drawStructure() {
+      document.getElementById("structure-box").innerHTML = allOffices().map((office) => {
+        const positions = allPositions().filter((position) => position.office === office.id);
+        return `<article class="admin-list-row structure-row">
+          <div class="admin-code">${esc(office.id)}</div>
+          <div class="admin-row-main">
+            <div class="admin-row-title">
+              <b>${esc(office.name)}</b>
+              <span class="badge ${office.canApprove ? "ok" : "dead"}">${office.canApprove ? "Погоджує" : "Без погодження"}</span>
+            </div>
+            <div class="admin-row-meta"><span>${esc(roleLabel(office.role))}</span><span>${positions.length} посад</span></div>
+            <div class="pill-list">${positions.map((position) => `<span class="pill">${esc(position.title)}${isCongressPosition(position) ? " · Конгрес" : ""}</span>`).join("") || "<span class='muted'>Посад ще немає</span>"}</div>
+          </div>
+          <div class="admin-row-actions">
+            <button class="btn ghost" type="button" data-position-office="${attr(office.id)}">Нова посада</button>
+          </div>
+        </article>`;
+      }).join("");
+    }
+    function drawCongress() {
+      const positions = congressPositions();
+      const members = congressMembers();
+      document.getElementById("congress-box").innerHTML = `
+        <article class="admin-list-row">
+          <div class="admin-code">POST</div>
+          <div class="admin-row-main">
+            <div class="admin-row-title"><b>Конгресні посади</b><span class="badge draft">${positions.length}</span></div>
+            <div class="pill-list">${positions.map((position) => `<span class="pill">${esc(position.title)} · ${esc(officeName(position.office))}</span>`).join("") || "<span class='muted'>Конгресні посади ще не створені</span>"}</div>
+          </div>
+        </article>
+        <article class="admin-list-row">
+          <div class="admin-code">VOTE</div>
+          <div class="admin-row-main">
+            <div class="admin-row-title"><b>Поточні конгресмени</b><span class="badge ok">${members.length}</span></div>
+            <div class="pill-list">${members.map((user) => `<span class="pill">${esc(user.name || user.login)} · ${esc(positionById(user.positionId)?.title || "посада")}</span>`).join("") || "<span class='muted'>Ще нікому не призначено конгресну посаду</span>"}</div>
+          </div>
+        </article>
+      `;
+    }
+    function drawRoutes() {
+      const visibleRoutes = canManageStructure ? allApprovalRoutes() : routesForOffice(userOffice(me)).filter((route) => route.ownerOffice !== "all");
+      document.getElementById("route-box").innerHTML = (visibleRoutes.length ? visibleRoutes : routesForOffice(userOffice(me))).map((route) => {
+        const steps = (route.steps || []).map((step) => routeStepName(step, { office: route.ownerOffice === "all" ? "" : route.ownerOffice })).join(" → ");
+        return `<article class="admin-list-row">
+          <div class="admin-code">${esc(route.id)}</div>
+          <div class="admin-row-main">
+            <div class="admin-row-title">
+              <b>${esc(route.name)}</b>
+              <span class="badge ${route.active ? "ok" : "dead"}">${route.active ? "Активний" : "Неактивний"}</span>
+            </div>
+            <div class="admin-row-meta"><span>${esc(route.ownerOffice && route.ownerOffice !== "all" ? officeName(route.ownerOffice) : "Загальний маршрут")}</span></div>
+            <div class="route-steps">${esc(steps || "Кроки не задані")}</div>
+          </div>
+          <div class="admin-row-actions">
+            <button class="btn ghost" type="button" data-route="${attr(route.id)}">Редагувати</button>
+          </div>
+        </article>`;
+      }).join("");
+    }
+    function refreshAll() {
+      fillOfficeSelects();
+      drawDashboard();
+      drawPending();
+      if (canApproveProfiles) drawProfileRequests();
+      drawPeople();
+      drawStructure();
+      if (canManageStructure) drawCongress();
+      drawRoutes();
+    }
+    function openOfficeEditor() {
+      officeForm.reset();
+      officeIdTouched = false;
+      fillOfficeSelects();
+      openModal("office-modal");
+    }
+    function openPositionEditor(officeId = "", options = {}) {
+      positionForm.reset();
+      positionIdTouched = false;
+      fillOfficeSelects();
+      drawPerms();
+      if (officeId) positionForm.office.value = officeId;
+      if (allOffices().some((office) => office.id === "governor")) positionForm.approverOffice.value = "position:governor-chief";
+      if (options.congress) {
+        positionForm.congressMember.checked = true;
+        positionForm.title.value = "Конгресмен";
+        positionForm.id.value = "congressman";
+        positionForm.office.value = allOffices().some((office) => office.id === "congress") ? "congress" : (officeId || "directors");
+        ["voteCongress", "approveDocs", "createDocs", "editOwnDocs"].forEach((perm) => {
+          const input = positionForm.querySelector(`input[name='perm'][value='${perm}']`);
+          if (input) input.checked = true;
+        });
+      }
+      openModal("position-modal");
+    }
+    function openUserEditor(login) {
+      const user = allUsers().find((item) => item.login === login);
+      if (!user) return;
+      userForm.login.value = user.login;
+      userForm.post.value = user.post || "";
+      document.getElementById("user-modal-title").textContent = user.name || user.login;
+      document.getElementById("user-modal-subtitle").textContent = `${user.login} · ${user.email || "без email"}`;
+      fillOfficeSelects();
+      userForm.role.value = userRole(user);
+      userForm.office.value = user.office || userOffice(user);
+      userForm.positionId.value = user.positionId || "";
+      openModal("user-modal");
+    }
+    function openRouteEditor(id = "") {
+      const route = id ? allApprovalRoutes().find((item) => item.id === id) : null;
+      routeForm.reset();
+      fillOfficeSelects();
+      routeForm.id.value = route ? route.id : "standard";
+      routeForm.name.value = route ? route.name : "";
+      routeForm.ownerOffice.value = route ? (route.ownerOffice || (canManageStructure ? "all" : userOffice(me))) : userOffice(me);
+      document.getElementById("route-step-list").innerHTML = "";
+      (route ? (route.steps || []) : ["position:governor-chief"]).forEach((step) => addRouteStep(step));
+      routeForm.active.checked = route ? !!route.active : true;
+      openModal("route-modal");
+    }
+
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]");
+      if (action) {
+        if (action.dataset.action === "new-office") openOfficeEditor();
+        if (action.dataset.action === "new-position") openPositionEditor();
+        if (action.dataset.action === "new-congress-position") openPositionEditor("congress", { congress: true });
+        if (action.dataset.action === "new-route") openRouteEditor();
+      }
+      const close = event.target.closest("[data-close-modal]");
+      if (close) closeModal(close);
+      const editUser = event.target.closest("[data-edit-user]");
+      if (editUser) openUserEditor(editUser.dataset.editUser);
+      const positionOffice = event.target.closest("[data-position-office]");
+      if (positionOffice) openPositionEditor(positionOffice.dataset.positionOffice);
+      const routeButton = event.target.closest("[data-route]");
+      if (routeButton) openRouteEditor(routeButton.dataset.route);
+      const approveProfile = event.target.closest("[data-profile-approve]");
+      if (approveProfile) {
+        decideProfileRequest(approveProfile.dataset.profileApprove, me, true);
+        refreshAll();
+      }
+      const rejectProfile = event.target.closest("[data-profile-reject]");
+      if (rejectProfile) {
+        decideProfileRequest(rejectProfile.dataset.profileReject, me, false);
+        refreshAll();
+      }
+    });
+    document.getElementById("btn-add-route-step").addEventListener("click", () => addRouteStep("position:governor-chief"));
+    document.querySelectorAll(".modal-backdrop").forEach((modal) => {
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) closeModal(modal);
+      });
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") document.querySelectorAll(".modal-backdrop").forEach(closeModal);
+    });
+    officeForm.id.addEventListener("input", () => { officeIdTouched = true; });
+    positionForm.id.addEventListener("input", () => { positionIdTouched = true; });
+    officeForm.name.addEventListener("input", () => {
+      if (!officeIdTouched) officeForm.id.value = slugify(officeForm.name.value);
+    });
+    positionForm.title.addEventListener("input", () => {
+      if (!positionIdTouched) positionForm.id.value = slugify(positionForm.title.value);
+    });
+    positionForm.office.addEventListener("change", () => {
+      const selected = allOffices().find((office) => office.id === positionForm.office.value);
+      const approve = positionForm.querySelector("input[name='perm'][value='approveDocs']");
+      if (selected && selected.canApprove && approve) approve.checked = true;
+    });
+    positionForm.congressMember.addEventListener("change", () => {
+      const vote = positionForm.querySelector("input[name='perm'][value='voteCongress']");
+      const approve = positionForm.querySelector("input[name='perm'][value='approveDocs']");
+      if (positionForm.congressMember.checked) {
+        if (vote) vote.checked = true;
+        if (approve) approve.checked = true;
+        if (!positionForm.title.value.trim()) positionForm.title.value = "Конгресмен";
+        if (!positionIdTouched) positionForm.id.value = slugify(positionForm.title.value);
+        if (allOffices().some((office) => office.id === "congress")) positionForm.office.value = "congress";
+      }
+    });
+    peopleSearch.addEventListener("input", drawPeople);
+    officeForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = new FormData(officeForm);
+      saveOffice({ id: data.get("id"), name: data.get("name"), role: data.get("role"), canApprove: data.get("canApprove") === "on" });
+      closeModal(document.getElementById("office-modal"));
+      refreshAll();
+    });
+    positionForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = new FormData(positionForm);
+      savePosition({
+        id: data.get("id"),
+        title: data.get("title"),
+        office: data.get("office"),
+        approvalRequired: data.get("approvalRequired") === "on",
+        approverOffice: data.get("approverOffice"),
+        congressMember: data.get("congressMember") === "on",
+        permissions: Array.from(positionForm.querySelectorAll("input[name='perm']:checked")).map((input) => input.value)
+      });
+      closeModal(document.getElementById("position-modal"));
+      refreshAll();
+    });
+    userForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = new FormData(userForm);
+      const login = data.get("login");
+      const user = allUsers().find((item) => item.login === login);
+      if (!user) return;
+      const patch = { roles: [data.get("role")], office: data.get("office"), positionId: data.get("positionId"), post: data.get("post") };
+      saveUser(Object.assign({}, user, patch));
+      if (me.login === login) saveLS("state_session", Object.assign(currentUser(), patch));
+      closeModal(document.getElementById("user-modal"));
+      refreshAll();
+    });
+    routeForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = new FormData(routeForm);
+      saveApprovalRoute({
+        id: data.get("id"),
+        name: data.get("name"),
+        ownerOffice: data.get("ownerOffice"),
+        steps: String(data.get("steps") || "").split(","),
+        active: data.get("active") === "on"
+      });
+      closeModal(document.getElementById("route-modal"));
+      refreshAll();
+    });
+
+    drawPerms();
+    refreshAll();
+  </script>
+</body>
+</html>

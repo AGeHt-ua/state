@@ -6,9 +6,13 @@
 
   const user = typeof requireAuth === 'function' ? requireAuth() : null;
   if (!user) return;
+  // Громадяни документів не створюють — у них свій кабінет звернень
+  if (typeof isCitizen === 'function' && isCitizen(user)) { location.href = '../appeals/'; return; }
 
   const $ = (id) => document.getElementById(id);
-  const STORE = 'gov_chancery_v2';
+  // Шаблони й чернетки кожного користувача — окремо
+  const SHARED_STORE = 'gov_chancery_v2';
+  const STORE = SHARED_STORE + ':' + user.login;
   const OLD_STORE = 'gov_chancery_v1';
   const UI_STORE = 'gov_chancery_ui';
   const MM = 96 / 25.4;
@@ -17,17 +21,19 @@
   const BG_PRESETS = {
     court: [{ name: 'Судова рамка', src: COURT_BG }],
     governor: [],
+    congress: [],
     directors: [],
     prosecutor: []
   };
   // Встав свої webhook тільки сюди. На сторінці вони не показуються.
   const DISCORD_CHANNELS = [
-    { id: 'gov', name: 'Уряд', webhook: '', offices: ['governor', 'directors'] },
+    { id: 'gov', name: 'Уряд', webhook: '', offices: ['governor', 'congress', 'directors'] },
     { id: 'prosecutor_ch', name: 'Прокуратура', webhook: '', offices: ['prosecutor'] },
     { id: 'court_templates', name: '📄・шаблони-доків', webhook: '', offices: ['court'] }
   ];
   const OFFICE_DOCS = {
-    governor: ['nakaz', 'rozp', 'ukaz', 'post', 'dor', 'order'],
+    governor: ['nakaz', 'rozp', 'ukaz', 'post', 'dor', 'order', 'zakon'],
+    congress: ['zakon', 'post', 'rozp'],
     directors: ['nakaz', 'rozp', 'dor'],
     prosecutor: ['nakaz', 'order'],
     court: ['scorder', 'summons', 'ruling', 'arrest']
@@ -238,6 +244,23 @@
         { label: 'Заборона розпоряджатись', text: 'Заборонити {ПІБ} відчужувати, переміщувати або іншим чином розпоряджатись майном, зазначеним у цьому ордері, до окремого рішення суду.' },
         { label: 'Межі виконання', text: 'Дії вчиняти строго в межах цього ордера, у м. {МІСТО}, штат San-Andreas, без перевищення повноважень.' }
       ]
+    },
+    zakon: {
+      label: 'Закон',
+      docType: 'Закон',
+      title: 'Закон штату San-Andreas №{НОМЕР}',
+      subject: '“Про внесення змін до законодавства штату”',
+      preamble: 'Цей Закон визначає правові засади, зазначені нижче, і є обов’язковим для виконання на всій території штату San-Andreas.',
+      effective: 'Цей Закон набирає чинності з дня його офіційного опублікування.',
+      officer: 'Губернатор штату',
+      copies: '',
+      tpls: [
+        { label: 'Предмет', text: 'Стаття 1. Предмет регулювання. Цей Закон регулює відносини, пов’язані з діяльністю {ПОСАДА} у м. {МІСТО}.' },
+        { label: 'Терміни', text: 'Стаття 2. Визначення термінів. У цьому Законі терміни вживаються в такому значенні: …' },
+        { label: 'Повноваження', text: 'Стаття 3. Повноваження. Органи виконавчої влади штату в межах компетенції забезпечують виконання цього Закону.' },
+        { label: 'Відповідальність', text: 'Стаття 4. Відповідальність. Порушення цього Закону тягне відповідальність, передбачену законодавством штату San-Andreas.' },
+        { label: 'Прикінцеві', text: 'Стаття 5. Прикінцеві положення. Кабінету Губернатора привести власні акти у відповідність із цим Законом.' }
+      ]
     }
   };
 
@@ -377,7 +400,8 @@
       layout: Object.assign(d.layout, s.layout || {}),
       seal: Object.assign(d.seal, s.seal || {})
     });
-    if (officeTypes.indexOf(st.type) === -1) st.type = officeTypes[0];
+    // Документ іншого кабінету (відкритий на редагування) зберігає свій тип
+    if (officeTypes.indexOf(st.type) === -1 && !(st.srcDoc && TYPES[st.type])) st.type = officeTypes[0];
     st.office = office;
     return st;
   }
@@ -457,6 +481,11 @@
       const db = JSON.parse(localStorage.getItem(STORE));
       if (db && db.slots) return normalizeDb(db);
     } catch (e) { /* пошкоджене сховище — почнемо заново */ }
+    // Шаблони з попередньої версії сайту лежали в одному спільному ключі — копіюємо їх користувачу
+    try {
+      const shared = JSON.parse(localStorage.getItem(SHARED_STORE));
+      if (shared && shared.slots) return normalizeDb(JSON.parse(JSON.stringify(shared)));
+    } catch (e) { /* немає спільних шаблонів */ }
     const db = { active: 1, slots: {} };
     try {
       const old = JSON.parse(localStorage.getItem(OLD_STORE));
@@ -1457,6 +1486,8 @@
     state = saved ? mergeState(saved) : defaultState();
     window.state = state;
     if (!state.seal.src && user.photo) state.seal.src = user.photo;
+    curDocId = state.srcDoc || null;
+    updateDocStatus(curDocId && typeof getDoc === 'function' ? getDoc(curDocId) : null);
     editor.innerHTML = state.html != null ? state.html : buildTemplate(state.type);
     if (state.html == null) state.pristine = true;
     ensureNotEmpty();
@@ -1487,19 +1518,21 @@
     return true;
   }
 
-  /* ---------- Панель полів ---------- */
+  /* ---------- Поля документа: групи у вкладці «Документ» ---------- */
   function renderPane() {
     $('officeBadge').textContent = typeof officeTitle === 'function' ? officeTitle(user) : '';
     const tsel = $('fldType');
-    tsel.innerHTML = officeTypes.map((k) => '<option value="' + k + '">' + esc(TYPES[k].label) + '</option>').join('');
+    tsel.innerHTML = officeTypes.concat(officeTypes.indexOf(state.type) === -1 && TYPES[state.type] ? [state.type] : []).map((k) => '<option value="' + k + '">' + esc(TYPES[k].label) + '</option>').join('');
     tsel.value = state.type;
 
-    const box = $('paneFields');
+    const box = $('docFields');
     box.innerHTML = '';
     FIELD_GROUPS.forEach((g) => {
-      const sec = document.createElement('section');
+      const sec = document.createElement('div');
+      sec.className = 'rb-group';
       sec.dataset.group = g.id;
-      sec.innerHTML = '<h4 class="pane-h" data-gtitle="' + g.id + '">' + esc(g.title) + '</h4>';
+      const grid = document.createElement('div');
+      grid.className = 'rb-fgrid';
       g.keys.forEach((k) => {
         const row = document.createElement('div');
         row.className = 'pf';
@@ -1509,15 +1542,17 @@
           input = '<select id="f-' + k + '" data-field="' + k + '">' +
             Object.keys(ID_KINDS).map((v) => '<option value="' + v + '">' + esc(ID_KINDS[v][0].toUpperCase() + ID_KINDS[v].slice(1)) + '</option>').join('') + '</select>';
         } else {
-          input = '<input id="f-' + k + '" data-field="' + k + '" autocomplete="off">';
+          input = '<input id="f-' + k + '" data-field="' + k + '" autocomplete="off" placeholder="' + esc(FIELDS[k].label) + '">';
         }
-        if (k === 'date') input = '<div class="pf-in">' + input + '<button type="button" data-act="today">Сьогодні</button></div>';
-        row.innerHTML = '<div class="pf-top"><label for="f-' + k + '">' + esc(FIELDS[k].label) + '</label>' +
-          '<button type="button" class="pf-ins" data-ins="' + k + '" title="Вставити поле «' + esc(FIELDS[k].label) + '» у позицію курсора">⤵</button></div>' + input;
-        sec.appendChild(row);
+        if (k === 'date') input += '<button type="button" class="pf-today" data-act="today" title="Поставити сьогоднішню дату">Сьогодні</button>';
+        row.innerHTML = '<label for="f-' + k + '">' + esc(FIELDS[k].label) + '</label>' + input +
+          '<button type="button" class="pf-ins" data-ins="' + k + '" title="Вставити поле «' + esc(FIELDS[k].label) + '» у позицію курсора">⤵</button>';
+        grid.appendChild(row);
         const inp = row.querySelector('[data-field]');
         inp.value = state.fields[k] == null ? '' : state.fields[k];
       });
+      sec.appendChild(grid);
+      sec.insertAdjacentHTML('beforeend', '<div class="rb-label" data-gtitle="' + g.id + '">' + esc(g.title) + '</div>');
       box.appendChild(sec);
     });
     updatePaneVisibility();
@@ -1527,12 +1562,12 @@
     const prof = PROFILES[state.type] || PROFILE_DEFAULT;
     const used = new Set(Array.from(editor.querySelectorAll('.fld')).map((s) => s.getAttribute('data-f')));
     const all = $('showAllFields').checked;
-    document.querySelectorAll('#paneFields .pf').forEach((row) => {
+    document.querySelectorAll('#docFields .pf').forEach((row) => {
       const k = row.dataset.key;
       const sign = ['officer', 'signer', 'signText'].indexOf(k) !== -1;
       row.hidden = !(all || sign || prof.show.indexOf(k) !== -1 || used.has(k));
     });
-    document.querySelectorAll('#paneFields section').forEach((sec) => {
+    document.querySelectorAll('#docFields .rb-group').forEach((sec) => {
       sec.hidden = !sec.querySelector('.pf:not([hidden])');
     });
     const pt = document.querySelector('[data-gtitle="person"]');
@@ -1543,7 +1578,6 @@
   function renderTemplates() {
     const tpls = (TYPES[state.type] || TYPES.nakaz).tpls;
     const plain = (s) => s.replace(TOKEN_RE, (m, t) => fieldText(TOKEN_TO_KEY[t]) || FIELDS[TOKEN_TO_KEY[t]].label);
-    $('paneTpls').innerHTML = tpls.map((x, i) => '<button type="button" data-tpl="' + i + '" title="' + esc(plain(x.text)) + '">+ ' + esc(x.label) + '</button>').join('');
     $('menu-tpl').innerHTML = tpls.map((x, i) => '<button type="button" data-tpl="' + i + '"><b>' + esc(x.label) + '</b><small>' + esc(plain(x.text).slice(0, 70)) + '…</small></button>').join('');
   }
   function insertTemplatePoint(i) {
@@ -1873,68 +1907,241 @@
   window.addEventListener('afterprint', () => { if (printZoom) setZoom(printZoom, true); printZoom = null; });
 
   /* ---------- Публікація ---------- */
+  /* Права й маршрути — ті самі правила, що в store.js (createDocs / publishDocs / editOwnDocs / editAllDocs) */
   const editId = new URLSearchParams(location.search).get('id');
+  const isGov = (user.roles || [])[0] === 'governor';
+  const can = (p) => isGov || (typeof hasPermission === 'function' && hasPermission(user, p));
+  const position = typeof positionById === 'function' ? positionById(user.positionId) : null;
+  const canCreate = can('createDocs');
+  const canPublish = can('publishDocs');
+  const needsApproval = !canPublish;
+  let curDocId = null;
   function canEditDoc(d) {
-    return !d.ownerLogin || d.ownerLogin === user.login || (user.roles || [])[0] === 'governor';
+    if (can('editAllDocs')) return true;
+    return !d.ownerLogin || d.ownerLogin === user.login;
   }
-  function publish() {
+  const MAX_BG = 1500000;
+  const MAX_SEAL = 300000;
+  function docLabel() {
+    const t = TYPES[state.type] || TYPES.nakaz;
+    const prof = PROFILES[state.type] || PROFILE_DEFAULT;
+    const numbered = (/\{НОМЕР\}/.test(t.title) || prof.show.indexOf('number') !== -1) && state.fields.number;
+    return t.label + (numbered ? ' №' + state.fields.number : '');
+  }
+  // Тема — рядок у лапках під заголовком («“Про призначення…”»); судова шапка англійською темою не є
+  function docSubject() {
+    const h1 = editor.querySelector('h1');
+    const el = h1 && h1.nextElementSibling;
+    const s = el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+    return /^[“"«„]/.test(s) ? s : '';
+  }
+  function isoDate(v) {
+    const m = String(v || '').match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+    if (m) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+    return /^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : new Date().toISOString().slice(0, 10);
+  }
+  /* Опублікований аркуш — самодостатній HTML: поля сторінки, фон і печатка інлайн (стилі — assets/doc.css) */
+  function sheetHtml() {
+    const L = state.layout;
+    const ps = pageSize();
+    const bg = state.bgImageSrc && (/^https?:/.test(state.bgImageSrc) || state.bgImageSrc.length <= MAX_BG) ? state.bgImageSrc : '';
+    const s = state.seal;
+    let seal = '';
+    if (s.show) {
+      const src = s.src && s.src.length <= MAX_SEAL ? s.src : '';
+      seal = '<div class="ch-seal" style="left:' + s.x + 'px;top:' + s.y + 'px;width:' + s.size + 'px;height:' + s.size + 'px">' +
+        (src ? '<img src="' + esc(src) + '" alt="">' : $('sealDefault').outerHTML.replace(/\s(id|hidden)(="[^"]*")?/g, '')) + '</div>';
+    }
+    return '<div class="ch-sheet' + (L.landscape ? ' landscape' : '') + '" style="width:' + ps.w + 'mm;min-height:' + ps.h + 'mm;' +
+      'padding:' + L.top + 'mm ' + L.right + 'mm ' + L.bottom + 'mm ' + L.left + 'mm;' +
+      (bg ? 'background-image:url(&quot;' + esc(bg) + '&quot;);background-size:' + ps.w + 'mm ' + ps.h + 'mm;' : '') + '">' +
+      '<div class="doc-content" style="font-size:' + L.baseSize + 'pt">' + cleanHtml(true) + '</div>' + seal + '</div>';
+  }
+
+  // Погодження: ті самі режими, що були на старій сторінці створення
+  function approvalTargetItems() {
+    const q = $('apSearch').value.trim().toLowerCase();
+    const filter = $('apFilter').value;
+    const positions = (typeof allPositions === 'function' ? allPositions() : []).filter((p) => (p.permissions || []).includes('approveDocs')).map((p) => ({
+      type: 'positions', office: p.office, value: 'position:' + p.id, label: p.title + ' · ' + officeName(p.office)
+    }));
+    const users = (typeof allUsers === 'function' ? allUsers() : []).filter((u) => hasPermission(u, 'approveDocs')).map((u) => ({
+      type: 'users', office: u.office || userOffice(u), value: 'user:' + u.login,
+      label: (u.name || u.login) + ' · ' + (u.post || 'посадовець') + ' · ' + officeName(u.office || userOffice(u))
+    }));
+    return positions.concat(users).filter((it) =>
+      (filter === 'all' || it.type === filter || (filter === 'my-office' && it.office === office)) &&
+      (!q || it.label.toLowerCase().includes(q)));
+  }
+  function stepLabel(step) {
+    if (String(step || '').startsWith('office:')) return officeName(String(step).slice(7));
+    return routeStepName(step, { office: office });
+  }
+  function fillApprovalTargets() {
+    const keep = $('apTarget').value;
+    const items = approvalTargetItems();
+    $('apTarget').innerHTML = items.map((it) => '<option value="' + esc(it.value) + '">' + esc(it.label) + '</option>').join('');
+    if (items.some((it) => it.value === keep)) $('apTarget').value = keep;
+    else if (items.length) $('apTarget').selectedIndex = 0;
+  }
+  function selectedApprovalRoute() {
+    const mode = $('apMode').value;
+    if (mode === 'direct') {
+      const target = $('apTarget').value || 'position:governor-chief';
+      return { id: 'direct-' + target.replace(/[^a-z0-9_-]+/gi, '-'), name: 'Пряме погодження: ' + stepLabel(target), steps: [target] };
+    }
+    if (mode === 'route') return allApprovalRoutes().find((r) => r.id === $('apRoute').value) || activeApprovalRoute(office);
+    return activeApprovalRoute(office);
+  }
+  function updateApprovalPreview() {
+    const mode = $('apMode').value;
+    $('apRouteWrap').hidden = mode !== 'route';
+    $('apTargetWrap').hidden = mode !== 'direct';
+    const route = selectedApprovalRoute();
+    const steps = route ? resolveApprovalSteps({ office: office }, route) : [];
+    $('apPreview').textContent = !route ? 'Маршрут не налаштовано.'
+      : !steps.length ? 'У маршруті немає посадовців для погодження.'
+      : 'Документ піде так: ' + steps.map(stepLabel).join(' → ') + '.';
+  }
+  function openApproval() {
+    if (!canCreate) { toast('Для створення документів адміністратор має видати відповідний доступ'); return; }
+    const routes = routesForOffice(office);
+    $('apRoute').innerHTML = routes.map((r) => '<option value="' + esc(r.id) + '">' + esc(r.name) +
+      (r.ownerOffice && r.ownerOffice !== 'all' ? ' · ' + esc(officeName(r.ownerOffice)) : '') + '</option>').join('');
+    const active = activeApprovalRoute(office);
+    if (active) $('apRoute').value = active.id;
+    $('apSearch').value = '';
+    fillApprovalTargets();
+    updateApprovalPreview();
+    $('apModal').hidden = false;
+  }
+
+  function saveToSite(status) {
+    if (!canCreate) { toast('Для створення документів адміністратор має видати відповідний доступ'); return; }
     persist(false);
     const t = TYPES[state.type] || TYPES.nakaz;
     const f = state.fields;
-    const onHome = $('chkHome').checked;
-    const curId = new URLSearchParams(location.search).get('id');
-    const prev = curId && typeof getDoc === 'function' ? getDoc(curId) : null;
-    if (prev && !canEditDoc(prev)) { toast('Редагувати цей акт може лише автор'); return; }
-    const h1 = editor.querySelector('h1');
-    const subjEl = h1 && h1.nextElementSibling;
-    const numbered = /\{НОМЕР\}/.test(t.title) && f.number;
+    const prev = curDocId ? getDoc(curDocId) : null;
+    if (prev && !canEditDoc(prev)) { toast('Редагувати цей документ може лише автор'); return; }
+    const finalStatus = status === 'ok' && needsApproval ? 'review' : status;
+    const subject = docSubject();
+    const html = cleanHtml(true);
     const doc = Object.assign({}, prev || {}, {
-      id: (prev && prev.id) || (typeof newDocId === 'function' ? newDocId() : 'act-' + Date.now().toString(36)),
-      type: t.label,
+      id: (prev && prev.id) || newDocId(),
+      type: t.docType || t.label,
       typeKey: state.type,
-      number: f.number,
-      date: f.date,
-      title: t.label + (numbered ? ' №' + f.number : ''),
-      subject: subjEl ? subjEl.textContent.replace(/\s+/g, ' ').trim() : '',
-      body: typeof officeTitle === 'function' ? officeTitle(user) : 'Канцелярія',
-      status: onHome ? 'ok' : 'draft',
-      publishHome: onHome,
+      number: f.number || '',
+      date: isoDate(f.date),
+      title: docLabel() + (subject ? ' ' + subject : ''),
+      subject: subject,
+      body: officeTitle(user),
+      status: finalStatus,
+      publishHome: $('chkHome').checked,
       text: plainText(),
-      html: cleanHtml(true),
+      docHtml: sheetHtml(),
+      html: html,
       author: (prev && prev.author) || user.username,
       ownerLogin: (prev && prev.ownerLogin) || user.login,
-      office: office,
+      office: (prev && prev.office) || office,
+      seeded: false,
       editor: {
         type: state.type,
         fields: Object.assign({}, state.fields),
         layout: Object.assign({}, state.layout),
-        seal: Object.assign({}, state.seal, { src: (state.seal.src || '').length > 300000 ? '' : state.seal.src }),
-        bgImageSrc: /^https?:/.test(state.bgImageSrc || '') ? state.bgImageSrc : ''
+        seal: Object.assign({}, state.seal, { src: (state.seal.src || '').length > MAX_SEAL ? '' : state.seal.src }),
+        bgImageSrc: (state.bgImageSrc || '').length > MAX_BG ? '' : state.bgImageSrc
       }
     });
-    saveDoc(doc);
-    if (!getDoc(doc.id) || getDoc(doc.id).html !== doc.html) {
-      toast('Не вдалося зберегти на сайті: сховище переповнене (завеликі зображення)');
+    let route = null;
+    if (finalStatus === 'review') {
+      route = $('apModal').hidden && status !== 'review' ? activeApprovalRoute(office) : selectedApprovalRoute();
+      const steps = route ? resolveApprovalSteps(doc, route) : [];
+      if (!steps.length) { toast('Оберіть посадовця або маршрут погодження'); openApproval(); return; }
+      Object.assign(doc, {
+        approvalRouteId: route.id, approvalRouteName: route.name, approvalSteps: steps, approvalIndex: 0,
+        approverOffice: steps[0] || ((position && position.approverOffice) || 'position:governor-chief'),
+        approverLogin: String(steps[0]).startsWith('user:') ? String(steps[0]).slice(5) : ''
+      });
+    } else {
+      Object.assign(doc, { approverOffice: '', approverLogin: '', approvalIndex: 0 });
+    }
+    try {
+      saveDoc(doc, {
+        user: user,
+        action: prev ? 'Відредаговано в Канцелярії' : 'Створено в Канцелярії',
+        summary: finalStatus === 'review' ? 'Документ відправлено на маршрут погодження: ' + route.name + '.' : undefined,
+        versionLabel: finalStatus === 'ok' ? 'Чинна версія' : (finalStatus === 'draft' ? 'Проєкт' : 'Редакція')
+      });
+    } catch (e) { console.error(e); }
+    const saved = getDoc(doc.id);
+    if (!saved || saved.docHtml !== doc.docHtml) {
+      toast('Не вдалося зберегти на сайті: сховище браузера переповнене (зменшіть фон чи зображення)');
       return;
     }
+    curDocId = doc.id;
+    state.srcDoc = doc.id;
+    if (!state.name || (prev && state.name === prev.title)) state.name = saved.title;
+    persist(false);
     history.replaceState(null, '', '?id=' + encodeURIComponent(doc.id));
-    toast(onHome ? 'Опубліковано на сайті та на головній' : 'Опубліковано в базі документів');
-    if (hasWebhooks() && confirm('Документ опубліковано.\n\nНадіслати його в Discord?')) openDsModal();
+    updateDocStatus(saved);
+    toast(finalStatus === 'ok' ? 'Опубліковано на сайті' : finalStatus === 'review' ? 'Відправлено на погодження: ' + route.name : 'Проєкт збережено в реєстрі документів');
+    if (finalStatus === 'ok' && hasWebhooks() && confirm('Документ опубліковано.\n\nНадіслати його в Discord?')) openDsModal();
   }
+  // Без права publishDocs «Опублікувати» веде через погодження — одразу показуємо, куди піде документ
+  function publish() { if (canPublish) saveToSite('ok'); else openApproval(); }
+
+  function updateDocStatus(d) {
+    const el = $('tbStatus');
+    if (!d) { el.hidden = true; return; }
+    el.hidden = false;
+    el.textContent = (typeof DOC_STATUSES !== 'undefined' && DOC_STATUSES[d.status]) || d.status;
+    el.className = 'tb-status ' + (typeof badgeClass === 'function' ? badgeClass(d.status) : '');
+    el.title = 'Статус у реєстрі: ' + el.textContent + (d.approvalRouteName && d.status === 'review' ? ' · ' + routeProgressLabel(d) : '');
+  }
+  function initPublishUi() {
+    $('btnPublish').textContent = canPublish ? 'Опублікувати' : 'Опублікувати…';
+    $('btnPublish').title = canPublish ? 'Опублікувати на сайті одразу' : 'Для вашої посади публікація йде через погодження: ' + ((activeApprovalRoute(office) || {}).name || 'маршрут');
+    if (!canCreate) {
+      document.querySelectorAll('[data-act="saveDraft"],[data-act="sendReview"],[data-act="publish"]').forEach((b) => { b.disabled = true; b.title = 'Для створення документів адміністратор має видати відповідний доступ'; });
+    }
+  }
+
+  // Спільні фони (ті самі, що зберігалися у старому редакторі — state_doc_backgrounds)
+  function savedBackgrounds() {
+    return (typeof loadLS === 'function' ? loadLS('state_doc_backgrounds', []) : [])
+      .filter((b) => b && b.src && (b.shared || b.ownerLogin === user.login || isGov));
+  }
+  function shareBackground() {
+    if (!state.bgImageSrc) return;
+    const name = prompt('Назва фону (його побачать інші користувачі):', 'Бланк ' + officeTitle(user));
+    if (name === null) return;
+    const items = loadLS('state_doc_backgrounds', []);
+    items.unshift({ id: 'bg-' + Date.now().toString(36), name: name.trim() || 'Фон', src: state.bgImageSrc, ownerLogin: user.login, shared: true, createdAt: new Date().toISOString() });
+    saveLS('state_doc_backgrounds', items);
+    toast(loadLS('state_doc_backgrounds', []).length === items.length ? 'Фон збережено для всіх' : 'Не вдалося зберегти фон: сховище переповнене');
+  }
+
   function loadFromDoc(id) {
     const d = typeof getDoc === 'function' ? getDoc(id) : null;
-    if (!d) return;
-    if (!canEditDoc(d)) { toast('Цей акт може редагувати лише автор'); return; }
-    if (!d.editor || !d.html) { toast('Цей акт створено без редактора — відкрийте його у «Опубліковані»'); return; }
+    if (!d) { toast('Документ не знайдено'); return; }
+    if (!canEditDoc(d)) { toast('Цей документ може редагувати лише автор'); return; }
+    curDocId = d.id;
+    // Документ зі старого A4-редактора: переносимо його вміст як є
+    const byLabel = (k) => TYPES[k].label === d.type || TYPES[k].docType === d.type;
+    const typeKey = (d.editor && d.editor.type) || d.typeKey || officeTypes.filter(byLabel)[0] || Object.keys(TYPES).filter(byLabel)[0];
+    const ymd = String(d.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const base = d.editor || { type: typeKey, fields: { number: d.number || '', date: ymd ? ymd[3] + '.' + ymd[2] + '.' + ymd[1] : (d.date || today()) } };
+    const html = d.html || (d.docHtml ? sanitizeDocHtml(d.docHtml) : '<p>' + esc(d.text || '').replace(/\n/g, '<br>') + '</p>');
     // Акт відкривається в окремому шаблоні, щоб не затерти поточну роботу; повторне відкриття — той самий шаблон
-    const st = mergeState(Object.assign({}, d.editor, { html: d.html, pristine: false, name: d.title || '', srcDoc: d.id }));
+    const st = mergeState(Object.assign({}, base, { html: html, pristine: false, name: d.title || '', srcDoc: d.id }));
     persist(false);
     const existing = db.order.filter((k) => db.slots[k] && db.slots[k].srcDoc === d.id)[0];
     if (existing) db.slots[existing] = Object.assign(st, { created: db.slots[existing].created });
     loadSlot(existing || addSlot(st));
     persist(false);
     $('chkHome').checked = !!d.publishHome;
-    toast('«' + d.title + '» відкрито в шаблоні «' + slotLabel(state) + '»');
+    updateDocStatus(d);
+    toast('«' + d.title + '» відкрито для редагування');
   }
 
   /* ---------- Стан кнопок стрічки ---------- */
@@ -2028,7 +2235,15 @@
     const list = BG_PRESETS[office] || [];
     let html = '<div class="menu-title">Готові рамки кабінету</div>';
     html += list.length ? list.map((bg, i) => '<button type="button" data-act="bgPreset" data-val="' + i + '">' + esc(bg.name) + '</button>').join('') : '<button type="button" disabled>Для цього кабінету немає</button>';
+    const saved = savedBackgrounds();
+    if (saved.length) {
+      html += '<div class="menu-sep"></div><div class="menu-title">Збережені фони</div>';
+      html += saved.map((bg, i) => '<button type="button" data-act="bgSaved" data-val="' + i + '"><b>' + esc(bg.name) + '</b><small>' + (bg.shared ? 'спільний' : 'особистий') + '</small></button>').join('');
+    }
     html += '<div class="menu-sep"></div><button type="button" data-act="bgUpload">Завантажити з комп’ютера…</button>';
+    if (state.bgImageSrc && !saved.some((bg) => bg.src === state.bgImageSrc) && !list.some((bg) => bg.src === state.bgImageSrc)) {
+      html += '<button type="button" data-act="bgShare">Зберегти поточний фон для всіх…</button>';
+    }
     html += '<button type="button" data-act="bgClear"' + (state.bgImageSrc ? '' : ' disabled') + '>Прибрати фон</button>';
     $('menu-bg').innerHTML = html;
   }
@@ -2066,16 +2281,17 @@
   let ctxField = null;
 
   function switchTab(name) {
+    if (!document.querySelector('.rb-panel[data-panel="' + name + '"]')) name = 'home';
     document.querySelectorAll('.wd-tab[data-tab]').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
     document.querySelectorAll('.rb-panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === name));
+    if (name !== 'table' && name !== 'file') { ui.tab = name; saveUi(); }
   }
-  function setPane(on) {
-    ui.pane = on;
-    saveUi();
-    $('pane').classList.toggle('off', !on);
-    $('optPane').checked = on;
-    $('paneTabBtn').classList.toggle('on', on);
-    requestAnimationFrame(updateSizer);
+  function setShade(on, silent) {
+    ui.shade = on;
+    if (!silent) saveUi();
+    document.body.classList.toggle('no-shade', !on);
+    $('optShade').checked = on;
+    $('optShadeDoc').checked = on;
   }
 
   /* ---------- Дії ---------- */
@@ -2135,8 +2351,16 @@
     zoomOut: () => setZoom(zoom - 10),
     fitWidth: fitWidth,
     fitPage: fitPage,
-    togglePane: () => setPane(!ui.pane),
     applyTemplate: () => applyTemplate(false),
+    saveDraft: () => saveToSite('draft'),
+    sendReview: openApproval,
+    apCancel: () => { $('apModal').hidden = true; },
+    apConfirm: () => { $('apModal').hidden = true; saveToSite('review'); },
+    bgSaved: (b) => {
+      const bg = savedBackgrounds()[+b.dataset.val];
+      if (bg) { state.bgImageSrc = bg.src; applyLayout(); scheduleSave(); }
+    },
+    bgShare: shareBackground,
     resetSlot: () => {
       if (!confirm('Очистити шаблон «' + slotLabel(state) + '»? Текст і налаштування буде скинуто (назва лишиться).')) return;
       const name = state.name;
@@ -2283,9 +2507,9 @@
         s.addRange(r);
         savedRange = r.cloneRange();
         const k = fld.getAttribute('data-f');
-        document.querySelectorAll('#paneFields .pf').forEach((row) => row.classList.toggle('hot', row.dataset.key === k));
+        document.querySelectorAll('#docFields .pf').forEach((row) => row.classList.toggle('hot', row.dataset.key === k));
       } else {
-        document.querySelectorAll('#paneFields .pf.hot').forEach((row) => row.classList.remove('hot'));
+        document.querySelectorAll('#docFields .pf.hot').forEach((row) => row.classList.remove('hot'));
       }
     });
     editor.addEventListener('dblclick', (e) => {
@@ -2337,12 +2561,12 @@
       document.addEventListener('pointerup', up);
     });
 
-    // Панель полів
-    $('paneFields').addEventListener('input', (e) => {
+    // Поля документа (вкладка «Документ»)
+    $('docFields').addEventListener('input', (e) => {
       const k = e.target.dataset.field;
       if (k) setField(k, e.target.value, 'pane');
     });
-    $('paneFields').addEventListener('change', (e) => {
+    $('docFields').addEventListener('change', (e) => {
       const k = e.target.dataset.field;
       if (k) setField(k, e.target.value, 'pane');
     });
@@ -2397,8 +2621,16 @@
 
     // Вигляд
     $('optRuler').addEventListener('change', () => { ui.ruler = $('optRuler').checked; saveUi(); drawRuler(); updateSizer(); });
-    $('optPane').addEventListener('change', () => setPane($('optPane').checked));
-    $('optShade').addEventListener('change', () => { ui.shade = $('optShade').checked; saveUi(); document.body.classList.toggle('no-shade', !ui.shade); });
+    $('optShade').addEventListener('change', () => setShade($('optShade').checked));
+    $('optShadeDoc').addEventListener('change', () => setShade($('optShadeDoc').checked));
+
+    // Погодження
+    $('apMode').addEventListener('change', updateApprovalPreview);
+    $('apRoute').addEventListener('change', updateApprovalPreview);
+    $('apTarget').addEventListener('change', updateApprovalPreview);
+    $('apSearch').addEventListener('input', () => { fillApprovalTargets(); updateApprovalPreview(); });
+    $('apFilter').addEventListener('change', () => { fillApprovalTargets(); updateApprovalPreview(); });
+    $('apModal').addEventListener('mousedown', (e) => { if (e.target === $('apModal')) $('apModal').hidden = true; });
     $('zoomRange').addEventListener('input', () => setZoom(+$('zoomRange').value));
     canvas.addEventListener('wheel', (e) => {
       if (!e.ctrlKey) return;
@@ -2450,7 +2682,7 @@
     // Глобальні комбінації
     document.addEventListener('keydown', (e) => {
       const mod = e.ctrlKey || e.metaKey;
-      if (e.key === 'Escape') { closeMenu(); $('tplModal').hidden = true;if (!$('fldPop').hidden) closeFieldPop(); if (!$('findBox').hidden) closeFind(); }
+      if (e.key === 'Escape') { closeMenu(); $('tplModal').hidden = true; $('apModal').hidden = true; if (!$('fldPop').hidden) closeFieldPop(); if (!$('findBox').hidden) closeFind(); }
       if (!mod) return;
       const k = e.key.toLowerCase();
       if (k === 's') { e.preventDefault(); persist(true); }
@@ -2514,18 +2746,12 @@
   $('tbUser').textContent = (user.username || '') + (typeof officeTitle === 'function' ? ' · ' + officeTitle(user) : '');
   $('btnDiscord').hidden = !hasWebhooks();
   $('optRuler').checked = !!ui.ruler;
-  $('optShade').checked = ui.shade !== false;
-  document.body.classList.toggle('no-shade', ui.shade === false);
+  setShade(ui.shade !== false, true);
   if (ui.color) $('colorSwatch').style.background = ui.color;
   if (ui.hilite) $('hiliteSwatch').style.background = ui.hilite;
   const narrow = window.innerWidth <= 900;
-  if (narrow) {
-    $('pane').classList.add('off');
-    $('optPane').checked = false;
-    ui.pane = false;
-  } else {
-    setPane(!!ui.pane);
-  }
+  initPublishUi();
+  switchTab(ui.tab || 'doc');
   loadSlot(slot);
   setZoom(narrow ? (canvas.clientWidth - 24) / sheet.offsetWidth * 100 : zoom, true);
   if (editId) loadFromDoc(editId);

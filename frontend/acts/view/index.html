@@ -5,12 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Документ — State</title>
   <link rel="stylesheet" href="../../assets/styles.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Playfair+Display:ital,wght@0,700;1,600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Great+Vibes&family=Playfair+Display:ital,wght@0,700;0,800;1,600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../../assets/doc.css" />
-  <style>
-    .doc-paper { background: #fff; border: 1px solid var(--line); box-shadow: 0 2px 10px rgba(0,0,0,.06); padding: 20mm 15mm 20mm 25mm; max-width: 210mm; margin: 0 auto; overflow-x: auto; }
-    @media (max-width: 800px) { .doc-paper { padding: 20px 16px; } }
-  </style>
 </head>
 <body>
   <div class="topbar">Законодавча база штату Сан-Андреас</div>
@@ -37,39 +33,112 @@
   <script src="../../assets/app.js"></script>
   <script src="../../assets/store.js"></script>
   <script>
-    // HTML із редактора канцелярії: лишаємо розмітку, прибираємо скрипти та обробники подій.
-    function safeHtml(html) {
-      const doc = new DOMParser().parseFromString(String(html), "text/html");
-      doc.body.querySelectorAll("script,style,iframe,object,embed,link,meta,form,input,button,textarea").forEach((el) => el.remove());
-      doc.body.querySelectorAll("*").forEach((el) => {
-        Array.from(el.attributes).forEach((a) => {
-          const v = a.value.trim().toLowerCase();
-          if (/^on/i.test(a.name) || a.name === "contenteditable" || ((a.name === "href" || a.name === "src") && v.startsWith("javascript:"))) el.removeAttribute(a.name);
-        });
-      });
-      return doc.body.innerHTML;
-    }
     const id = new URLSearchParams(location.search).get("id");
     const doc = getDoc(id);
     const root = document.getElementById("doc-root");
     if (!doc) {
       root.innerHTML = "<h2 class='page-title'>Документ не знайдено</h2><p><a href='../'>До списку</a></p>";
     } else {
+      const viewer = currentUser();
+      const canSeeLifecycle = viewer && isStaff(viewer);
+      const history = (doc.history || []).slice().reverse();
+      const versions = (doc.versions || []).slice().reverse();
+      function stepActorName(step) {
+        const raw = String(step || "");
+        if (raw === "congress") return "Конгрес штату";
+        if (raw === "authorOffice") return officeName(doc.office);
+        if (raw.startsWith("position:")) return routeStepName(raw, doc);
+        if (raw.startsWith("user:")) return routeStepName(raw, doc);
+        return officeName(raw);
+      }
+      function stepActorOffice(step) {
+        const raw = String(step || "");
+        if (raw === "congress") return "Колегіальне голосування";
+        if (raw.startsWith("position:")) {
+          const position = positionById(raw.slice(9));
+          return position ? officeName(position.office) : "Погодження документа";
+        }
+        if (raw.startsWith("user:")) {
+          const member = allUsers().find((u) => u.login === raw.slice(5));
+          return member ? officeName(member.office || userOffice(member)) : "Погодження документа";
+        }
+        return "Погодження документа";
+      }
+      const signerRows = [
+        {
+          role: "Автор проєкту",
+          name: doc.author || "—",
+          office: doc.body || officeName(doc.office),
+          state: "Створено",
+          at: doc.date
+        }
+      ].concat((doc.approvalSteps || []).map((step, index) => ({
+        role: routeStepName(step, doc),
+        name: stepActorName(step),
+        office: stepActorOffice(step),
+        state: index < (doc.approvalIndex || 0) || doc.status === "ok" || doc.status === "adopted" ? "Погоджено" : "Очікує рішення",
+        at: ""
+      })));
       document.title = doc.title;
       root.innerHTML = `
-        <div class="crumbs"><a href="../../">Головна</a> / <a href="../">Законодавча база</a> / ${doc.number}</div>
-        <h2 class="page-title">${doc.title}</h2>
+        <div class="crumbs"><a href="../../">Головна</a> / <a href="../">Законодавча база</a> / ${esc(doc.number)}</div>
+        <h2 class="page-title">${esc(doc.title)}</h2>
         <table class="meta-table">
-          <tr><th>Вид</th><td>${doc.type}</td></tr>
-          <tr><th>Номер</th><td>${doc.number}</td></tr>
-          <tr><th>Дата</th><td>${doc.date}</td></tr>
-          <tr><th>Статус</th><td><span class="badge ${badgeClass(doc.status)}">${DOC_STATUSES[doc.status]}</span></td></tr>
-          <tr><th>Орган</th><td>${doc.body || "—"}</td></tr>
-          <tr><th>Автор</th><td>${doc.author || "—"}</td></tr>
+          <tr><th>Вид</th><td>${esc(doc.type)}</td></tr>
+          <tr><th>Номер</th><td>${esc(doc.number)}</td></tr>
+          <tr><th>Дата</th><td>${esc(formatDocWhen(doc))}</td></tr>
+          <tr><th>Статус</th><td><span class="badge ${attr(badgeClass(doc.status))}">${esc(DOC_STATUSES[doc.status] || doc.status)}</span></td></tr>
+          <tr><th>Орган</th><td>${esc(doc.body || "—")}</td></tr>
+          <tr><th>Автор</th><td>${esc(doc.author || "—")}</td></tr>
+          ${doc.approvalRouteName ? `<tr><th>Маршрут</th><td>${esc(doc.approvalRouteName)}${doc.status === "review" ? " · " + esc(routeProgressLabel(doc)) : ""}</td></tr>` : ""}
         </table>
-        ${doc.html
-          ? `<div class="doc-paper"><div class="doc-content">${safeHtml(doc.html)}</div></div>`
-          : `<div>${String(doc.text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>")}</div>`}
+        ${doc.docHtml
+          ? `<div class="published-paper"><article class="a4-page">${sanitizeDocHtml(doc.docHtml)}</article></div>`
+          : doc.html
+            /* Документ з попередньої версії Канцелярії: лише текст аркуша, без полів сторінки */
+            ? `<div class="published-paper"><article class="a4-page"><div class="ch-sheet" style="width:210mm;min-height:297mm;padding:20mm 15mm 20mm 30mm"><div class="doc-content">${sanitizeDocHtml(doc.html)}</div></div></article></div>`
+            : `<div>${esc(doc.text || "").replace(/\n/g, "<br>")}</div>`}
+          <section class="card lifecycle-card">
+            <h3>Погодження та підписанти</h3>
+            <p class="muted">Для проєктів Конституції, кодексів і законів тут показується, хто створив документ, хто погоджує його перед публікацією і який етап ще очікує рішення.</p>
+            <div class="signer-list">
+              ${signerRows.map((row) => `
+                <article class="signer-row">
+                  <div>
+                    <b>${esc(row.role)}</b>
+                    <span>${esc(row.name)} · ${esc(row.office || "—")}</span>
+                  </div>
+                  <span class="badge ${row.state === "Погоджено" || row.state === "Створено" ? "ok" : "draft"}">${esc(row.state)}</span>
+                </article>
+              `).join("")}
+            </div>
+          </section>
+        ${canSeeLifecycle ? `
+          <section class="card lifecycle-card">
+            <h3>Життєвий цикл документа</h3>
+            <div class="lifecycle-grid">
+              <div>
+                <h4>Версії</h4>
+                ${versions.length ? versions.map((v) => `
+                  <article class="timeline-item">
+                    <b>${esc(v.label || "Редакція")}</b>
+                    <span>${esc(formatDocWhen({ date: v.at }))} · ${esc(v.byName || "Система")} · ${esc(DOC_STATUSES[v.status] || v.status || "")}</span>
+                  </article>
+                `).join("") : "<p class='muted'>Версій ще немає.</p>"}
+              </div>
+              <div>
+                <h4>Журнал змін</h4>
+                ${history.length ? history.map((h) => `
+                  <article class="timeline-item">
+                    <b>${esc(h.action || "Оновлено")}</b>
+                    <span>${esc(formatDocWhen({ date: h.at }))} · ${esc(h.byName || "Система")}</span>
+                    <p>${esc(h.summary || "")}</p>
+                  </article>
+                `).join("") : "<p class='muted'>Записів журналу ще немає.</p>"}
+              </div>
+            </div>
+          </section>
+        ` : ""}
       `;
     }
   </script>

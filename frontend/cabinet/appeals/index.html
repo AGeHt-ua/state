@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Звернення — State</title>
+  <link rel="stylesheet" href="../../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar" id="top-office">Кабінет</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../../">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Звернення та позови</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../../">Головна</a>
+      <a href="../../acts/">Законодавча база</a>
+      <a href="../../structure/">Органи влади</a>
+    </div>
+  </nav>
+  <main class="wrap">
+    <div class="cabinet-layout">
+      <aside class="side-nav">
+        <a href="../">Профіль</a>
+        <a href="../portal/">Портал послуг</a>
+        <a href="../inbox/">Повідомлення</a>
+        <a class="active" href="./">Мої звернення</a>
+        <a href="../all/" data-staff-nav>Реєстр документів</a>
+        <a href="../docs/" data-staff-nav>Опубліковані документи</a>
+        <a href="../admin/" id="nav-admin" data-staff-nav>Адмін-панель</a>
+        <a class="create-doc-link" href="../create/" data-staff-nav>Створити документ</a>
+      </aside>
+      <section class="appeals-page">
+        <section class="card" id="appeal-create-card">
+          <h2 class="page-title" style="margin-top:0">Подати звернення</h2>
+          <p class="lead">Оберіть апарат, коротко опишіть суть і система присвоїть зверненню номер автоматично.</p>
+          <form id="appeal-form">
+            <div class="form-grid">
+              <label>Ім’я прізвище<input name="name" required></label>
+              <label>Stat ID<input name="statId" required></label>
+              <label>Електронна адреса<input name="contact" required placeholder="Discord або Telegram"></label>
+              <label>Тип<select name="kind"><option value="Звернення">Звернення</option><option value="Позов">Позов</option></select></label>
+              <label>Куди звертаєтесь<select name="office" required></select></label>
+            </div>
+            <label>Суть звернення<textarea name="text" required placeholder="Опишіть ситуацію, вимогу або позов..."></textarea></label>
+            <button class="btn gold" type="submit">Відправити звернення</button>
+          </form>
+        </section>
+
+        <section class="card">
+          <div class="section-head">
+            <div>
+              <h2 class="page-title" style="margin-top:0" id="appeals-title">Мої звернення</h2>
+              <p class="muted" id="appeals-lead">Тут видно статус і всю переписку.</p>
+            </div>
+          </div>
+          <div id="my-appeals-list" class="admin-list"></div>
+        </section>
+
+        <section class="card" id="office-appeals-card">
+          <div class="section-head">
+            <div>
+              <h2 class="page-title" style="margin-top:0">Звернення до мого апарату</h2>
+              <p class="muted">Це вже службова черга: тут посадовець відповідає громадянам.</p>
+            </div>
+          </div>
+          <div id="office-appeals-list" class="admin-list"></div>
+        </section>
+      </section>
+    </div>
+  </main>
+  <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
+  <script src="../../assets/accounts.js"></script>
+  <script src="../../assets/app.js"></script>
+  <script src="../../assets/store.js"></script>
+  <script>
+    const user = requireAuth();
+    if (!user) throw new Error("auth");
+    document.getElementById("top-office").textContent = isCitizen(user) ? "Кабінет громадянина" : officeTitle(user);
+    const staff = isStaff(user);
+    if (isCitizen(user)) {
+      document.querySelectorAll("[data-staff-nav]").forEach((el) => { el.style.display = "none"; });
+      document.getElementById("office-appeals-card").style.display = "none";
+    } else {
+      document.getElementById("appeals-lead").textContent = "Посадовець також може подавати звернення як громадянин штату.";
+    }
+    document.querySelector("input[name='name']").value = user.username || "";
+    document.querySelector("input[name='statId']").value = user.statId || "";
+    document.querySelector("input[name='contact']").value = user.contact || "";
+    if (!hasPermission(user, "managePeople") && !hasPermission(user, "manageStructure") && !hasPermission(user, "manageRoutes") && !hasPermission(user, "approveProfiles")) {
+      const admin = document.getElementById("nav-admin");
+      if (admin) admin.style.display = "none";
+    }
+    document.querySelector("select[name='office']").innerHTML = allOffices().map((office) =>
+      `<option value="${attr(office.id)}">${esc(office.name)}</option>`
+    ).join("");
+
+    function drawAppeals() {
+      const renderAppeal = (appeal, mode) => `
+        <article class="appeal-card">
+          <div class="admin-row-title">
+            <b>${esc(appeal.number)} · ${esc(appeal.kind || "Звернення")}</b>
+            <span class="badge ${appeal.status === "answered" ? "ok" : "draft"}">${esc(appealStatusLabel(appeal.status))}</span>
+          </div>
+          <div class="admin-row-meta">
+            <span>${esc(officeName(appeal.office))}</span>
+            <span>${esc(formatDocWhen({ date: appeal.createdAt }))}</span>
+            <span>${esc(appeal.name)} · ${esc(appeal.statId)}</span>
+          </div>
+          <p>${esc(appeal.text)}</p>
+          <div class="appeal-thread">
+            ${(appeal.thread || []).map((m) => `<div><b>${esc(m.byName)}</b><span>${esc(formatDocWhen({ date: m.at }))}</span><p>${esc(m.text)}</p></div>`).join("")}
+          </div>
+          <form data-appeal-reply="${attr(appeal.id)}" class="reply-form">
+            <input type="hidden" name="mode" value="${attr(mode)}">
+            <textarea name="message" required placeholder="${mode === "office" ? "Надати відповідь..." : "Додати уточнення..."}"></textarea>
+            <button class="btn ${mode === "office" ? "gold" : "ghost"}" type="submit">${mode === "office" ? "Надати відповідь" : "Додати повідомлення"}</button>
+          </form>
+        </article>
+      `;
+      const own = citizenAppealsFor(user);
+      document.getElementById("my-appeals-list").innerHTML = own.length
+        ? own.map((appeal) => renderAppeal(appeal, "own")).join("")
+        : "<p class='lead'>Ви ще не подавали звернень або позовів.</p>";
+      if (staff) {
+        const officeItems = officeAppealsFor(user).filter((appeal) => appeal.ownerLogin !== user.login);
+        document.getElementById("office-appeals-list").innerHTML = officeItems.length
+          ? officeItems.map((appeal) => renderAppeal(appeal, "office")).join("")
+          : "<p class='lead'>До вашого апарату ще немає звернень.</p>";
+      }
+      document.querySelectorAll("[data-appeal-reply]").forEach((form) => {
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const appeal = allAppeals().find((a) => a.id === form.dataset.appealReply);
+          if (!appeal) return;
+          const message = new FormData(form).get("message");
+          const mode = new FormData(form).get("mode");
+          saveAppeal(Object.assign({}, appeal, { status: mode === "office" ? "answered" : "waiting" }), { user, message });
+          drawAppeals();
+        });
+      });
+    }
+    document.getElementById("appeal-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      saveAppeal({
+        ownerLogin: user.login,
+        name: data.get("name"),
+        statId: data.get("statId"),
+        contact: data.get("contact"),
+        kind: data.get("kind"),
+        office: data.get("office"),
+        text: data.get("text"),
+        status: "waiting"
+      }, { user, message: data.get("text") });
+      e.target.reset();
+      document.querySelector("input[name='name']").value = user.username || "";
+      document.querySelector("input[name='statId']").value = user.statId || "";
+      document.querySelector("input[name='contact']").value = user.contact || "";
+      drawAppeals();
+    });
+    drawAppeals();
+  </script>
+</body>
+</html>

@@ -23,7 +23,6 @@
     <div class="nav-inner">
       <a href="../">Головна</a>
       <a href="../acts/">Законодавча база</a>
-      <a href="../login/">Кабінет</a>
     </div>
   </nav>
   <main class="wrap">
@@ -37,7 +36,6 @@
         <p class="lead" id="login-error" style="color:#8a2b2b;"></p>
         <div class="form-actions">
           <button class="btn gold" type="submit">Увійти</button>
-          <a class="btn ghost" href="../register/">Немає акаунта — реєстрація</a>
         </div>
       </form>
     </section>
@@ -47,7 +45,7 @@
   <script src="../assets/app.js"></script>
   <script src="../assets/store.js"></script>
   <script>
-    if (currentUser() && isStaff(currentUser())) location.href = pathTo("cabinet/");
+    if (currentUser() && isCabinetUser(currentUser())) location.href = pathTo("cabinet/");
     document.getElementById("login-form").addEventListener("submit", (e) => {
       e.preventDefault();
       const data = new FormData(e.target);
@@ -56,7 +54,7 @@
         document.getElementById("login-error").textContent = "Невірний логін або пароль.";
         return;
       }
-      location.href = isStaff(user) ? pathTo("cabinet/") : pathTo("cabinet/pending/");
+      location.href = isCabinetUser(user) ? pathTo("cabinet/") : pathTo("cabinet/pending/");
     });
   </script>
 </body>

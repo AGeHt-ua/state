@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Електронний кабінет — State</title>
+  <link rel="stylesheet" href="../../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar">Офіційний портал Уряду штату Сан-Андреас</div>
+  <header class="header citizen-header">
+    <div class="header-inner">
+      <a class="brand" href="../../">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Електронний кабінет громадянина</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../../">Головна</a>
+      <a href="../../acts/">Законодавча база</a>
+      <a class="active" href="./">Електронний кабінет</a>
+    </div>
+  </nav>
+  <main class="wrap">
+    <section class="citizen-portal">
+      <div>
+        <p class="eyebrow">Сервіси кабінету</p>
+        <h2 class="page-title">Електронний кабінет громадянина</h2>
+        <p class="lead">Авторизуйтесь, щоб подати звернення, позов або запит до апарату та бачити всю переписку зі статусами.</p>
+      </div>
+      <div class="portal-login-card card">
+        <h3 id="portal-auth-title">Вхід</h3>
+        <form id="portal-login">
+          <label class="muted">Логін<input name="login" required autocomplete="username"></label>
+          <label class="muted">Пароль<input name="password" type="password" required autocomplete="current-password"></label>
+          <p class="lead" id="login-error" style="color:#8a2b2b;margin-bottom:0"></p>
+          <button class="btn gold" type="submit">Увійти до кабінету</button>
+        </form>
+        <div id="portal-authorized" hidden>
+          <p class="muted" id="portal-user-line"></p>
+          <div class="form-actions">
+            <a class="btn gold" href="../">Перейти в кабінет</a>
+            <a class="btn ghost" href="../appeals/">Мої звернення</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="portal-service-grid">
+      <section class="card">
+        <h3>Звернення громадянина</h3>
+        <p class="muted">Подайте звернення до конкретного апарату. Після входу воно отримає автоматичний номер.</p>
+        <a class="btn" href="../appeals/">Подати звернення</a>
+      </section>
+      <section class="card">
+        <h3>Мої позови та звернення</h3>
+        <p class="muted">Перегляд статусів: очікує відповіді, відповідь надана, закрито. Вся переписка зберігається в одному місці.</p>
+        <a class="btn ghost" href="../appeals/">Перейти до списку</a>
+      </section>
+      <section class="card">
+        <h3>Реєстрація</h3>
+        <p class="muted">Оберіть тип облікового запису: громадянин штату або посадовець, якому потрібне призначення адміністратором.</p>
+        <div class="form-actions">
+          <a class="btn gold" href="../../register/?type=citizen">Громадянин штату</a>
+          <a class="btn ghost" href="../../register/?type=official">Посадовець</a>
+        </div>
+      </section>
+    </div>
+  </main>
+  <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
+  <script src="../../assets/accounts.js"></script>
+  <script src="../../assets/app.js"></script>
+  <script src="../../assets/store.js"></script>
+  <script>
+    const existing = currentUser();
+    if (existing && isCabinetUser(existing)) {
+      document.getElementById("portal-login").hidden = true;
+      document.getElementById("portal-authorized").hidden = false;
+      document.getElementById("portal-auth-title").textContent = "Ви авторизовані";
+      document.getElementById("portal-user-line").textContent = (existing.username || existing.login) + " · " + (isStaff(existing) ? "посадовець і громадянин" : "громадянин штату");
+    }
+    document.getElementById("portal-login").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      const user = loginWithPassword(data.get("login"), data.get("password"));
+      if (!user) {
+        document.getElementById("login-error").textContent = "Невірний логін або пароль.";
+        return;
+      }
+      location.href = isCabinetUser(user) ? pathTo("cabinet/") : pathTo("cabinet/pending/");
+    });
+  </script>
+</body>
+</html>

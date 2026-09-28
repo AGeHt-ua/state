@@ -10,7 +10,7 @@ const DISCORD_API = "https://discord.com/api/v10";
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const origin = env.FRONTEND_ORIGIN || "*";
+    const origin = env.FRONTEND_ORIGIN || request.headers.get("Origin") || "*";
 
     if (request.method === "OPTIONS") {
       return cors(new Response(null, { status: 204 }), origin);
@@ -114,8 +114,9 @@ function json(data, status = 200) {
 function cors(response, origin) {
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", origin);
-  headers.set("Access-Control-Allow-Credentials", "true");
+  if (origin !== "*") headers.set("Access-Control-Allow-Credentials", "true");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  headers.append("Vary", "Origin");
   return new Response(response.body, { status: response.status, headers });
 }

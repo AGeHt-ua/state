@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Реєстр документів — State</title>
+  <link rel="stylesheet" href="../../assets/styles.css" />
+</head>
+<body>
+  <div class="topbar" id="top-office">Кабінет</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../../">
+        <div class="crest">SA</div>
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Повний документообіг кабінету</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../../">Головна</a>
+      <a href="../../acts/">Законодавча база</a>
+      <a href="../../structure/">Органи влади</a>
+    </div>
+  </nav>
+  <main class="wrap">
+    <div class="cabinet-layout">
+      <aside class="side-nav">
+        <a href="../">Профіль</a>
+        <a href="../inbox/">Повідомлення</a>
+        <a class="active" href="./">Реєстр документів</a>
+        <a href="../docs/">Опубліковані документи</a>
+        <a href="../admin/" id="nav-admin">Адмін-панель</a>
+        <a class="create-doc-link" href="../create/">Створити документ</a>
+      </aside>
+      <div>
+        <h2 class="page-title" style="margin-top:0">Реєстр документів</h2>
+        <p class="lead">Тут зберігаються всі документи кабінету: проєкти, погодження, голосування Конгресу, чинні редакції та архів.</p>
+        <section class="card" style="margin-bottom:16px">
+          <form id="registry-filter" class="form-actions" style="align-items:center">
+            <label class="muted">Статус
+              <select name="status" style="min-width:210px">
+                <option value="all">Усі статуси</option>
+                <option value="draft">Проєкти</option>
+                <option value="review">На погодженні</option>
+                <option value="congress">На голосуванні Конгресу</option>
+                <option value="adopted">Прийнято Конгресом</option>
+                <option value="ok">Чинні</option>
+                <option value="dead">Архівні</option>
+                <option value="rejected">Відхилені</option>
+                <option value="trash">Кошик</option>
+              </select>
+            </label>
+            <label class="muted">Вид
+              <select name="type" style="min-width:220px">
+                <option value="all">Усі види</option>
+              </select>
+            </label>
+            <label class="muted">Пошук
+              <input name="q" type="search" placeholder="Назва, номер, автор" style="min-width:260px">
+            </label>
+          </form>
+        </section>
+        <section class="card">
+          <div class="section-head">
+            <div>
+              <h3 id="registry-title">Документи</h3>
+              <p class="muted" id="registry-note">Редагувати можна власні документи. Адмін бачить і керує всім реєстром.</p>
+            </div>
+            <a class="btn gold" href="../create/">Створити документ</a>
+          </div>
+          <div id="registry-list"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
+  <script src="../../assets/accounts.js"></script>
+  <script src="../../assets/app.js"></script>
+  <script src="../../assets/store.js"></script>
+  <script>
+    const user = requireAuth();
+    if (!user) throw new Error("auth");
+    if (isCitizen(user)) location.href = "../appeals/";
+    const isAdmin = (user.roles || [])[0] === "governor" || hasPermission(user, "editAllDocs");
+    const form = document.getElementById("registry-filter");
+    const params = new URLSearchParams(location.search);
+    document.getElementById("top-office").textContent = officeTitle(user);
+    if (!hasPermission(user, "managePeople") && !hasPermission(user, "manageStructure") && !hasPermission(user, "manageRoutes") && !hasPermission(user, "approveProfiles")) {
+      document.getElementById("nav-admin").style.display = "none";
+    }
+    if (isAdmin && params.get("action") && params.get("id")) {
+      const action = params.get("action");
+      const id = params.get("id");
+      if (action === "trash") {
+        trashDoc(id, user);
+        location.href = "./";
+      } else if (action === "restore") {
+        restoreDoc(id, user);
+        location.href = "./?status=trash";
+      } else if (action === "delete") {
+        deleteDoc(id);
+        location.href = "./?status=trash";
+      }
+    }
+    DOC_TYPES.concat(["Кодекс","Наказ","Указ","Розпорядження","Постанова","Доручення","Ордер","Повістка","Ухвала суду","Наказ Голови ВС"]).filter((v, i, a) => a.indexOf(v) === i).forEach((type) => {
+      const option = document.createElement("option");
+      option.value = type;
+      option.textContent = type;
+      form.type.appendChild(option);
+    });
+    form.status.value = params.get("status") || "all";
+    form.type.value = params.get("type") || "all";
+    form.q.value = params.get("q") || "";
+    function canEdit(doc) {
+      return isAdmin || !doc.ownerLogin || doc.ownerLogin === user.login;
+    }
+    function visibleDocs() {
+      const q = form.q.value.trim().toLowerCase();
+      return allDocs().filter((doc) => {
+        if (form.status.value !== "trash" && doc.status === "trash" && !q) return false;
+        if (!isAdmin && doc.ownerLogin && doc.ownerLogin !== user.login && doc.office !== userOffice(user)) return false;
+        if (form.status.value !== "all" && doc.status !== form.status.value) return false;
+        if (form.type.value !== "all" && doc.type !== form.type.value) return false;
+        const text = `${doc.title || ""} ${doc.number || ""} ${doc.author || ""} ${doc.body || ""}`.toLowerCase();
+        return !q || text.includes(q);
+      });
+    }
+    function drawRegistry() {
+      const docs = visibleDocs();
+      const counts = docs.reduce((acc, doc) => {
+        acc[doc.status] = (acc[doc.status] || 0) + 1;
+        return acc;
+      }, {});
+      document.getElementById("registry-title").textContent = `Документи: ${docs.length}`;
+      document.getElementById("registry-note").innerHTML = Object.keys(counts).length
+        ? Object.keys(counts).map((status) => `<span class="pill">${esc(DOC_STATUSES[status] || status)}: ${counts[status]}</span>`).join(" ")
+        : "За цим фільтром документів немає.";
+      document.getElementById("registry-list").innerHTML = docs.length ? docs.map((doc) => `
+        <article class="act-row">
+          <div class="act-num">${esc(formatDocWhen(doc))}</div>
+          <div>
+            <h3><a href="${attr(docHref(doc))}">${esc(doc.title)}</a></h3>
+            <div class="act-meta">${esc(doc.type)} · ${esc(doc.number)} · ${esc(officeName(doc.office) !== "—" ? officeName(doc.office) : (doc.body || ""))}</div>
+            <div class="route-line">
+              ${doc.status === "review" || doc.status === "congress" ? `${esc(routeProgressLabel(doc))} · ` : ""}
+              ${esc((doc.versions || []).length)} версій · ${esc((doc.history || []).length)} записів журналу
+            </div>
+          </div>
+          <span>
+            <span class="badge ${attr(badgeClass(doc.status))}">${esc(DOC_STATUSES[doc.status] || doc.status)}</span>
+            ${canEdit(doc) && doc.status !== "trash" ? `<a class="btn ghost" href="../create/?id=${encodeURIComponent(doc.id)}">Редагувати</a>` : ""}
+            ${isAdmin && doc.status !== "trash" ? `<a class="btn ghost danger" href="./?action=trash&id=${encodeURIComponent(doc.id)}">У кошик</a>` : ""}
+            ${isAdmin && doc.status === "trash" ? `<a class="btn ghost" href="./?action=restore&id=${encodeURIComponent(doc.id)}">Відновити</a>` : ""}
+            ${isAdmin && doc.status === "trash" ? `<a class="btn ghost danger" href="./?action=delete&id=${encodeURIComponent(doc.id)}">Видалити остаточно</a>` : ""}
+          </span>
+        </article>
+      `).join("") : "<p class='lead'>Документів за цим фільтром немає.</p>";
+    }
+    window.drawRegistry = drawRegistry;
+    form.addEventListener("input", drawRegistry);
+    form.addEventListener("change", drawRegistry);
+    drawRegistry();
+  </script>
+</body>
+</html>

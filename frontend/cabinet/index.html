@@ -23,69 +23,188 @@
     <div class="nav-inner">
       <a href="../">Головна</a>
       <a href="../acts/">Законодавча база</a>
-      <a href="./">Кабінет</a>
-      <a href="#" id="logout">Вийти</a>
+      <a href="../structure/">Органи влади</a>
     </div>
   </nav>
   <main class="wrap">
     <div class="cabinet-layout">
       <aside class="side-nav">
         <a class="active" href="./">Профіль</a>
-        <a href="docs/">Опубліковані документи</a>
-        <a href="people/" id="nav-people">Учасники</a>
-        <a href="../acts/">Законодавча база</a>
-        <a class="create" href="chancery/">Створити документ</a>
+        <a href="portal/">Портал послуг</a>
+        <a href="inbox/">Повідомлення</a>
+        <a href="appeals/" id="nav-appeals">Мої звернення</a>
+        <a href="all/" data-staff-nav>Реєстр документів</a>
+        <a href="docs/" data-staff-nav>Опубліковані документи</a>
+        <a href="admin/" id="nav-admin" data-staff-nav>Адмін-панель</a>
+        <a class="create-doc-link" href="create/" data-staff-nav>Створити документ</a>
       </aside>
-      <section class="card">
-        <h2 class="page-title" style="margin-top:0" id="page-h">Профіль</h2>
-        <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
-          <div>
-            <img class="profile-photo" id="avatar" alt="Фото" src="">
-            <p class="muted" style="margin-top:8px">Фото на бланках</p>
-            <input type="file" id="photo" accept="image/*">
+      <section class="profile-page">
+        <section class="profile-hero card">
+          <img class="profile-photo large" id="avatar" alt="Фото" src="">
+          <div class="profile-main">
+            <p class="eyebrow" id="profile-kind">Кабінет</p>
+            <h2 class="page-title" style="margin-top:0" id="f-name">—</h2>
+            <p class="lead" id="profile-subtitle">—</p>
+            <div class="pill-list" id="f-perms"></div>
           </div>
-          <table class="meta-table" style="flex:1;min-width:260px">
-            <tr><th>Ім’я</th><td id="f-name">—</td></tr>
-            <tr><th>Логін</th><td id="f-login">—</td></tr>
-            <tr><th>Апарат управління</th><td id="f-office">—</td></tr>
-            <tr><th>Посада</th><td id="f-post">—</td></tr>
-            <tr><th>Номер паспорта</th><td id="f-pass">—</td></tr>
-          </table>
+          <button class="btn gold" type="button" id="btn-edit-profile">Редагувати профіль</button>
+        </section>
+        <section class="card">
+          <div class="section-head">
+            <div>
+              <h3>Дані профілю</h3>
+              <p class="muted">Зміни імені, контактів або фото вступлять у силу після підтвердження адміністратором.</p>
+            </div>
+          </div>
+          <div class="profile-details">
+            <div><span>Логін</span><b id="f-login">—</b></div>
+            <div><span>Апарат</span><b id="f-office">—</b></div>
+            <div><span>Посада</span><b id="f-post">—</b></div>
+            <div><span>Stat ID</span><b id="f-stat">—</b></div>
+            <div><span>Контакт</span><b id="f-contact">—</b></div>
+            <div><span>Статус профілю</span><b id="f-profile-status">Підтверджено</b></div>
+          </div>
+        </section>
+        <div class="mini-grid" style="margin-top:18px">
+          <div class="metric"><b id="m-review">0</b><span class="muted">на погодженні</span></div>
+          <div class="metric"><b id="m-docs">0</b><span class="muted">документів у кабінеті</span></div>
+          <div class="metric"><b id="m-people">0</b><span class="muted">учасників системи</span></div>
+          <div class="metric"><b id="m-my-appeals">0</b><span class="muted">моїх звернень</span></div>
         </div>
+        <section class="cabinet-news" id="cabinet-news"></section>
       </section>
     </div>
   </main>
+  <div class="modal-backdrop" id="profile-modal" hidden>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+      <button class="modal-close" type="button" data-close-modal aria-label="Закрити">×</button>
+      <h3 id="profile-modal-title">Редагувати профіль</h3>
+      <p class="muted">Збереження створить заявку. Після підтвердження адміністратором дані оновляться в кабінеті.</p>
+      <form id="profile-form">
+        <label>Ім’я та прізвище
+          <input name="name" required>
+        </label>
+        <label id="profile-post-wrap">Публічна посада
+          <input name="post">
+        </label>
+        <label>Stat ID
+          <input name="statId">
+        </label>
+        <label>Електронна адреса
+          <input name="contact" placeholder="Discord або Telegram">
+        </label>
+        <label>Зображення профілю
+          <input type="file" id="profile-photo-input" accept="image/*">
+          <span class="field-help">Фото теж піде на підтвердження разом із заявкою.</span>
+        </label>
+        <div class="modal-actions">
+          <button class="btn gold" type="submit">Подати на підтвердження</button>
+          <button class="btn ghost" type="button" data-close-modal>Скасувати</button>
+        </div>
+      </form>
+    </section>
+  </div>
   <script src="../assets/accounts.js"></script>
   <script src="../assets/app.js"></script>
   <script src="../assets/store.js"></script>
   <script>
     const user = requireAuth();
     if (user) {
-      const title = officeTitle(user);
+      const title = isCitizen(user) ? "Кабінет громадянина" : officeTitle(user);
       document.getElementById("top-office").textContent = title;
       document.getElementById("hdr-office").textContent = title;
-      document.getElementById("page-h").textContent = title;
       document.getElementById("f-name").textContent = user.username;
       document.getElementById("f-login").textContent = user.login;
       document.getElementById("f-office").textContent = title;
       document.getElementById("f-post").textContent = user.post || "не вказано";
-      document.getElementById("f-pass").textContent = user.passport || "не вказано";
+      document.getElementById("f-stat").textContent = user.statId || "не вказано";
+      document.getElementById("f-contact").textContent = user.contact || "не вказано";
+      document.getElementById("profile-kind").textContent = isCitizen(user) ? "Громадянин штату" : "Посадовець";
+      document.getElementById("profile-subtitle").textContent = isCitizen(user)
+        ? "Звернення, позови та переписка з апаратами."
+        : `${title} · ${user.post || "посада не вказана"}${isCongressMember(user) ? " · Конгресмен" : ""}`;
+      const perms = userPermissions(user).map((p) => PERMISSION_LABELS[p] || p);
+      document.getElementById("f-perms").innerHTML = perms.length
+        ? `${isCongressMember(user) ? `<span class="pill">Конгресмен</span>` : ""}${perms.map((p) => `<span class="pill">${esc(p)}</span>`).join("")}`
+        : `<span class="pill">${isCitizen(user) ? "Громадянин штату" : "Права не призначено"}</span>`;
+      document.getElementById("m-review").textContent = reviewDocsFor(user).length;
+      document.getElementById("m-docs").textContent = cabinetCreatedDocs().filter((d) =>
+        d.ownerLogin === user.login || d.office === userOffice(user) || (user.roles || [])[0] === "governor"
+      ).length;
+      document.getElementById("m-people").textContent = allUsers().length;
+      document.getElementById("m-my-appeals").textContent = citizenAppealsFor(user).length;
+      if (isCitizen(user)) {
+        document.querySelectorAll("[data-staff-nav]").forEach((el) => { el.style.display = "none"; });
+        document.getElementById("m-review").parentElement.querySelector("span").textContent = "вхідних повідомлень";
+        document.getElementById("m-review").textContent = appealsForUser(user).filter((a) => a.status === "answered").length;
+        document.getElementById("m-docs").parentElement.querySelector("span").textContent = "моїх звернень";
+        document.getElementById("m-docs").textContent = appealsForUser(user).length;
+        document.getElementById("m-people").parentElement.style.display = "none";
+        document.getElementById("m-my-appeals").parentElement.style.display = "none";
+      }
+      const pendingProfile = profileRequestsForUser(user).find((r) => r.status === "pending");
+      document.getElementById("f-profile-status").textContent = pendingProfile ? "Очікує підтвердження" : "Підтверджено";
+      const news = approvalNewsFor(user);
+      document.getElementById("cabinet-news").innerHTML = news.length ? `
+        <div class="section-head">
+          <div>
+            <h3>Новини кабінету</h3>
+            <p class="muted">Система автоматично показує документи, які чекають вашого погодження.</p>
+          </div>
+          <a class="btn gold" href="inbox/">Відкрити</a>
+        </div>
+        <div class="admin-list">
+          ${news.map((item) => `
+            <article class="admin-list-row is-attention">
+              <div class="admin-code">!</div>
+              <div class="admin-row-main">
+                <div class="admin-row-title"><b>${esc(item.title)}</b><span class="badge draft">Потрібна дія</span></div>
+                <div class="admin-row-meta"><span>${esc(item.text)}</span></div>
+              </div>
+              <div class="admin-row-actions"><a class="btn ghost" href="inbox/">Перейти</a></div>
+            </article>
+          `).join("")}
+        </div>` : "";
       const img = document.getElementById("avatar");
       img.src = user.photo || "";
       if (!user.photo) img.alt = "немає фото";
-      if ((user.roles || [])[0] !== "governor") {
-        document.getElementById("nav-people").style.display = "none";
+      if (!hasPermission(user, "managePeople") && !hasPermission(user, "manageStructure") && !hasPermission(user, "manageRoutes") && !hasPermission(user, "approveProfiles")) {
+        document.getElementById("nav-admin").style.display = "none";
       }
-      document.getElementById("photo").addEventListener("change", (ev) => {
+      if (isCitizen(user)) document.getElementById("nav-admin").style.display = "none";
+      let pendingPhoto = "";
+      const modal = document.getElementById("profile-modal");
+      const form = document.getElementById("profile-form");
+      document.getElementById("btn-edit-profile").addEventListener("click", () => {
+        form.name.value = user.username || "";
+        form.post.value = user.post || "";
+        form.statId.value = user.statId || "";
+        form.contact.value = user.contact || "";
+        document.getElementById("profile-post-wrap").style.display = isCitizen(user) ? "none" : "block";
+        pendingPhoto = "";
+        modal.hidden = false;
+      });
+      document.querySelectorAll("[data-close-modal]").forEach((btn) => btn.addEventListener("click", () => { modal.hidden = true; }));
+      document.getElementById("profile-photo-input").addEventListener("change", (ev) => {
         const file = ev.target.files && ev.target.files[0];
         if (!file) return;
         const r = new FileReader();
-        r.onload = () => {
-          const full = allUsers().find((u) => u.login === user.login);
-          saveUser(Object.assign({}, full, { photo: r.result }));
-          img.src = r.result;
-        };
+        r.onload = () => { pendingPhoto = r.result; };
         r.readAsDataURL(file);
+      });
+      form.addEventListener("submit", (ev) => {
+        ev.preventDefault();
+        const data = new FormData(form);
+        saveProfileRequest({
+          login: user.login,
+          name: data.get("name"),
+          post: data.get("post"),
+          statId: data.get("statId"),
+          contact: data.get("contact"),
+          photo: pendingPhoto || user.photo || ""
+        });
+        modal.hidden = true;
+        document.getElementById("f-profile-status").textContent = "Очікує підтвердження";
       });
     }
   </script>

@@ -28,33 +28,35 @@
       <a href="./">Головна</a>
       <a href="acts/">Законодавча база</a>
       <a href="structure/">Органи влади</a>
-      <a href="login/">Кабінет</a>
     </div>
   </nav>
   <main class="wrap">
-    <h2 class="page-title">Портал штату Сан-Андреас</h2>
-    <p class="lead">Публічна база актів Уряду та судових органів. Кабінет — для посадовців штату.</p>
+    <section class="portal-hero">
+      <div>
+        <p class="eyebrow">Офіційний RP-портал</p>
+        <h2 class="page-title">Портал штату Сан-Андреас</h2>
+        <p class="lead">Публічна база актів Уряду та судових органів. Кабінет — для посадовців штату.</p>
+        <div class="hero-actions">
+          <a class="btn gold" href="acts/">Відкрити законодавчу базу</a>
+        </div>
+      </div>
+      <div class="hero-stats">
+        <div><b id="stat-published">0</b><span>чинних актів</span></div>
+        <div><b id="stat-home">0</b><span>на головній</span></div>
+        <div><b id="stat-cabinet">0</b><span>створено в кабінеті</span></div>
+      </div>
+    </section>
     <div class="grid-2">
       <section class="card">
         <h3>На головній</h3>
-        <p class="lead">Тільки акти з галочкою «публікувати на головну».</p>
+        <p class="lead">Чинні акти та важливі проєкти, які винесені на публічний перегляд.</p>
         <div id="home-acts"></div>
       </section>
-      <div>
-        <aside class="card">
-          <h3>Кабінет посадовця</h3>
-          <p class="lead">Вхід за логіном, виданим Урядом. Новий учасник подає заявку на реєстрацію.</p>
-          <p>
-            <a class="btn gold" href="login/">Увійти</a>
-            <a class="btn ghost" href="register/">Реєстрація</a>
-          </p>
-        </aside>
-        <section class="card" style="margin-top:16px">
-          <h3>Додано з кабінету</h3>
-          <p class="lead">Усі нові акти канцелярії — дата і час.</p>
-          <div id="cabinet-feed"></div>
-        </section>
-      </div>
+      <section class="card">
+        <h3>Останні публікації</h3>
+        <p class="lead">Нові документи, додані через кабінет посадовця.</p>
+        <div id="cabinet-feed"></div>
+      </section>
     </div>
   </main>
   <footer class="footer">
@@ -70,14 +72,17 @@
     document.addEventListener("DOMContentLoaded", () => {
       const row = (a) => `
         <article class="act-row">
-          <div class="act-num">${formatDocWhen(a)}</div>
+          <div class="act-num">${esc(formatDocWhen(a))}</div>
           <div>
-            <h3><a href="${docHref(a)}">${a.title}</a></h3>
-            <div class="act-meta">${a.type} · ${a.number}${a.author ? " · " + a.author : ""}</div>
+            <h3><a href="${attr(docHref(a))}">${esc(a.title)}</a></h3>
+            <div class="act-meta">${esc(a.type)} · ${esc(a.number)}${a.author ? " · " + esc(a.author) : ""}</div>
           </div>
-          <span class="badge ${badgeClass(a.status)}">${DOC_STATUSES[a.status] || a.status}</span>
+          <span class="badge ${attr(badgeClass(a.status))}">${esc(DOC_STATUSES[a.status] || a.status)}</span>
         </article>`;
       const home = homeDocs().slice(0, 6);
+      document.getElementById("stat-published").textContent = publishedDocs().length;
+      document.getElementById("stat-home").textContent = homeDocs().length;
+      document.getElementById("stat-cabinet").textContent = cabinetCreatedDocs().length;
       const box = document.getElementById("home-acts");
       if (box) {
         box.innerHTML = home.length ? home.map(row).join("") : "<p class='lead'>Немає актів для головної.</p>";
@@ -87,7 +92,7 @@
       if (feed) {
         feed.innerHTML = created.length
           ? created.map(row).join("")
-          : "<p class='lead'>З канцелярії ще нічого не додавали в цьому браузері.</p>";
+          : "<p class='lead'>З кабінету ще нічого не додавали в цьому браузері.</p>";
       }
     });
   </script>

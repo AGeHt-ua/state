@@ -14,7 +14,7 @@
         <div class="crest">SA</div>
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
-          <p>Заявка на доступ</p>
+          <p id="hdr-kind">Реєстрація в кабінеті</p>
         </div>
       </a>
     </div>
@@ -22,18 +22,19 @@
   <nav class="nav">
     <div class="nav-inner">
       <a href="../">Головна</a>
-      <a href="../login/">Вхід</a>
+      <a href="../acts/">Законодавча база</a>
     </div>
   </nav>
   <main class="wrap">
-    <h2 class="page-title">Реєстрація учасника</h2>
+    <h2 class="page-title" id="page-title">Реєстрація учасника</h2>
     <section class="card">
-      <p class="lead">Після реєстрації Губернатор призначає апарат управління. Посаду можна змінити адміну. Номер паспорта більше не змінюється.</p>
+      <p class="lead" id="reg-lead">Після реєстрації Губернатор призначає апарат управління. Посаду вказуєте самі; змінити її може адміністратор.</p>
       <form id="reg-form">
         <table class="meta-table">
           <tr><th>Ігрове ім’я</th><td><input name="name" required placeholder="Dominic Castro"></td></tr>
-          <tr><th>Посада</th><td><input name="post" required placeholder="Голова Верховного Суду"></td></tr>
-          <tr><th>Номер паспорта</th><td><input name="passport" required placeholder="4158821" inputmode="numeric"></td></tr>
+          <tr id="stat-row"><th>Stat ID</th><td><input name="statId" placeholder="SA-000001"></td></tr>
+          <tr id="contact-row"><th>Електронна адреса</th><td><input name="contact" placeholder="Discord або Telegram"></td></tr>
+          <tr id="post-row"><th>Посада</th><td><input name="post" placeholder="Голова Верховного Суду"></td></tr>
           <tr><th>Логін</th><td><input name="login" required placeholder="castro"></td></tr>
           <tr><th>Пароль</th><td><input name="password" type="password" required></td></tr>
         </table>
@@ -47,15 +48,28 @@
   <script src="../assets/app.js"></script>
   <script src="../assets/store.js"></script>
   <script>
+    const type = new URLSearchParams(location.search).get("type") === "official" ? "official" : "citizen";
+    const citizen = type === "citizen";
+    document.getElementById("page-title").textContent = citizen ? "Реєстрація громадянина штату" : "Реєстрація посадовця";
+    document.getElementById("hdr-kind").textContent = citizen ? "Кабінет громадянина" : "Заявка посадовця";
+    document.getElementById("reg-lead").textContent = citizen
+      ? "Громадянин отримує кабінет одразу: звернення, позови, статуси і переписка з апаратами."
+      : "Посадовець після реєстрації очікує, доки адміністратор призначить апарат, роль і посаду.";
+    document.getElementById("post-row").style.display = citizen ? "none" : "table-row";
+    document.querySelector("input[name='post']").required = !citizen;
+    document.querySelector("input[name='statId']").required = citizen;
+    document.querySelector("input[name='contact']").required = citizen;
     document.getElementById("reg-form").addEventListener("submit", (e) => {
       e.preventDefault();
       const data = new FormData(e.target);
       const res = registerUser({
         name: data.get("name"),
         post: data.get("post"),
-        passport: data.get("passport"),
+        statId: data.get("statId"),
+        contact: data.get("contact"),
         login: data.get("login"),
-        password: data.get("password")
+        password: data.get("password"),
+        accountType: type
       });
       const box = document.getElementById("reg-msg");
       if (!res.ok) {
@@ -64,7 +78,7 @@
         return;
       }
       loginWithPassword(String(data.get("login")).trim().toLowerCase(), data.get("password"));
-      location.href = pathTo("cabinet/pending/");
+      location.href = citizen ? pathTo("cabinet/") : pathTo("cabinet/pending/");
     });
   </script>
 </body>
