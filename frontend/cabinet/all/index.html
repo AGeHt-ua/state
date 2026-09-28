@@ -4,14 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Реєстр документів — State</title>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260928c" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929e" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260929e" />
 </head>
 <body>
   <div class="topbar" id="top-office">Кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <div class="crest">SA</div>
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929e" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Повний документообіг кабінету</p>
@@ -40,10 +41,11 @@
         <h2 class="page-title" style="margin-top:0">Реєстр документів</h2>
         <p class="lead">Тут зберігаються всі документи кабінету: проєкти, погодження, голосування Конгресу, чинні редакції та архів.</p>
         <section class="card" style="margin-bottom:16px">
-          <form id="registry-filter" class="form-actions" style="align-items:center">
-            <label class="muted">Статус
-              <select name="status" style="min-width:210px">
+          <form id="registry-filter" class="act-filters">
+            <label>Статус
+              <select name="status">
                 <option value="all">Усі статуси</option>
+                <option value="mine">Мої документи</option>
                 <option value="draft">Проєкти</option>
                 <option value="review">На погодженні</option>
                 <option value="congress">На голосуванні Конгресу</option>
@@ -54,13 +56,13 @@
                 <option value="trash">Кошик</option>
               </select>
             </label>
-            <label class="muted">Вид
-              <select name="type" style="min-width:220px">
+            <label>Вид
+              <select name="type">
                 <option value="all">Усі види</option>
               </select>
             </label>
-            <label class="muted">Пошук
-              <input name="q" type="search" placeholder="Назва, номер, автор" style="min-width:260px">
+            <label>Пошук
+              <input name="q" type="search" placeholder="Назва, номер, автор">
             </label>
           </form>
         </section>
@@ -78,9 +80,9 @@
     </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/accounts.js?v=20260928c"></script>
-  <script src="../../assets/app.js?v=20260928c"></script>
-  <script src="../../assets/store.js?v=20260928c"></script>
+  <script src="../../assets/accounts.js?v=20260929e"></script>
+  <script src="../../assets/app.js?v=20260929e"></script>
+  <script src="../../assets/store.js?v=20260929e"></script>
   <script>
     const user = requireAuth();
     if (!user) throw new Error("auth");
@@ -92,20 +94,18 @@
     if (!hasPermission(user, "managePeople") && !hasPermission(user, "manageStructure") && !hasPermission(user, "manageRoutes") && !hasPermission(user, "approveProfiles")) {
       document.getElementById("nav-admin").style.display = "none";
     }
-    if (isAdmin && params.get("action") && params.get("id")) {
-      const action = params.get("action");
-      const id = params.get("id");
-      if (action === "trash") {
-        trashDoc(id, user);
-        location.href = "./";
-      } else if (action === "restore") {
-        restoreDoc(id, user);
-        location.href = "./?status=trash";
-      } else if (action === "delete") {
-        deleteDoc(id);
-        location.href = "./?status=trash";
-      }
-    }
+    // Дії з документами — лише кнопками з підтвердженням (раніше спрацьовували від самого відкриття адреси)
+    document.getElementById("registry-list").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-doc-action]");
+      if (!b || !isAdmin) return;
+      const doc = getDoc(b.dataset.id);
+      if (!doc) return;
+      const a = b.dataset.docAction;
+      if (a === "trash" && confirm("Перенести «" + doc.title + "» у кошик?")) trashDoc(doc.id, user);
+      if (a === "restore") restoreDoc(doc.id, user);
+      if (a === "delete" && confirm("Видалити «" + doc.title + "» остаточно?\nЦю дію не можна скасувати.")) deleteDoc(doc.id);
+      drawRegistry();
+    });
     DOC_TYPES.concat(["Кодекс","Наказ","Указ","Розпорядження","Постанова","Доручення","Ордер","Повістка","Ухвала суду","Наказ Голови ВС"]).filter((v, i, a) => a.indexOf(v) === i).forEach((type) => {
       const option = document.createElement("option");
       option.value = type;
@@ -123,7 +123,8 @@
       return allDocs().filter((doc) => {
         if (form.status.value !== "trash" && doc.status === "trash" && !q) return false;
         if (!isAdmin && doc.ownerLogin && doc.ownerLogin !== user.login && doc.office !== userOffice(user)) return false;
-        if (form.status.value !== "all" && doc.status !== form.status.value) return false;
+        if (form.status.value === "mine") { if (doc.ownerLogin !== user.login) return false; }
+        else if (form.status.value !== "all" && doc.status !== form.status.value) return false;
         if (form.type.value !== "all" && doc.type !== form.type.value) return false;
         const text = `${doc.title || ""} ${doc.number || ""} ${doc.author || ""} ${doc.body || ""}`.toLowerCase();
         return !q || text.includes(q);
@@ -152,10 +153,10 @@
           </div>
           <span>
             <span class="badge ${attr(badgeClass(doc.status))}">${esc(DOC_STATUSES[doc.status] || doc.status)}</span>
-            ${canEdit(doc) && doc.status !== "trash" ? `<a class="btn ghost" href="../create/?id=${encodeURIComponent(doc.id)}">Редагувати</a>` : ""}
-            ${isAdmin && doc.status !== "trash" ? `<a class="btn ghost danger" href="./?action=trash&id=${encodeURIComponent(doc.id)}">У кошик</a>` : ""}
-            ${isAdmin && doc.status === "trash" ? `<a class="btn ghost" href="./?action=restore&id=${encodeURIComponent(doc.id)}">Відновити</a>` : ""}
-            ${isAdmin && doc.status === "trash" ? `<a class="btn ghost danger" href="./?action=delete&id=${encodeURIComponent(doc.id)}">Видалити остаточно</a>` : ""}
+            ${canEdit(doc) && doc.status !== "trash" && !doc.seeded ? `<a class="btn ghost" href="../create/?id=${encodeURIComponent(doc.id)}">Редагувати</a>` : ""}
+            ${isAdmin && doc.status !== "trash" ? `<button type="button" class="btn ghost danger" data-doc-action="trash" data-id="${attr(doc.id)}">У кошик</button>` : ""}
+            ${isAdmin && doc.status === "trash" ? `<button type="button" class="btn ghost" data-doc-action="restore" data-id="${attr(doc.id)}">Відновити</button>` : ""}
+            ${isAdmin && doc.status === "trash" ? `<button type="button" class="btn ghost danger" data-doc-action="delete" data-id="${attr(doc.id)}">Видалити остаточно</button>` : ""}
           </span>
         </article>
       `).join("") : "<p class='lead'>Документів за цим фільтром немає.</p>";

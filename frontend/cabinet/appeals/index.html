@@ -4,14 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Звернення — State</title>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260928c" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929e" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260929e" />
 </head>
 <body>
   <div class="topbar" id="top-office">Кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <div class="crest">SA</div>
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929e" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Звернення та позови</p>
@@ -78,9 +79,9 @@
     </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/accounts.js?v=20260928c"></script>
-  <script src="../../assets/app.js?v=20260928c"></script>
-  <script src="../../assets/store.js?v=20260928c"></script>
+  <script src="../../assets/accounts.js?v=20260929e"></script>
+  <script src="../../assets/app.js?v=20260929e"></script>
+  <script src="../../assets/store.js?v=20260929e"></script>
   <script>
     const user = requireAuth();
     if (!user) throw new Error("auth");
@@ -108,7 +109,7 @@
         <article class="appeal-card">
           <div class="admin-row-title">
             <b>${esc(appeal.number)} · ${esc(appeal.kind || "Звернення")}</b>
-            <span class="badge ${appeal.status === "answered" ? "ok" : "draft"}">${esc(appealStatusLabel(appeal.status))}</span>
+            <span class="badge ${appeal.status === "answered" ? "ok" : appeal.status === "closed" ? "dead" : "draft"}">${esc(appealStatusLabel(appeal.status))}</span>
           </div>
           <div class="admin-row-meta">
             <span>${esc(officeName(appeal.office))}</span>
@@ -117,13 +118,17 @@
           </div>
           <p>${esc(appeal.text)}</p>
           <div class="appeal-thread">
-            ${(appeal.thread || []).map((m) => `<div><b>${esc(m.byName)}</b><span>${esc(formatDocWhen({ date: m.at }))}</span><p>${esc(m.text)}</p></div>`).join("")}
+            ${(appeal.thread || []).filter((m, i) => !(i === 0 && m.text === String(appeal.text || "").trim())).map((m) => `<div class="${m.by === appeal.ownerLogin ? "from-owner" : "from-office"}"><b>${esc(m.byName)}</b><span>${esc(formatDocWhen({ date: m.at }))}</span><p>${esc(m.text)}</p></div>`).join("")}
           </div>
+          ${appeal.status === "closed" ? `<p class="muted">Звернення закрито${appeal.closedByName ? " · " + esc(appeal.closedByName) : ""}.</p>` : `
           <form data-appeal-reply="${attr(appeal.id)}" class="reply-form">
             <input type="hidden" name="mode" value="${attr(mode)}">
             <textarea name="message" required placeholder="${mode === "office" ? "Надати відповідь..." : "Додати уточнення..."}"></textarea>
-            <button class="btn ${mode === "office" ? "gold" : "ghost"}" type="submit">${mode === "office" ? "Надати відповідь" : "Додати повідомлення"}</button>
-          </form>
+            <div class="form-actions">
+              <button class="btn ${mode === "office" ? "gold" : "ghost"}" type="submit">${mode === "office" ? "Надати відповідь" : "Додати повідомлення"}</button>
+              <button class="btn ghost" type="button" data-appeal-close="${attr(appeal.id)}">Закрити звернення</button>
+            </div>
+          </form>`}
         </article>
       `;
       const own = citizenAppealsFor(user);
@@ -147,6 +152,15 @@
           drawAppeals();
         });
       });
+      document.querySelectorAll("[data-appeal-close]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const appeal = allAppeals().find((a) => a.id === btn.dataset.appealClose);
+          if (!appeal || !confirm("Закрити звернення " + appeal.number + "? Після цього в ньому не можна буде писати.")) return;
+          saveAppeal(Object.assign({}, appeal, { status: "closed", closedAt: new Date().toISOString(), closedBy: user.login, closedByName: actorName(user) }), { user, message: "Звернення закрито." });
+          drawAppeals();
+        });
+      });
+      if (typeof enhanceCabinetNavigation === "function" && document.querySelector(".side-me")) enhanceCabinetNavigation();
     }
     document.getElementById("appeal-form").addEventListener("submit", (e) => {
       e.preventDefault();

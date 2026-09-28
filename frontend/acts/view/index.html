@@ -4,16 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Документ — State</title>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260928c" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929e" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260929e" />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Great+Vibes&family=Playfair+Display:ital,wght@0,700;0,800;1,600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../assets/doc.css?v=20260928c" />
+  <link rel="stylesheet" href="../../assets/doc.css?v=20260929e" />
 </head>
 <body>
   <div class="topbar">Законодавча база штату Сан-Андреас</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <div class="crest">SA</div>
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929e" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Картка документа</p>
@@ -29,17 +30,17 @@
   </nav>
   <main class="wrap article" id="doc-root"></main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/accounts.js?v=20260928c"></script>
-  <script src="../../assets/app.js?v=20260928c"></script>
-  <script src="../../assets/store.js?v=20260928c"></script>
+  <script src="../../assets/accounts.js?v=20260929e"></script>
+  <script src="../../assets/app.js?v=20260929e"></script>
+  <script src="../../assets/store.js?v=20260929e"></script>
   <script>
     const id = new URLSearchParams(location.search).get("id");
     const doc = getDoc(id);
     const root = document.getElementById("doc-root");
-    if (!doc) {
+    const viewer = currentUser();
+    if (!doc || (doc.status === "trash" && !(viewer && isStaff(viewer)))) {
       root.innerHTML = "<h2 class='page-title'>Документ не знайдено</h2><p><a href='../'>До списку</a></p>";
     } else {
-      const viewer = currentUser();
       const canSeeLifecycle = viewer && isStaff(viewer);
       const history = (doc.history || []).slice().reverse();
       const versions = (doc.versions || []).slice().reverse();
@@ -64,21 +65,38 @@
         }
         return "Погодження документа";
       }
-      const signerRows = [
-        {
-          role: "Автор проєкту",
-          name: doc.author || "—",
-          office: doc.body || officeName(doc.office),
-          state: "Створено",
-          at: doc.date
-        }
-      ].concat((doc.approvalSteps || []).map((step, index) => ({
-        role: routeStepName(step, doc),
-        name: stepActorName(step),
-        office: stepActorOffice(step),
-        state: index < (doc.approvalIndex || 0) || doc.status === "ok" || doc.status === "adopted" ? "Погоджено" : "Очікує рішення",
-        at: ""
-      })));
+      // Підписанти: автор + кожен крок маршруту з фактичним рішенням із doc.approvals
+      const approvals = doc.approvals || [];
+      const inRoute = doc.status === "review" || doc.status === "congress";
+      const current = Number(doc.approvalIndex || 0);
+      const author = allUsers().find((u) => u.login === doc.ownerLogin);
+      const signerRows = [{
+        role: "Автор",
+        name: doc.author || "—",
+        office: (author && author.post ? author.post + " · " : "") + (doc.body || officeName(doc.office)),
+        state: "Створено", cls: "ok",
+        at: (doc.history && doc.history[0] && doc.history[0].at) || doc.date
+      }].concat((doc.approvalSteps || []).map((step, index) => {
+        const done = approvals.filter((a) => a.step === step && a.decision === "approved").slice(-1)[0];
+        const returned = approvals.filter((a) => a.step === step && a.decision !== "approved").slice(-1)[0];
+        let state = "Очікує черги", cls = "muted";
+        if (done && (index < current || doc.status === "ok" || doc.status === "adopted" || doc.status === "dead")) { state = "Погоджено"; cls = "ok"; }
+        else if (inRoute && index === current) {
+          if (step === "congress") { const t = congressTally(doc); state = "Голосування: за " + t.pro + ", проти " + t.contra; }
+          else state = "Очікує рішення";
+          cls = "draft";
+        } else if (returned && (doc.status === "draft" || doc.status === "rejected")) {
+          state = returned.decision === "rejected" ? "Відхилено" : "Повернено"; cls = "dead";
+        } else if (!inRoute && doc.status !== "ok") { state = "—"; cls = "muted"; }
+        const actor = done || returned;
+        return {
+          role: step === "congress" ? "Голосування Конгресу" : stepActorOffice(step),
+          name: actor ? actor.byName + (actor.post ? " · " + actor.post : "") : stepActorName(step),
+          office: actor && actor.comment ? "Коментар: " + actor.comment : "",
+          state, cls,
+          at: actor ? actor.at : ""
+        };
+      }));
       document.title = doc.title;
       root.innerHTML = `
         <div class="crumbs"><a href="../../">Головна</a> / <a href="../">Законодавча база</a> / ${esc(doc.number)}</div>
@@ -100,18 +118,23 @@
             : `<div>${esc(doc.text || "").replace(/\n/g, "<br>")}</div>`}
           <section class="card lifecycle-card">
             <h3>Погодження та підписанти</h3>
-            <p class="muted">Для проєктів Конституції, кодексів і законів тут показується, хто створив документ, хто погоджує його перед публікацією і який етап ще очікує рішення.</p>
-            <div class="signer-list">
+            ${doc.status === "draft" && doc.returnedReason ? `<p class="notice">Повернено на доопрацювання${doc.returnedByName ? " (" + esc(doc.returnedByName) + ")" : ""}: ${esc(doc.returnedReason)}</p>` : ""}
+            ${doc.status === "rejected" && doc.rejectedReason ? `<p class="notice danger">${esc(doc.rejectedReason)}</p>` : ""}
+            <ol class="signer-list">
               ${signerRows.map((row) => `
-                <article class="signer-row">
+                <li class="signer-row is-${attr(row.cls)}">
                   <div>
-                    <b>${esc(row.role)}</b>
-                    <span>${esc(row.name)} · ${esc(row.office || "—")}</span>
+                    <small>${esc(row.role)}</small>
+                    <b>${esc(row.name)}</b>
+                    ${row.office ? `<span>${esc(row.office)}</span>` : ""}
                   </div>
-                  <span class="badge ${row.state === "Погоджено" || row.state === "Створено" ? "ok" : "draft"}">${esc(row.state)}</span>
-                </article>
+                  <div class="signer-state">
+                    <span class="badge ${attr(row.cls === "muted" ? "dead" : row.cls)}">${esc(row.state)}</span>
+                    ${row.at ? `<small>${esc(formatDocWhen({ date: row.at }))}</small>` : ""}
+                  </div>
+                </li>
               `).join("")}
-            </div>
+            </ol>
           </section>
         ${canSeeLifecycle ? `
           <section class="card lifecycle-card">

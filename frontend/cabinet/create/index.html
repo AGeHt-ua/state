@@ -4,22 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Канцелярія — State</title>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260928c">
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929e" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260929e">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Great+Vibes&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;0,800;1,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../../assets/doc.css?v=20260928c">
-  <link rel="stylesheet" href="editor.css?v=20260928c">
+  <link rel="stylesheet" href="../../assets/doc.css?v=20260929e">
+  <link rel="stylesheet" href="editor.css?v=20260929e">
   <style id="printPage">@page { size: A4 portrait; margin: 0; }</style>
-  <script src="../../assets/accounts.js?v=20260928c"></script>
-  <script src="../../assets/app.js?v=20260928c"></script>
-  <script src="../../assets/store.js?v=20260928c"></script>
+  <script src="../../assets/accounts.js?v=20260929e"></script>
+  <script src="../../assets/app.js?v=20260929e"></script>
+  <script src="../../assets/store.js?v=20260929e"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body class="wd-body">
   <nav class="nav wd-nav">
     <div class="nav-inner">
-      <a class="wd-brand" href="../../"><span class="crest">SA</span><span>STATE</span></a>
+      <a class="wd-brand" href="../../"><img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929e" alt=""><span>STATE</span></a>
       <a href="../../">Головна</a>
       <a href="../../acts/">Законодавча база</a>
       <a href="../">Кабінет</a>
@@ -69,7 +70,11 @@
         <div class="rb-group">
           <div class="rb-row">
             <button type="button" class="rb-btn big" data-act="save" title="Ctrl+S"><i data-icon="save"></i><span>Зберегти</span></button>
+            <button type="button" class="rb-btn big" data-act="openDoc" title="Відкрити свій документ із реєстру (Ctrl+O)"><i data-icon="folder"></i><span>Відкрити<br>документ</span></button>
             <button type="button" class="rb-btn big" data-act="applyTemplate" title="Замінити текст шаблоном поточного типу"><i data-icon="newdoc"></i><span>Новий<br>з шаблону</span></button>
+            <button type="button" class="rb-btn big" data-act="blankDoc" title="Новий документ з порожнім аркушем"><i data-icon="page"></i><span>Порожній<br>документ</span></button>
+            <button type="button" class="rb-btn big" data-act="preview" title="Як документ виглядатиме на сайті"><i data-icon="eye"></i><span>Попередній<br>перегляд</span></button>
+            <button type="button" class="rb-btn big" data-act="help" title="Як працювати в редакторі, гарячі клавіші (F1)"><span class="glyph help-glyph">?</span><span>Довідка</span></button>
             <button type="button" class="rb-btn big" data-act="resetSlot" title="Скинути текст і налаштування поточного шаблону"><i data-icon="trash"></i><span>Очистити<br>шаблон</span></button>
           </div>
           <div class="rb-label">Документ</div>
@@ -260,6 +265,7 @@
               <button type="button" class="rb-btn wide" data-act="point"><i data-icon="numbers"></i><span>Пункт</span></button>
               <button type="button" class="rb-btn wide" data-act="subpoint"><i data-icon="subnumbers"></i><span>Підпункт</span></button>
               <button type="button" class="rb-btn wide" data-act="hr"><i data-icon="hr"></i><span>Лінія</span></button>
+              <button type="button" class="rb-btn wide" data-act="link" title="Вставити посилання (Ctrl+K)"><i data-icon="link"></i><span>Посилання</span></button>
             </div>
             <button type="button" class="rb-btn big" data-act="sigblock"><i data-icon="signature"></i><span>Блок<br>підпису</span></button>
           </div>
@@ -525,6 +531,66 @@
   </div>
   <input type="file" id="tplImportFile" accept=".json,application/json" hidden>
 
+  <!-- Відкрити документ із реєстру -->
+  <div class="modal" id="openModal" hidden>
+    <div class="modal-box tpl-box">
+      <h3>Відкрити документ</h3>
+      <div class="tpl-bar">
+        <input type="search" id="openSearch" placeholder="Пошук за назвою, номером, видом…" autocomplete="off">
+        <select id="openFilter">
+          <option value="mine">Мої</option>
+          <option value="all">Усі, які можу редагувати</option>
+        </select>
+      </div>
+      <ul class="tpl-list" id="openList"></ul>
+      <div class="modal-actions">
+        <span class="tpl-count">Документ відкриється в окремому шаблоні — поточна робота не зміниться.</span>
+        <button type="button" class="primary" data-act="modalClose">Закрити</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Попередній перегляд -->
+  <div class="modal preview-modal" id="previewModal" hidden>
+    <div class="modal-box preview-box">
+      <div class="preview-head">
+        <h3>Попередній перегляд — так документ виглядатиме на сайті</h3>
+        <button type="button" class="primary" data-act="modalClose">Закрити</button>
+      </div>
+      <div class="preview-body"><div class="preview-page" id="previewPage"></div></div>
+    </div>
+  </div>
+
+  <!-- Довідка -->
+  <div class="modal" id="helpModal" hidden>
+    <div class="modal-box help-box">
+      <h3>Як працювати в редакторі</h3>
+      <ol class="help-steps">
+        <li><b>Вкладка «Документ»</b> — оберіть тип і заповніть поля (номер, дата, ПІБ…). Вони самі оновлюються в тексті. У полях ПІБ можна вибрати людину зі списку учасників.</li>
+        <li><b>Номер</b> — кнопка «Авто» підставить наступний вільний номер для цього типу документа.</li>
+        <li><b>Текст</b> редагується як у Word: вкладки «Головна» (шрифт, абзац), «Вставлення» (пункти, таблиці, печатка, посилання), «Макет» (поля сторінки, фон).</li>
+        <li><b>Перевірте</b> документ кнопкою «Попередній перегляд».</li>
+        <li><b>Надішліть</b>: «Проєкт» — зберегти в реєстр; «На погодження» — відправити за маршрутом; «Опублікувати» — одразу (якщо є право) або через погодження.</li>
+      </ol>
+      <h4>Гарячі клавіші</h4>
+      <div class="kbd-grid">
+        <span><kbd>Ctrl</kbd>+<kbd>S</kbd></span><span>Зберегти</span>
+        <span><kbd>Ctrl</kbd>+<kbd>O</kbd></span><span>Відкрити документ</span>
+        <span><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></span><span>Скасувати / повторити</span>
+        <span><kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>I</kbd> / <kbd>U</kbd></span><span>Жирний / курсив / підкреслений</span>
+        <span><kbd>Ctrl</kbd>+<kbd>K</kbd></span><span>Вставити посилання</span>
+        <span><kbd>Ctrl</kbd>+<kbd>F</kbd> / <kbd>H</kbd></span><span>Знайти / замінити</span>
+        <span><kbd>Ctrl</kbd>+<kbd>E</kbd> / <kbd>L</kbd> / <kbd>R</kbd> / <kbd>J</kbd></span><span>По центру / ліворуч / праворуч / за шириною</span>
+        <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span><span>Розрив сторінки</span>
+        <span><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></span><span>Рівень пункту в списку</span>
+        <span><kbd>Ctrl</kbd>+<kbd>P</kbd></span><span>Друк / PDF</span>
+        <span><kbd>F1</kbd></span><span>Ця довідка</span>
+      </div>
+      <div class="modal-actions"><button type="button" class="primary" data-act="modalClose">Зрозуміло</button></div>
+    </div>
+  </div>
+  <datalist id="peopleList"></datalist>
+
   <div class="modal" id="apModal" hidden>
     <div class="modal-box ap-box">
       <h3>Відправити на погодження</h3>
@@ -560,6 +626,6 @@
 
   <div id="toast" class="wd-toast"></div>
 
-  <script src="editor.js?v=20260928c"></script>
+  <script src="editor.js?v=20260929e"></script>
 </body>
 </html>

@@ -1,16 +1,24 @@
+/* Роль визначається апаратом автоматично (гілка влади апарату). Конгрес — не роль, а статус користувача
+   (user.congressMember), який дає право голосувати в Конгресі. */
 const ROLE_LABELS = {
   governor: "Кабінет Губернатора",
-  congress: "Конгрес штату",
-  official: "Кабінет Директорів Департаменту",
-  prosecutor: "Кабінет Прокуратури",
-  court: "Кабінет Судової влади",
+  official: "Виконавча влада",
+  prosecutor: "Прокуратура",
+  court: "Судова влада",
   citizen: "Кабінет громадянина",
   pending: "Очікує призначення"
 };
 
+// Гілки влади для апаратів (у формі «Новий апарат»)
+const BRANCHES = [
+  { role: "official", label: "Виконавча влада", hint: "уряд, департаменти, служби" },
+  { role: "court", label: "Судова влада", hint: "суди" },
+  { role: "prosecutor", label: "Прокуратура", hint: "нагляд, обвинувачення" },
+  { role: "governor", label: "Кабінет Губернатора", hint: "повні права адміністратора" }
+];
+
 const OFFICE_BY_ROLE = {
   governor: "governor",
-  congress: "congress",
   official: "directors",
   prosecutor: "prosecutor",
   court: "court"
@@ -18,7 +26,6 @@ const OFFICE_BY_ROLE = {
 
 const OFFICE_NAMES = {
   governor: "Кабінет Губернатора",
-  congress: "Конгрес штату",
   directors: "Кабінет Директорів Департаменту",
   prosecutor: "Кабінет Прокуратури",
   court: "Кабінет Судової влади"
@@ -26,7 +33,6 @@ const OFFICE_NAMES = {
 
 const DEFAULT_OFFICES = [
   { id: "governor", name: "Кабінет Губернатора", role: "governor", canApprove: true },
-  { id: "congress", name: "Конгрес штату", role: "congress", canApprove: true },
   { id: "directors", name: "Кабінет Директорів Департаменту", role: "official", canApprove: true },
   { id: "prosecutor", name: "Кабінет Прокуратури", role: "prosecutor", canApprove: true },
   { id: "court", name: "Кабінет Судової влади", role: "court", canApprove: true }
@@ -36,56 +42,42 @@ const PERMISSION_LABELS = {
   createDocs: "Створювати документи",
   publishDocs: "Публікувати без погодження",
   approveDocs: "Погоджувати документи",
-  voteCongress: "Голосувати в Конгресі",
   editOwnDocs: "Редагувати свої документи",
   editAllDocs: "Редагувати всі документи",
-  managePeople: "Керувати учасниками",
-  manageStructure: "Керувати структурою",
-  manageRoutes: "Керувати маршрутами погодження",
-  approveProfiles: "Підтверджувати зміни профілю"
+  managePeople: "Призначати людей на посади",
+  manageStructure: "Створювати апарати й посади",
+  manageRoutes: "Налаштовувати маршрути погодження",
+  approveProfiles: "Підтверджувати зміни профілю",
+  manageCongress: "Надавати статус конгресмена"
 };
 
-const DEFAULT_POSITIONS = [
-  {
-    id: "governor-chief",
-    office: "governor",
-    title: "Губернатор штату",
-    permissions: ["createDocs", "publishDocs", "approveDocs", "editOwnDocs", "editAllDocs", "managePeople", "manageStructure", "approveProfiles"],
-    approvalRequired: false
-  },
-  {
-    id: "congressman",
-    office: "congress",
-    title: "Конгресмен",
-    permissions: ["createDocs", "approveDocs", "voteCongress", "editOwnDocs"],
-    approvalRequired: true,
-    approverOffice: "position:governor-chief",
-    congressMember: true
-  },
-  {
-    id: "director",
-    office: "directors",
-    title: "Директор департаменту",
-    permissions: ["createDocs", "approveDocs", "editOwnDocs", "manageRoutes"],
-    approvalRequired: true,
-    approverOffice: "position:governor-chief"
-  },
-  {
-    id: "prosecutor-chief",
-    office: "prosecutor",
-    title: "Генеральний прокурор",
-    permissions: ["createDocs", "approveDocs", "editOwnDocs", "manageRoutes"],
-    approvalRequired: true,
-    approverOffice: "position:governor-chief"
-  },
-  {
-    id: "court-chief",
-    office: "court",
-    title: "Голова Верховного Суду",
-    permissions: ["createDocs", "approveDocs", "editOwnDocs", "manageRoutes"],
-    approvalRequired: true,
-    approverOffice: "position:governor-chief"
+// Рівні доступу: готові набори прав, щоб не ставити галочки вручну
+const ACCESS_LEVELS = {
+  head: { label: "Керівник апарату", hint: "створює документи й погоджує документи свого апарату", permissions: ["createDocs", "approveDocs", "editOwnDocs"] },
+  staff: { label: "Співробітник", hint: "створює документи, вони йдуть на погодження керівнику", permissions: ["createDocs", "editOwnDocs"] },
+  admin: { label: "Адміністратор", hint: "усі права: люди, структура, публікація без погодження", permissions: Object.keys(PERMISSION_LABELS) },
+  viewer: { label: "Лише перегляд", hint: "бачить кабінет, але не створює документів", permissions: [] }
+};
+
+function accessLevelOf(position) {
+  if (!position) return "viewer";
+  if (position.level && ACCESS_LEVELS[position.level]) {
+    const same = ACCESS_LEVELS[position.level].permissions.slice().sort().join() === (position.permissions || []).slice().sort().join();
+    if (same) return position.level;
   }
+  const perms = (position.permissions || []).slice().sort().join();
+  const found = Object.keys(ACCESS_LEVELS).find((k) => ACCESS_LEVELS[k].permissions.slice().sort().join() === perms);
+  return found || "custom";
+}
+
+const DEFAULT_POSITIONS = [
+  { id: "governor-chief", office: "governor", title: "Губернатор штату", level: "admin", permissions: ACCESS_LEVELS.admin.permissions.slice() },
+  { id: "director", office: "directors", title: "Директор департаменту", level: "head", permissions: ACCESS_LEVELS.head.permissions.slice() },
+  { id: "directors-staff", office: "directors", title: "Співробітник департаменту", level: "staff", permissions: ACCESS_LEVELS.staff.permissions.slice() },
+  { id: "prosecutor-chief", office: "prosecutor", title: "Генеральний прокурор", level: "head", permissions: ACCESS_LEVELS.head.permissions.slice() },
+  { id: "prosecutor-staff", office: "prosecutor", title: "Прокурор", level: "staff", permissions: ACCESS_LEVELS.staff.permissions.slice() },
+  { id: "court-chief", office: "court", title: "Голова Верховного Суду", level: "head", permissions: ACCESS_LEVELS.head.permissions.slice() },
+  { id: "court-staff", office: "court", title: "Суддя", level: "staff", permissions: ACCESS_LEVELS.staff.permissions.slice() }
 ];
 
 function userOffice(user) {
@@ -203,7 +195,7 @@ const SEED_DOCS = [
     number: "ПЗ-01",
     date: "2026-09-11",
     publishedAt: "2026-09-11T09:00:00",
-    status: "review",
+    status: "congress",
     body: "Конгрес штату Сан-Андреас",
     title: "Проєкт Закону про порядок розгляду актів Конгресом",
     text: "Цей проєкт визначає, як Конституція, кодекси та закони проходять погодження і голосування Конгресу перед набранням чинності.",
@@ -273,7 +265,54 @@ function allUsers() {
   const byLogin = {};
   seed.forEach((u) => { byLogin[u.login] = u; });
   extra.forEach((u) => { byLogin[u.login] = Object.assign({}, byLogin[u.login] || {}, u); });
-  return Object.values(byLogin);
+  return Object.values(byLogin).map(normalizeUser);
+}
+
+// Сумісність зі старими даними: колишня роль/посада «Конгрес» → статус конгресмена у звичайного посадовця
+function normalizeUser(u) {
+  const roles = u.roles || [];
+  const legacyPos = u.positionId ? allPositions().find((p) => p.id === u.positionId) : null;
+  const legacyCongress = roles.includes("congress") || u.positionId === "congressman" ||
+    !!(legacyPos && (legacyPos.congressMember || (legacyPos.permissions || []).includes("voteCongress")));
+  let out = u;
+  if (!("congressMember" in u) && legacyCongress) out = Object.assign({}, out, { congressMember: true });
+  if (roles.includes("congress") || u.office === "congress" || u.positionId === "congressman") {
+    out = Object.assign({}, out, {
+      roles: roles.includes("congress") ? ["official"] : roles,
+      office: !u.office || u.office === "congress" ? "directors" : u.office,
+      positionId: !u.positionId || u.positionId === "congressman" ? "directors-staff" : u.positionId
+    });
+  }
+  return out;
+}
+
+function roleForOffice(officeId) {
+  const office = allOffices().find((o) => o.id === officeId);
+  return (office && office.role) || "official";
+}
+
+// Призначення людини: роль виводиться з апарату, публічна посада за замовчуванням — назва посади
+function assignUser(login, patch, byUser) {
+  const user = allUsers().find((u) => u.login === login);
+  if (!user) return null;
+  const next = Object.assign({}, user);
+  if ("office" in patch) {
+    if (!patch.office) { next.roles = ["pending"]; next.office = ""; next.positionId = ""; }
+    else { next.office = patch.office; next.roles = [roleForOffice(patch.office)]; }
+  }
+  if ("positionId" in patch) next.positionId = patch.positionId || "";
+  if ("post" in patch) {
+    const pos = positionById(next.positionId);
+    next.post = String(patch.post || "").trim() || (pos ? pos.title : "");
+  }
+  if ("congressMember" in patch && byUser && hasPermission(byUser, "manageCongress")) next.congressMember = !!patch.congressMember;
+  saveUser(next);
+  return next;
+}
+
+function setCongressMember(login, on, byUser) {
+  if (!byUser || !hasPermission(byUser, "manageCongress")) return null;
+  return assignUser(login, { congressMember: !!on }, byUser);
 }
 
 function remapSeedRoles(a) {
@@ -288,7 +327,7 @@ function remapSeedRoles(a) {
 function defaultPositionForAccount(a) {
   const roles = a.roles || [];
   if (roles.includes("governor") || a.login === "castro" || a.login === "admin") return "governor-chief";
-  if (roles.includes("congress")) return "congressman";
+  if (roles.includes("congress")) return "directors-staff";
   if (roles.includes("prosecutor")) return "prosecutor-chief";
   if (roles.includes("court")) return "court-chief";
   if (roles.includes("official")) return "director";
@@ -310,6 +349,8 @@ function saveUser(user) {
     contact: user.contact || "",
     photo: user.photo || ""
   };
+  // Статус конгресмена: зберігаємо, якщо переданий; інакше лишаємо як був
+  if ("congressMember" in user) row.congressMember = !!user.congressMember;
   if (i >= 0) extra[i] = Object.assign({}, extra[i], row);
   else extra.push(row);
   saveLS("state_users", extra);
@@ -426,15 +467,58 @@ function positionById(id) {
   return allPositions().find((p) => p.id === id) || null;
 }
 
+function slugId(value) {
+  const map = { а:"a", б:"b", в:"v", г:"h", ґ:"g", д:"d", е:"e", є:"ye", ж:"zh", з:"z", и:"y", і:"i", ї:"yi", й:"y", к:"k", л:"l", м:"m", н:"n", о:"o", п:"p", р:"r", с:"s", т:"t", у:"u", ф:"f", х:"kh", ц:"ts", ч:"ch", ш:"sh", щ:"shch", ю:"yu", я:"ya", ь:"" };
+  return String(value || "").toLowerCase().split("").map((ch) => map[ch] != null ? map[ch] : ch).join("")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 36);
+}
+function uniqueId(base, taken) {
+  let id = base || "item";
+  let n = 2;
+  while (taken.includes(id)) id = base + "-" + n++;
+  return id;
+}
+
+// Видаляти можна лише створені в адмінці (не вбудовані) і лише коли на них ніхто не призначений
+function isDefaultOffice(id) { return DEFAULT_OFFICES.some((o) => o.id === id); }
+function isDefaultPosition(id) { return DEFAULT_POSITIONS.some((p) => p.id === id); }
+function deletePosition(id) {
+  if (isDefaultPosition(id) || allUsers().some((u) => u.positionId === id)) return false;
+  saveLS("state_positions", loadLS("state_positions", []).filter((p) => p.id !== id));
+  return true;
+}
+function deleteOffice(id) {
+  if (isDefaultOffice(id) || allUsers().some((u) => u.office === id && isStaff(u))) return false;
+  saveLS("state_positions", loadLS("state_positions", []).filter((p) => p.office !== id));
+  saveLS("state_approval_routes", loadLS("state_approval_routes", []).filter((r) => r.ownerOffice !== id));
+  saveLS("state_offices", loadLS("state_offices", []).filter((o) => o.id !== id));
+  return true;
+}
+function deleteApprovalRoute(id) {
+  saveLS("state_approval_routes", loadLS("state_approval_routes", []).filter((r) => r.id !== id));
+}
+
+// Новий апарат одним кроком: апарат + посади «Керівник» і «Співробітник»
+function createOffice({ name, role }) {
+  const title = String(name || "").trim();
+  if (!title) return null;
+  const id = uniqueId(slugId(title) || "office", allOffices().map((o) => o.id));
+  const office = saveOffice({ id, name: title, role: role || "official", canApprove: true });
+  if (!office) return null;
+  const taken = allPositions().map((p) => p.id);
+  savePosition({ id: uniqueId(id + "-head", taken), office: id, title: "Керівник · " + title, level: "head" });
+  savePosition({ id: uniqueId(id + "-staff", taken), office: id, title: "Співробітник · " + title, level: "staff" });
+  return office;
+}
+
 function savePosition(position) {
+  const level = position.level && ACCESS_LEVELS[position.level] ? position.level : "custom";
   const row = {
-    id: String(position.id || newDocId()).trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-"),
+    id: String(position.id || uniqueId(slugId(position.title) || "position", allPositions().map((p) => p.id))).trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-"),
     office: position.office || "directors",
     title: String(position.title || "").trim(),
-    permissions: position.permissions || [],
-    approvalRequired: !!position.approvalRequired,
-    approverOffice: position.approverOffice || "position:governor-chief",
-    congressMember: !!position.congressMember
+    level,
+    permissions: level !== "custom" && !position.permissions ? ACCESS_LEVELS[level].permissions.slice() : (position.permissions || [])
   };
   if (!row.id || !row.title) return null;
   const extra = loadLS("state_positions", []);
@@ -457,12 +541,16 @@ function routesForOffice(office) {
   return allApprovalRoutes().filter((r) => !r.ownerOffice || r.ownerOffice === "all" || r.ownerOffice === office);
 }
 
+// Автоматичний маршрут: керівник апарату автора → Губернатор (кроки, де автор погоджував би сам себе, пропускаються)
+function autoApprovalRoute(office) {
+  return { id: "auto", name: "Автоматично: керівник апарату → Губернатор", ownerOffice: office || "all", steps: ["authorOffice", "position:governor-chief"], active: true, auto: true };
+}
+
 function activeApprovalRoute(office) {
   const routes = routesForOffice(office);
-  return routes.find((r) => r.active && r.ownerOffice === office) ||
-    routes.find((r) => r.active && (!r.ownerOffice || r.ownerOffice === "all")) ||
-    routes[0] ||
-    DEFAULT_APPROVAL_ROUTES[0];
+  return routes.find((r) => r.active && r.ownerOffice === office && !r.seeded) ||
+    routes.find((r) => r.active && (!r.ownerOffice || r.ownerOffice === "all") && !r.seeded) ||
+    autoApprovalRoute(office);
 }
 
 function saveApprovalRoute(route) {
@@ -471,7 +559,7 @@ function saveApprovalRoute(route) {
     id: String(route.id || newDocId()).trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-"),
     name: String(route.name || "").trim(),
     ownerOffice,
-    steps: (route.steps || []).map((s) => String(s).trim()).filter((s) => s && (s === "congress" || s.startsWith("position:") || s.startsWith("user:"))),
+    steps: (route.steps || []).map((s) => String(s).trim()).filter((s) => s && (s === "congress" || s === "authorOffice" || s.startsWith("position:") || s.startsWith("user:"))),
     active: !!route.active,
     seeded: false
   };
@@ -488,13 +576,15 @@ function saveApprovalRoute(route) {
 }
 
 function approverPositionForOffice(office) {
-  const positions = allPositions().filter((p) => p.office === office && (p.permissions || []).includes("approveDocs"));
+  const positions = allPositions().filter((p) => p.office === office && (p.permissions || []).includes("approveDocs"))
+    .sort((a, b) => (b.level === "head") - (a.level === "head"));
   return positions[0] ? "position:" + positions[0].id : "";
 }
 
 function normalizeApprovalStep(step, doc) {
   const raw = String(step || "").trim();
-  if (raw === "authorOffice") return approverPositionForOffice(doc.office || "directors") || doc.office || "directors";
+  // Немає керівника з правом погодження — крок пропускається
+  if (raw === "authorOffice") return approverPositionForOffice(doc.office || "directors");
   if (raw.startsWith("office:")) return approverPositionForOffice(raw.slice(7)) || raw.slice(7);
   if (raw.startsWith("position:") || raw.startsWith("user:")) return raw;
   if (allOffices().some((office) => office.id === raw)) return approverPositionForOffice(raw) || raw;
@@ -504,9 +594,12 @@ function normalizeApprovalStep(step, doc) {
 function resolveApprovalSteps(doc, route) {
   const seen = {};
   const raw = (route && route.steps && route.steps.length ? route.steps : ["position:governor-chief"]);
+  // Автор не погоджує власний документ: його посада / він сам у маршруті пропускаються
+  const author = doc && doc.ownerLogin ? allUsers().find((u) => u.login === doc.ownerLogin) : null;
+  const own = author ? ["user:" + author.login, author.positionId ? "position:" + author.positionId : ""] : [];
   return raw.map((step) => normalizeApprovalStep(step, doc))
     .filter((step) => {
-      if (!step || seen[step]) return false;
+      if (!step || seen[step] || own.includes(step)) return false;
       seen[step] = true;
       return true;
     });
@@ -551,9 +644,12 @@ function isCongressPosition(position) {
   return !!(position && (position.congressMember || (position.permissions || []).includes("voteCongress")));
 }
 
+// Конгресмен — статус конкретної людини (ставиться в адмін-панелі), а не посада чи роль
 function isCongressMember(user) {
-  const position = positionById(user && user.positionId);
-  return isCongressPosition(position);
+  if (!user) return false;
+  if ("congressMember" in user) return !!user.congressMember;
+  const full = allUsers().find((u) => u.login === (user.login || user.id));
+  return !!(full && full.congressMember);
 }
 
 function congressMembers() {
@@ -566,7 +662,7 @@ function congressPositions() {
 
 function isStaff(user) {
   const roles = (user && user.roles) || [];
-  return ["governor", "congress", "official", "prosecutor", "court"].some((r) => roles.includes(r));
+  return ["governor", "official", "prosecutor", "court"].some((r) => roles.includes(r));
 }
 
 function isCitizen(user) {
@@ -616,10 +712,11 @@ function isLegislativeDoc(doc) {
   return ["Конституція штату", "Кодекс", "Закон"].includes(doc && doc.type);
 }
 
+// Публічна база: чинні й архівні акти будь-якого виду; проєкти (у т.ч. на погодженні) — лише законодавчі
 function publicLegislativeDocs() {
   return allDocs().filter((d) =>
-    d.status !== "trash" &&
-    (d.status === "ok" || d.status === "dead" || d.status === "review" || d.status === "congress" || d.status === "adopted" || (d.status === "draft" && isLegislativeDoc(d)))
+    d.status === "ok" || d.status === "dead" ||
+    (isLegislativeDoc(d) && ["review", "congress", "adopted", "draft"].includes(d.status))
   );
 }
 
@@ -636,17 +733,18 @@ function cabinetCreatedDocs() {
 }
 
 function reviewDocsFor(user) {
+  if (!user || !isStaff(user)) return [];
   const office = userOffice(user);
-  const positionStep = "position:" + ((user && user.positionId) || "");
-  return allDocs().filter((d) =>
-    d.status === "review" && (
-      d.approverOffice === office ||
+  const positionStep = "position:" + (user.positionId || "");
+  return allDocs().filter((d) => {
+    if (d.status !== "review" && d.status !== "congress") return false;
+    // Голосування Конгресу: показуємо членам, які ще не голосували
+    if (d.approverOffice === "congress") return isCongressMember(user) && !((d.votes || {})[user.login]);
+    return d.approverOffice === office ||
       d.approverOffice === positionStep ||
-      (d.approverOffice === "congress" && isCongressMember(user)) ||
-      d.approverOffice === "user:" + (user && user.login) ||
-      d.approverLogin === (user && user.login)
-    )
-  );
+      d.approverOffice === "user:" + user.login ||
+      d.approverLogin === user.login;
+  });
 }
 
 function approvalNewsFor(user) {
@@ -867,6 +965,8 @@ function makeDocVersion(doc, actor, label) {
 
 function saveDoc(doc, meta = {}) {
   if ((doc.status === "ok" || doc.status === "dead") && !doc.publishedAt) doc.publishedAt = new Date().toISOString();
+  // Крок «Конгрес» завжди має статус голосування, інші кроки — «На погодженні»
+  if (doc.status === "review" || doc.status === "congress") doc.status = doc.approverOffice === "congress" ? "congress" : "review";
   const previous = getDoc(doc.id);
   const actor = meta.user || currentUser();
   const summary = meta.summary || describeDocChange(previous, doc);
@@ -928,24 +1028,55 @@ function deleteDoc(id) {
   return true;
 }
 
-function approveDoc(id, user) {
-  const doc = getDoc(id);
-  if (!doc) return null;
-  const steps = doc.approvalSteps || (doc.approverOffice ? [doc.approverOffice] : []);
+/* ---------- Погодження ----------
+   Документ іде кроками approvalSteps; поточний крок — approverOffice (approvalIndex).
+   Крок "congress" — колегіальне голосування: статус "congress", рішення більшістю членів Конгресу.
+   Кожне рішення пишеться в doc.approvals — з цього будується блок «Підписанти». */
+function docSteps(doc) {
+  return doc.approvalSteps || (doc.approverOffice ? [doc.approverOffice] : []);
+}
+
+function canApproveDoc(doc, user) {
+  if (!doc || !user || (doc.status !== "review" && doc.status !== "congress")) return false;
+  return reviewDocsFor(user).some((d) => d.id === doc.id);
+}
+
+function congressTally(doc) {
+  const votes = (doc && doc.votes) || {};
+  const members = congressMembers().length;
+  const values = Object.keys(votes).map((k) => votes[k].vote);
+  const pro = values.filter((v) => v === "for").length;
+  const contra = values.filter((v) => v === "against").length;
+  return { pro, contra, voted: values.length, members, needed: Math.floor(Math.max(members, 1) / 2) + 1 };
+}
+
+function advanceDoc(doc, user, meta) {
+  const steps = docSteps(doc);
   const index = Number(doc.approvalIndex || 0);
+  const now = new Date().toISOString();
+  const approvals = (doc.approvals || []).concat([{
+    step: steps[index] || doc.approverOffice || "",
+    by: user && user.login,
+    byName: meta.byName || actorName(user),
+    post: meta.post != null ? meta.post : ((user && user.post) || ""),
+    at: now,
+    decision: "approved"
+  }]);
   if (steps.length && index + 1 < steps.length) {
     const nextStep = steps[index + 1];
     return saveDoc(Object.assign({}, doc, {
-      status: "review",
+      status: nextStep === "congress" ? "congress" : "review",
       approvalIndex: index + 1,
       approverOffice: nextStep,
       approverLogin: String(nextStep).startsWith("user:") ? String(nextStep).slice(5) : "",
-      lastApprovedAt: new Date().toISOString(),
+      votes: {},
+      approvals,
+      lastApprovedAt: now,
       lastApprovedBy: user && user.login
     }), {
       user,
-      action: "Погоджено крок маршруту",
-      summary: "Погоджено: " + routeStepName(steps[index], doc) + ". Наступний крок: " + routeStepName(nextStep, doc) + ".",
+      action: meta.action || "Погоджено крок маршруту",
+      summary: (meta.summaryPrefix || "Погоджено: " + routeStepName(steps[index], doc) + ".") + " Наступний крок: " + routeStepName(nextStep, doc) + ".",
       versionLabel: "Редакція"
     });
   }
@@ -954,15 +1085,113 @@ function approveDoc(id, user) {
     approvalIndex: steps.length ? steps.length - 1 : 0,
     approverOffice: "",
     approverLogin: "",
-    approvedAt: new Date().toISOString(),
+    approvals,
+    approvedAt: now,
     approvedBy: user && user.login,
-    publishedAt: doc.publishedAt || new Date().toISOString()
+    publishedAt: doc.publishedAt || now
   }), {
     user,
     action: "Опубліковано",
-    summary: steps.length ? "Фінальний крок погоджено, документ опубліковано." : "Документ погоджено й опубліковано.",
+    summary: (meta.summaryPrefix ? meta.summaryPrefix + " " : "") + (steps.length ? "Фінальний крок погоджено, документ опубліковано." : "Документ погоджено й опубліковано."),
     versionLabel: "Чинна версія"
   });
+}
+
+function approveDoc(id, user) {
+  const doc = getDoc(id);
+  if (!doc || !canApproveDoc(doc, user)) return null;
+  if (doc.approverOffice === "congress") return voteDoc(id, user, "for");
+  return advanceDoc(doc, user, {});
+}
+
+function voteDoc(id, user, vote) {
+  const doc = getDoc(id);
+  if (!doc || !canApproveDoc(doc, user) || doc.approverOffice !== "congress") return null;
+  const votes = Object.assign({}, doc.votes || {});
+  votes[user.login] = { vote: vote === "against" ? "against" : "for", name: actorName(user), at: new Date().toISOString() };
+  const next = Object.assign({}, doc, { votes, status: "congress" });
+  const t = congressTally(next);
+  if (t.pro >= t.needed) {
+    return advanceDoc(next, user, {
+      byName: "Конгрес штату",
+      post: "За — " + t.pro + ", проти — " + t.contra + " з " + t.members,
+      action: "Конгрес підтримав документ",
+      summaryPrefix: "Конгрес проголосував «за» (" + t.pro + " з " + t.members + ")."
+    });
+  }
+  if (t.contra >= t.needed) {
+    return saveDoc(Object.assign({}, next, {
+      status: "rejected",
+      approverOffice: "",
+      approverLogin: "",
+      rejectedAt: new Date().toISOString(),
+      rejectedReason: "Конгрес проголосував проти (" + t.contra + " з " + t.members + ").",
+      approvals: (doc.approvals || []).concat([{ step: "congress", byName: "Конгрес штату", post: "За — " + t.pro + ", проти — " + t.contra, at: new Date().toISOString(), decision: "rejected" }])
+    }), { user, action: "Конгрес відхилив документ", summary: "Більшість членів Конгресу проголосувала проти.", versionLabel: "Відхилено" });
+  }
+  return saveDoc(next, {
+    user,
+    action: "Голос у Конгресі",
+    summary: actorName(user) + " проголосував(ла) «" + (vote === "against" ? "проти" : "за") + "». За — " + t.pro + ", проти — " + t.contra + ", потрібно " + t.needed + ".",
+    versionLabel: "Голосування Конгресу"
+  });
+}
+
+function returnDoc(id, user, reason) {
+  const doc = getDoc(id);
+  if (!doc || !canApproveDoc(doc, user)) return null;
+  const now = new Date().toISOString();
+  const text = String(reason || "").trim();
+  return saveDoc(Object.assign({}, doc, {
+    status: "draft",
+    returnedAt: now,
+    returnedBy: user.login,
+    returnedByName: actorName(user),
+    returnedReason: text,
+    approverOffice: "",
+    approverLogin: "",
+    approvalIndex: 0,
+    votes: {},
+    approvals: (doc.approvals || []).concat([{ step: doc.approverOffice || "", by: user.login, byName: actorName(user), post: user.post || "", at: now, decision: "returned", comment: text }])
+  }), {
+    user,
+    action: "Повернено на доопрацювання",
+    summary: "Документ повернено автору" + (text ? ": " + text : "."),
+    versionLabel: "Проєкт"
+  });
+}
+
+/* Сповіщення кабінету: що чекає дії користувача і що сталося з його документами та зверненнями */
+function notificationsFor(user) {
+  if (!user) return [];
+  const items = [];
+  const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+  const recent = (iso) => iso && new Date(iso).getTime() > weekAgo;
+  if (isStaff(user)) {
+    reviewDocsFor(user).forEach((doc) => items.push({
+      kind: doc.approverOffice === "congress" ? "vote" : "approve",
+      attention: true,
+      at: doc.updatedAt || doc.publishedAt || doc.date,
+      title: doc.approverOffice === "congress" ? "Голосування Конгресу" : "Потрібне ваше погодження",
+      text: (doc.type || "Документ") + " · " + (doc.title || "Без назви"),
+      doc
+    }));
+    allDocs().filter((d) => d.ownerLogin === user.login).forEach((doc) => {
+      if (doc.status === "draft" && doc.returnedAt && recent(doc.returnedAt)) items.push({ kind: "returned", attention: true, at: doc.returnedAt, title: "Документ повернено на доопрацювання", text: (doc.title || "") + (doc.returnedReason ? " — " + doc.returnedReason : ""), doc });
+      else if (doc.status === "rejected" && recent(doc.rejectedAt || doc.updatedAt)) items.push({ kind: "rejected", attention: true, at: doc.rejectedAt || doc.updatedAt, title: "Документ відхилено", text: (doc.title || "") + (doc.rejectedReason ? " — " + doc.rejectedReason : ""), doc });
+      else if (doc.status === "ok" && doc.approvedAt && recent(doc.approvedAt)) items.push({ kind: "published", at: doc.approvedAt, title: "Документ погоджено й опубліковано", text: doc.title || "", doc });
+      else if (doc.status === "review" || doc.status === "congress") items.push({ kind: "progress", at: doc.updatedAt, title: "Ваш документ на погодженні", text: (doc.title || "") + " · " + routeProgressLabel(doc), doc });
+    });
+    pendingAppealsFor(user).forEach((a) => items.push({ kind: "appeal", attention: true, at: a.updatedAt || a.createdAt, title: "Нове звернення до апарату", text: a.number + " · " + (a.name || "") , appeal: a }));
+    if (hasPermission(user, "approveProfiles") || hasPermission(user, "managePeople")) {
+      const n = pendingProfileRequests().length;
+      if (n) items.push({ kind: "profile", attention: true, at: new Date().toISOString(), title: "Заявки на зміну профілю", text: "Очікують підтвердження: " + n });
+      const pend = allUsers().filter((u) => (u.roles || []).includes("pending")).length;
+      if (pend) items.push({ kind: "people", attention: true, at: new Date().toISOString(), title: "Нові учасники без ролі", text: "Очікують призначення: " + pend });
+    }
+  }
+  citizenAppealsFor(user).filter((a) => a.status === "answered").forEach((a) => items.push({ kind: "answer", attention: true, at: a.updatedAt, title: "Відповідь на звернення", text: a.number + " · " + officeName(a.office), appeal: a }));
+  return items.sort((a, b) => (b.attention ? 1 : 0) - (a.attention ? 1 : 0) || String(b.at || "").localeCompare(String(a.at || "")));
 }
 
 function newDocId() {
@@ -1005,8 +1234,10 @@ function renderActList(targetId, query = "") {
     if (sort === "type") return String(a.type + a.title).localeCompare(b.type + b.title, "uk");
     return String(b.publishedAt || b.date).localeCompare(String(a.publishedAt || a.date));
   });
+  const counter = document.getElementById("acts-count");
+  if (counter) counter.textContent = "Знайдено: " + items.length;
   if (!items.length) {
-    root.innerHTML = "<p class='lead'>Документів не знайдено.</p>";
+    root.innerHTML = "<p class='empty-note muted'>Документів за цими умовами не знайдено.</p>";
     return;
   }
   root.innerHTML = items.map((a) => `

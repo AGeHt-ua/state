@@ -4,14 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Кабінет — State</title>
-  <link rel="stylesheet" href="../assets/styles.css?v=20260928c" />
+  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20260929e" />
+  <link rel="stylesheet" href="../assets/styles.css?v=20260929e" />
 </head>
 <body>
   <div class="topbar" id="top-office">Службовий кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../">
-        <div class="crest">SA</div>
+        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20260929e" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p id="hdr-office">Кабінет</p>
@@ -104,9 +105,9 @@
       </form>
     </section>
   </div>
-  <script src="../assets/accounts.js?v=20260928c"></script>
-  <script src="../assets/app.js?v=20260928c"></script>
-  <script src="../assets/store.js?v=20260928c"></script>
+  <script src="../assets/accounts.js?v=20260929e"></script>
+  <script src="../assets/app.js?v=20260929e"></script>
+  <script src="../assets/store.js?v=20260929e"></script>
   <script>
     const user = requireAuth();
     if (user) {
@@ -144,21 +145,21 @@
       }
       const pendingProfile = profileRequestsForUser(user).find((r) => r.status === "pending");
       document.getElementById("f-profile-status").textContent = pendingProfile ? "Очікує підтвердження" : "Підтверджено";
-      const news = approvalNewsFor(user);
+      const news = notificationsFor(user);
       document.getElementById("cabinet-news").innerHTML = news.length ? `
         <div class="section-head">
           <div>
             <h3>Новини кабінету</h3>
-            <p class="muted">Система автоматично показує документи, які чекають вашого погодження.</p>
+            <p class="muted">Що чекає вашої дії та що сталося з вашими документами і зверненнями.</p>
           </div>
-          <a class="btn gold" href="inbox/">Відкрити</a>
+          <a class="btn gold" href="inbox/">Усі повідомлення</a>
         </div>
         <div class="admin-list">
-          ${news.map((item) => `
-            <article class="admin-list-row is-attention">
-              <div class="admin-code">!</div>
+          ${news.slice(0, 5).map((item) => `
+            <article class="admin-list-row${item.attention ? " is-attention" : ""}">
+              <div class="admin-code">${item.attention ? "!" : "•"}</div>
               <div class="admin-row-main">
-                <div class="admin-row-title"><b>${esc(item.title)}</b><span class="badge draft">Потрібна дія</span></div>
+                <div class="admin-row-title"><b>${esc(item.title)}</b>${item.attention ? `<span class="badge draft">Потрібна увага</span>` : ""}</div>
                 <div class="admin-row-meta"><span>${esc(item.text)}</span></div>
               </div>
               <div class="admin-row-actions"><a class="btn ghost" href="inbox/">Перейти</a></div>
@@ -166,8 +167,8 @@
           `).join("")}
         </div>` : "";
       const img = document.getElementById("avatar");
-      img.src = user.photo || "";
-      if (!user.photo) img.alt = "немає фото";
+      if (user.photo) img.src = user.photo;
+      else img.outerHTML = `<div class="profile-photo large photo-placeholder" id="avatar" aria-label="Фото не завантажено">${esc(String(user.username || "?").charAt(0).toUpperCase())}</div>`;
       if (!hasPermission(user, "managePeople") && !hasPermission(user, "manageStructure") && !hasPermission(user, "manageRoutes") && !hasPermission(user, "approveProfiles")) {
         document.getElementById("nav-admin").style.display = "none";
       }

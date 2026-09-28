@@ -4,14 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Повідомлення — State</title>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260928c" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929e" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260929e" />
 </head>
 <body>
   <div class="topbar" id="top-office">Кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <div class="crest">SA</div>
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929e" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Погодження та повідомлення</p>
@@ -47,9 +48,9 @@
     </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/accounts.js?v=20260928c"></script>
-  <script src="../../assets/app.js?v=20260928c"></script>
-  <script src="../../assets/store.js?v=20260928c"></script>
+  <script src="../../assets/accounts.js?v=20260929e"></script>
+  <script src="../../assets/app.js?v=20260929e"></script>
+  <script src="../../assets/store.js?v=20260929e"></script>
   <script>
     const user = requireAuth();
     if (!user) throw new Error("auth");
@@ -61,64 +62,74 @@
     if (!hasPermission(user, "managePeople") && !hasPermission(user, "manageStructure") && !hasPermission(user, "manageRoutes") && !hasPermission(user, "approveProfiles")) {
       document.getElementById("nav-admin").style.display = "none";
     }
-    const params = new URLSearchParams(location.search);
-    if (params.get("approve")) {
-      approveDoc(params.get("approve"), user);
-      location.href = "./";
+    // Рішення — тільки кнопками з перевіркою прав у store.js (canApproveDoc), без дій через адресу сторінки
+    function decide(id, action) {
+      const doc = getDoc(id);
+      if (!doc || !canApproveDoc(doc, user)) { alert("Цей документ уже не чекає вашого рішення."); draw(); return; }
+      if (action === "return") {
+        const reason = prompt("Що треба доопрацювати? Автор побачить цей коментар.", "");
+        if (reason === null) return;
+        returnDoc(id, user, reason);
+      } else if (action === "against") {
+        if (!confirm("Проголосувати «проти» документа «" + doc.title + "»?")) return;
+        voteDoc(id, user, "against");
+      } else if (action === "for") {
+        voteDoc(id, user, "for");
+      } else {
+        approveDoc(id, user);
+      }
+      draw();
+      if (typeof enhanceCabinetNavigation === "function") enhanceCabinetNavigation();
     }
-    if (params.get("return")) {
-      const doc = getDoc(params.get("return"));
-      if (doc) saveDoc(Object.assign({}, doc, {
-        status: "draft",
-        returnedAt: new Date().toISOString(),
-        returnedBy: user.login,
-        approverOffice: "",
-        approvalIndex: 0
-      }), {
-        user,
-        action: "Повернено на доопрацювання",
-        summary: "Документ повернено автору з маршруту погодження.",
-        versionLabel: "Проєкт"
-      });
-      location.href = "./";
-    }
-    const list = isCitizen(user) ? [] : reviewDocsFor(user);
-    document.getElementById("inbox-list").innerHTML = list.length ? list.map((d) => `
-      <article class="act-row">
-        <div class="act-num">${esc(d.number)}<br>${esc(formatDocWhen(d))}</div>
+    function docCard(d) {
+      const congress = d.approverOffice === "congress";
+      const t = congress ? congressTally(d) : null;
+      return `
+      <article class="act-row inbox-row">
+        <div class="act-num">${esc(d.number || "б/н")}<br>${esc(formatDocWhen(d))}</div>
         <div>
           <h3><a href="${attr(docHref(d))}">${esc(d.title)}</a></h3>
           <div class="act-meta">${esc(d.type)} · ${esc(officeName(d.office))} · автор: ${esc(d.author || "—")}</div>
           <div class="route-line">${esc(d.approvalRouteName || "Маршрут погодження")} · ${esc(routeProgressLabel(d))}</div>
+          ${congress ? `<div class="vote-tally"><span class="pro">За: ${t.pro}</span><span class="contra">Проти: ${t.contra}</span><span>Потрібно ${t.needed} з ${t.members || 1}</span></div>` : ""}
         </div>
-        <span>
-          <span class="badge draft">На погодженні</span>
-          <a class="btn gold" href="?approve=${encodeURIComponent(d.id)}">Погодити</a>
-          <a class="btn ghost" href="?return=${encodeURIComponent(d.id)}">Повернути</a>
+        <span class="row-actions">
+          <a class="btn ghost" href="${attr(docHref(d))}">Переглянути</a>
+          ${congress
+            ? `<button class="btn gold" type="button" data-decide="for" data-id="${attr(d.id)}">За</button>
+               <button class="btn ghost danger" type="button" data-decide="against" data-id="${attr(d.id)}">Проти</button>`
+            : `<button class="btn gold" type="button" data-decide="approve" data-id="${attr(d.id)}">Погодити</button>
+               <button class="btn ghost" type="button" data-decide="return" data-id="${attr(d.id)}">Повернути</button>`}
         </span>
-      </article>
-    `).join("") : "<p class='lead'>Немає документів на погодження.</p>";
-    const appeals = isCitizen(user)
-      ? appealsForUser(user).filter((a) => a.status === "answered")
-      : pendingAppealsFor(user);
-    document.getElementById("appeal-inbox").innerHTML = appeals.length ? `
-      <h3>${isCitizen(user) ? "Відповіді на звернення" : "Нові звернення громадян"}</h3>
-      <div class="admin-list">
-        ${appeals.map((appeal) => `
-          <article class="admin-list-row is-attention">
-            <div class="admin-code">${esc(appeal.number)}</div>
-            <div class="admin-row-main">
-              <div class="admin-row-title">
-                <b>${esc(appeal.name)}</b>
-                <span class="badge ${appeal.status === "answered" ? "ok" : "draft"}">${esc(appealStatusLabel(appeal.status))}</span>
-              </div>
-              <div class="admin-row-meta"><span>${esc(officeName(appeal.office))}</span><span>${esc(appeal.contact || "без контакту")}</span></div>
-              <p>${esc(appeal.text)}</p>
-            </div>
-            <div class="admin-row-actions"><a class="btn gold" href="../appeals/">Відкрити</a></div>
-          </article>
-        `).join("")}
-      </div>` : "";
+      </article>`;
+    }
+    const KIND_ICON = { returned: "↩", rejected: "✕", published: "✓", progress: "…", appeal: "✉", answer: "✉", profile: "👤", people: "👥" };
+    function noteRow(n) {
+      const href = n.doc ? (n.kind === "returned" ? "../create/?id=" + encodeURIComponent(n.doc.id) : docHref(n.doc))
+        : n.appeal ? "../appeals/" : "../admin/";
+      const label = n.kind === "returned" ? "Доопрацювати" : n.doc ? "Відкрити" : "Перейти";
+      return `
+        <article class="admin-list-row${n.attention ? " is-attention" : ""}">
+          <div class="admin-code note-${attr(n.kind)}">${KIND_ICON[n.kind] || "•"}</div>
+          <div class="admin-row-main">
+            <div class="admin-row-title"><b>${esc(n.title)}</b></div>
+            <div class="admin-row-meta"><span>${esc(n.text)}</span>${n.at ? `<span>${esc(formatDocWhen({ date: n.at }))}</span>` : ""}</div>
+          </div>
+          <div class="admin-row-actions"><a class="btn ${n.attention ? "gold" : "ghost"}" href="${attr(href)}">${label}</a></div>
+        </article>`;
+    }
+    function draw() {
+      const list = reviewDocsFor(user);
+      document.getElementById("inbox-list").innerHTML = isCitizen(user) ? "" : `
+        <h3 class="inbox-h">На ваше рішення <span class="count">${list.length}</span></h3>
+        ${list.length ? list.map(docCard).join("") : "<p class='muted empty-note'>Немає документів, що чекають вашого погодження чи голосу.</p>"}`;
+      const notes = notificationsFor(user).filter((n) => n.kind !== "approve" && n.kind !== "vote");
+      document.getElementById("appeal-inbox").innerHTML = `
+        <h3 class="inbox-h">${isCitizen(user) ? "Відповіді на звернення" : "Події кабінету"} <span class="count">${notes.length}</span></h3>
+        ${notes.length ? `<div class="admin-list">${notes.map(noteRow).join("")}</div>` : "<p class='muted empty-note'>Нових подій немає.</p>"}`;
+      document.querySelectorAll("[data-decide]").forEach((b) => b.addEventListener("click", () => decide(b.dataset.id, b.dataset.decide)));
+    }
+    draw();
   </script>
 </body>
 </html>
