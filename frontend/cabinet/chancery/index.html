@@ -39,7 +39,7 @@
       </div>
       <div class="tb-title">
         <span id="docTitle">Документ</span>
-        <select id="slotSel" title="Чернетка (5 слотів)"></select>
+        <select id="slotSel" title="Мої шаблони"></select>
       </div>
       <div class="tb-right"><span id="tbUser"></span></div>
     </div>
@@ -64,9 +64,19 @@
           <div class="rb-row">
             <button type="button" class="rb-btn big" data-act="save" title="Ctrl+S"><i data-icon="save"></i><span>Зберегти</span></button>
             <button type="button" class="rb-btn big" data-act="applyTemplate" title="Замінити текст шаблоном поточного типу"><i data-icon="newdoc"></i><span>Новий<br>з шаблону</span></button>
-            <button type="button" class="rb-btn big" data-act="resetSlot" title="Очистити поточну чернетку"><i data-icon="trash"></i><span>Очистити<br>чернетку</span></button>
+            <button type="button" class="rb-btn big" data-act="resetSlot" title="Скинути текст і налаштування поточного шаблону"><i data-icon="trash"></i><span>Очистити<br>шаблон</span></button>
           </div>
           <div class="rb-label">Документ</div>
+        </div>
+        <div class="rb-group">
+          <div class="rb-row">
+            <button type="button" class="rb-btn big" data-act="tplManager" title="Усі збережені шаблони: пошук, порядок, експорт"><i data-icon="template"></i><span>Мої<br>шаблони</span></button>
+            <button type="button" class="rb-btn big" data-act="newSlot" title="Створити ще один шаблон"><i data-icon="newdoc"></i><span>Новий<br>шаблон</span></button>
+            <button type="button" class="rb-btn big" data-act="dupSlot" title="Зберегти копію поточного шаблону"><i data-icon="copy"></i><span>Зберегти<br>копію</span></button>
+            <button type="button" class="rb-btn big" data-act="renameSlot" title="Перейменувати поточний шаблон"><i data-icon="field"></i><span>Перейме-<br>нувати</span></button>
+            <button type="button" class="rb-btn big" data-act="deleteSlot" title="Видалити поточний шаблон"><i data-icon="trash"></i><span>Видалити<br>шаблон</span></button>
+          </div>
+          <div class="rb-label">Мої шаблони</div>
         </div>
         <div class="rb-group">
           <div class="rb-row">
@@ -484,6 +494,24 @@
       </div>
     </div>
   </div>
+
+  <div class="modal" id="tplModal" hidden>
+    <div class="modal-box tpl-box">
+      <h3>Мої шаблони</h3>
+      <div class="tpl-bar">
+        <input type="search" id="tplSearch" placeholder="Пошук за назвою, типом, номером…" autocomplete="off">
+        <button type="button" class="primary" data-act="newSlot">＋ Новий</button>
+      </div>
+      <ul class="tpl-list" id="tplList"></ul>
+      <div class="modal-actions">
+        <span class="tpl-count" id="tplCount"></span>
+        <button type="button" data-act="tplImport" title="Додати шаблони з JSON-файлу">Імпорт</button>
+        <button type="button" data-act="tplExport" title="Завантажити всі шаблони одним JSON-файлом (резервна копія / перенесення)">Експорт</button>
+        <button type="button" class="primary" data-act="tplClose">Закрити</button>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="tplImportFile" accept=".json,application/json" hidden>
 
   <div id="toast" class="wd-toast"></div>
 

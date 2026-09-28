@@ -438,6 +438,28 @@ body.no-shade #editor .fld:hover { background: #eef2f8; }
 .modal-box label input { width: auto; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
 
+/* Мої шаблони */
+.tpl-box { width: min(560px, calc(100% - 32px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
+.tpl-bar { display: flex; gap: 6px; margin-bottom: 8px; }
+.tpl-bar input { flex: 1; min-width: 0; height: 30px; padding: 0 8px; font: 13px var(--wd-ui); border: 1px solid #c9ced6; border-radius: 3px; }
+.tpl-bar button { width: auto; padding: 0 12px; font: 12px var(--wd-ui); border: 1px solid var(--wd-navy-2); background: var(--wd-navy-2); color: #fff; border-radius: 3px; cursor: pointer; }
+.tpl-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 60px; border: 1px solid #e3e7ee; border-radius: 3px; }
+.tpl-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-bottom: 1px solid #eef1f5; }
+.tpl-row:last-child { border-bottom: 0; }
+.tpl-row.cur { background: #eef3fb; box-shadow: inset 3px 0 0 var(--wd-navy-2); }
+.tpl-open { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 4px 6px; background: none; border: 0; text-align: left; cursor: pointer; font: 13px var(--wd-ui); border-radius: 3px; }
+.tpl-open:hover { background: #f3f5f9; }
+.tpl-open b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wd-navy); }
+.tpl-open small { color: var(--wd-muted); font-size: 11px; }
+.tpl-tools { display: flex; gap: 2px; flex: 0 0 auto; }
+.tpl-tools button { width: 26px; height: 26px; padding: 0; border: 1px solid #d5dae2; background: #fff; border-radius: 3px; cursor: pointer; font: 13px var(--wd-ui); }
+.tpl-tools button:hover:not(:disabled) { background: #f0f3f8; }
+.tpl-tools button:disabled { opacity: .35; cursor: default; }
+.tpl-tools .danger:hover { background: #fde8e8; border-color: #e4a3a3; color: #a32020; }
+.tpl-empty { padding: 16px; text-align: center; color: var(--wd-muted); }
+.tpl-count { margin-right: auto; align-self: center; color: var(--wd-muted); font-size: 12px; }
+@media (max-width: 520px) { .tpl-count { flex-basis: 100%; } .modal-actions { flex-wrap: wrap; } }
+
 .wd-toast {
   position: fixed; right: 18px; bottom: 38px; z-index: 130;
   background: #1f2a3d; color: #fff; padding: 9px 14px; border-radius: 4px; font: 13px var(--wd-ui);

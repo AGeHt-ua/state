@@ -11,7 +11,6 @@
   const STORE = 'gov_chancery_v2';
   const OLD_STORE = 'gov_chancery_v1';
   const UI_STORE = 'gov_chancery_ui';
-  const SLOTS = 5;
   const MM = 96 / 25.4;
 
   const COURT_BG = 'https://media.discordapp.net/attachments/1547182239794860032/1547182567265140808/photo_5323606809891249632_y.png?ex=6aa27d8d&is=6aa12c0d&hm=5b9f17272e79c20e44a1ff0d3899eb7e11718418a07f5373e77e568db8884461&=&format=webp&quality=lossless';
@@ -366,6 +365,8 @@
       seal: { show: true, src: '', x: 540, y: 900, size: 118 },
       html: null,
       pristine: true,
+      name: '',
+      created: Date.now(),
       updated: 0
     };
   }
@@ -435,10 +436,26 @@
     if (s.content) { st.html = v1Html(s.content, s.visibility || {}); st.pristine = false; }
     return st;
   }
+  function newSlotId() {
+    return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+  /* Шаблони зберігаються без обмеження кількості: db.slots[id] + порядок у db.order.
+     Старі сховища з номерами 1…5 підхоплюються як є — номер просто стає id. */
+  function normalizeDb(db) {
+    if (!db.slots || typeof db.slots !== 'object') db.slots = {};
+    const ids = Object.keys(db.slots).filter((k) => db.slots[k] && typeof db.slots[k] === 'object');
+    const order = Array.isArray(db.order) ? db.order.map(String).filter((k, i, a) => db.slots[k] && a.indexOf(k) === i) : [];
+    ids.sort((a, b) => (+a || 0) - (+b || 0)).forEach((k) => { if (order.indexOf(k) === -1) order.push(k); });
+    db.order = order;
+    db.v = 3;
+    db.active = String(db.active || '');
+    if (!db.slots[db.active]) db.active = order[0] || '';
+    return db;
+  }
   function loadDb() {
     try {
       const db = JSON.parse(localStorage.getItem(STORE));
-      if (db && db.slots) return db;
+      if (db && db.slots) return normalizeDb(db);
     } catch (e) { /* пошкоджене сховище — почнемо заново */ }
     const db = { active: 1, slots: {} };
     try {
@@ -450,11 +467,12 @@
         db.active = old.active || 1;
       }
     } catch (e) { /* немає старих даних */ }
-    return db;
+    return normalizeDb(db);
   }
 
   let db = loadDb();
-  let slot = clamp(+db.active || 1, 1, SLOTS);
+  if (!db.order.length) { const id = newSlotId(); db.order.push(id); db.active = id; }
+  let slot = db.active;
   let state = defaultState();
   window.state = state;
 
@@ -1236,14 +1254,15 @@
       if ((copy.seal.src || '').length > 800000) copy.seal.src = '';
       db.active = slot;
       db.slots[slot] = copy;
-      localStorage.setItem(STORE, JSON.stringify(db));
+      if (db.order.indexOf(slot) === -1) db.order.push(slot);
+      writeDb();
       setSaved('Збережено');
-      if (show) toast('Чернетку ' + slot + ' збережено');
+      if (show) toast('Шаблон «' + slotLabel(state) + '» збережено');
       refreshSlotList();
     } catch (e) {
       console.error(e);
       setSaved('Не збережено', 'err');
-      toast('Не вдалося зберегти: сховище браузера переповнене (завеликі зображення)');
+      toast('Сховище браузера переповнене: видаліть зайві шаблони чи великі зображення (резервна копія — «Мої шаблони» → Експорт)');
     }
   }
   function scheduleSave() {
@@ -1258,19 +1277,169 @@
     updateToolbar();
   }
 
+  function writeDb() {
+    localStorage.setItem(STORE, JSON.stringify(db));
+  }
+  function autoLabel(s) {
+    const t = TYPES[s.type];
+    return (t ? t.label : 'Документ') + (s.fields && s.fields.number ? ' №' + s.fields.number : '');
+  }
+  function slotLabel(s) {
+    return (s && String(s.name || '').trim()) || (s ? autoLabel(s) : 'Без назви');
+  }
+  function slotState(id) { return id === slot ? state : db.slots[id]; }
   function refreshSlotList() {
     const sel = $('slotSel');
-    let html = '';
-    for (let i = 1; i <= SLOTS; i++) {
-      const s = i === slot ? state : db.slots[i];
-      let label = 'порожня';
-      if (s) {
-        const t = TYPES[s.type];
-        label = (t ? t.label : 'Документ') + (s.fields && s.fields.number ? ' №' + s.fields.number : '');
-      }
-      html += '<option value="' + i + '"' + (i === slot ? ' selected' : '') + '>Чернетка ' + i + ' — ' + esc(label) + '</option>';
+    sel.innerHTML = db.order.map((id, i) => '<option value="' + esc(id) + '"' + (id === slot ? ' selected' : '') + '>' +
+      (i + 1) + '. ' + esc(slotLabel(slotState(id))) + '</option>').join('') +
+      '<option disabled>──────────</option><option value="__new">＋ Новий шаблон</option><option value="__manage">☰ Усі шаблони…</option>';
+    sel.title = 'Мої шаблони (' + db.order.length + ')';
+    if (!$('tplModal').hidden) renderTplManager();
+  }
+
+  /* ---------- Мої шаблони: створення, копія, перейменування, видалення, експорт ---------- */
+  function switchSlot(id) {
+    if (id === slot) return;
+    persist(false);
+    loadSlot(id);
+    persist(false);
+  }
+  function addSlot(st, after) {
+    const id = newSlotId();
+    st.created = Date.now();
+    db.slots[id] = st;
+    const at = after != null ? db.order.indexOf(after) : -1;
+    if (at === -1) db.order.push(id); else db.order.splice(at + 1, 0, id);
+    return id;
+  }
+  function newSlot(type) {
+    persist(false);
+    const name = prompt('Назва нового шаблону (можна лишити порожньою):', '');
+    if (name === null) { refreshSlotList(); return; }
+    const st = defaultState(type || state.type);
+    st.name = name.trim();
+    loadSlot(addSlot(st));
+    persist(false);
+    toast('Створено шаблон «' + slotLabel(state) + '»');
+  }
+  function duplicateSlot(id) {
+    persist(false);
+    const src = JSON.parse(JSON.stringify(slotState(id || slot)));
+    src.name = slotLabel(src) + ' (копія)';
+    loadSlot(addSlot(src, id || slot));
+    persist(false);
+    toast('Створено копію «' + slotLabel(state) + '»');
+  }
+  function renameSlot(id) {
+    id = id || slot;
+    const s = slotState(id);
+    const name = prompt('Назва шаблону:', slotLabel(s));
+    if (name === null) return;
+    s.name = name.trim();
+    if (id === slot) persist(false); else { writeDbSafe(); refreshSlotList(); }
+  }
+  function deleteSlot(id) {
+    id = id || slot;
+    if (!confirm('Видалити шаблон «' + slotLabel(slotState(id)) + '»?\nЦю дію не можна скасувати.')) return;
+    const i = db.order.indexOf(id);
+    db.order.splice(i, 1);
+    delete db.slots[id];
+    if (id === slot) {
+      clearTimeout(saveTimer);
+      if (!db.order.length) db.order.push(newSlotId());
+      loadSlot(db.order[Math.min(i, db.order.length - 1)]);
+      persist(false);
+    } else {
+      writeDbSafe();
+      refreshSlotList();
     }
-    sel.innerHTML = html;
+    toast('Шаблон видалено');
+  }
+  function moveSlot(id, dir) {
+    const i = db.order.indexOf(id);
+    const j = i + dir;
+    if (i === -1 || j < 0 || j >= db.order.length) return;
+    db.order.splice(j, 0, db.order.splice(i, 1)[0]);
+    writeDbSafe();
+    refreshSlotList();
+  }
+  function writeDbSafe() {
+    try { writeDb(); } catch (e) { console.error(e); toast('Не вдалося зберегти: сховище браузера переповнене'); }
+  }
+  function fmtDate(ms) {
+    if (!ms) return '—';
+    const d = new Date(ms);
+    const p = (n) => String(n).padStart(2, '0');
+    return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function storageKb() {
+    try { return Math.round((localStorage.getItem(STORE) || '').length * 2 / 1024); } catch (e) { return 0; }
+  }
+  function renderTplManager() {
+    const q = $('tplSearch').value.trim().toLowerCase();
+    const rows = db.order.map((id, i) => ({ id: id, i: i, s: slotState(id) })).filter((r) => {
+      if (!q) return true;
+      const t = TYPES[r.s.type];
+      return (slotLabel(r.s) + ' ' + (t ? t.label : '') + ' ' + (r.s.fields && r.s.fields.number || '')).toLowerCase().indexOf(q) !== -1;
+    });
+    $('tplList').innerHTML = rows.length ? rows.map((r) => {
+      const t = TYPES[r.s.type];
+      return '<li class="tpl-row' + (r.id === slot ? ' cur' : '') + '" data-slot="' + esc(r.id) + '">' +
+        '<button type="button" class="tpl-open" data-tplm="open" title="Відкрити">' +
+          '<b>' + esc(slotLabel(r.s)) + '</b>' +
+          '<small>' + esc(t ? t.label : 'Документ') + ' · змінено ' + fmtDate(r.s.updated) + (r.id === slot ? ' · відкрито' : '') + '</small>' +
+        '</button>' +
+        '<span class="tpl-tools">' +
+          '<button type="button" data-tplm="up" title="Вище"' + (r.i === 0 ? ' disabled' : '') + '>↑</button>' +
+          '<button type="button" data-tplm="down" title="Нижче"' + (r.i === db.order.length - 1 ? ' disabled' : '') + '>↓</button>' +
+          '<button type="button" data-tplm="rename" title="Перейменувати">✎</button>' +
+          '<button type="button" data-tplm="dup" title="Створити копію">⧉</button>' +
+          '<button type="button" data-tplm="del" class="danger" title="Видалити">✕</button>' +
+        '</span></li>';
+    }).join('') : '<li class="tpl-empty">Нічого не знайдено</li>';
+    $('tplCount').textContent = 'Шаблонів: ' + db.order.length + ' · зайнято ≈' + storageKb() + ' КБ';
+  }
+  function openTplManager() {
+    persist(false);
+    $('tplSearch').value = '';
+    $('tplModal').hidden = false;
+    renderTplManager();
+    $('tplSearch').focus();
+  }
+  function exportSlots() {
+    persist(false);
+    const data = { kind: 'gov_chancery_templates', v: 3, exported: Date.now(), items: db.order.map((id) => db.slots[id]).filter(Boolean) };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+    a.download = 'шаблони-канцелярії-' + today().replace(/\D+/g, '-').replace(/^-|-$/g, '') + '.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    toast('Експортовано шаблонів: ' + data.items.length);
+  }
+  function importSlots(file) {
+    const r = new FileReader();
+    r.onload = () => {
+      let items;
+      try {
+        const data = JSON.parse(r.result);
+        items = Array.isArray(data) ? data : data && Array.isArray(data.items) ? data.items : data && data.slots ? Object.values(data.slots) : null;
+      } catch (e) { items = null; }
+      items = (items || []).filter((x) => x && typeof x === 'object' && (x.html != null || x.fields));
+      if (!items.length) { toast('У файлі не знайдено шаблонів'); return; }
+      persist(false);
+      items.forEach((x) => { const st = mergeState(x); addSlot(st); st.created = x.created || st.created; });
+      try {
+        writeDb();
+        toast('Імпортовано шаблонів: ' + items.length);
+      } catch (e) {
+        console.error(e);
+        db = loadDb();
+        toast('Імпорт не вдався: не вистачає місця у сховищі браузера');
+      }
+      refreshSlotList();
+    };
+    r.readAsText(file);
   }
   function updateTitle() {
     const t = TYPES[state.type] || TYPES.nakaz;
@@ -1281,8 +1450,10 @@
   }
 
   function loadSlot(n) {
-    slot = n;
-    const saved = db.slots[n];
+    slot = String(n);
+    if (db.order.indexOf(slot) === -1) db.order.push(slot);
+    db.active = slot;
+    const saved = db.slots[slot];
     state = saved ? mergeState(saved) : defaultState();
     window.state = state;
     if (!state.seal.src && user.photo) state.seal.src = user.photo;
@@ -1755,11 +1926,15 @@
     if (!d) return;
     if (!canEditDoc(d)) { toast('Цей акт може редагувати лише автор'); return; }
     if (!d.editor || !d.html) { toast('Цей акт створено без редактора — відкрийте його у «Опубліковані»'); return; }
-    state = mergeState(Object.assign({}, d.editor, { html: d.html, pristine: false }));
-    db.slots[slot] = state;
-    loadSlot(slot);
+    // Акт відкривається в окремому шаблоні, щоб не затерти поточну роботу; повторне відкриття — той самий шаблон
+    const st = mergeState(Object.assign({}, d.editor, { html: d.html, pristine: false, name: d.title || '', srcDoc: d.id }));
+    persist(false);
+    const existing = db.order.filter((k) => db.slots[k] && db.slots[k].srcDoc === d.id)[0];
+    if (existing) db.slots[existing] = Object.assign(st, { created: db.slots[existing].created });
+    loadSlot(existing || addSlot(st));
+    persist(false);
     $('chkHome').checked = !!d.publishHome;
-    toast('«' + d.title + '» відкрито в чернетці ' + slot);
+    toast('«' + d.title + '» відкрито в шаблоні «' + slotLabel(state) + '»');
   }
 
   /* ---------- Стан кнопок стрічки ---------- */
@@ -1963,12 +2138,22 @@
     togglePane: () => setPane(!ui.pane),
     applyTemplate: () => applyTemplate(false),
     resetSlot: () => {
-      if (!confirm('Очистити чернетку ' + slot + '? Текст і налаштування буде скинуто.')) return;
+      if (!confirm('Очистити шаблон «' + slotLabel(state) + '»? Текст і налаштування буде скинуто (назва лишиться).')) return;
+      const name = state.name;
       delete db.slots[slot];
       loadSlot(slot);
+      state.name = name;
       persist(false);
-      toast('Чернетку очищено');
+      toast('Шаблон очищено');
     },
+    newSlot: () => newSlot(),
+    dupSlot: () => duplicateSlot(),
+    renameSlot: () => renameSlot(),
+    deleteSlot: () => deleteSlot(),
+    tplManager: openTplManager,
+    tplClose: () => { $('tplModal').hidden = true; },
+    tplExport: exportSlots,
+    tplImport: () => $('tplImportFile').click(),
     png: exportPng,
     print: () => window.print(),
     ansi: copyAnsi,
@@ -2235,17 +2420,37 @@
 
     // Чернетки
     $('slotSel').addEventListener('change', () => {
-      persist(false);
-      loadSlot(+$('slotSel').value);
-      db.active = slot;
-      persist(false);
-      toast('Чернетка ' + slot);
+      const v = $('slotSel').value;
+      if (v === '__new') { newSlot(); return; }
+      if (v === '__manage') { refreshSlotList(); openTplManager(); return; }
+      switchSlot(v);
+      toast('Шаблон «' + slotLabel(state) + '»');
     });
+    $('tplSearch').addEventListener('input', renderTplManager);
+    $('tplImportFile').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) importSlots(f);
+      e.target.value = '';
+    });
+    $('tplList').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tplm]');
+      if (!b) return;
+      const id = b.closest('[data-slot]').dataset.slot;
+      const a = b.dataset.tplm;
+      if (a === 'open') { switchSlot(id); $('tplModal').hidden = true; toast('Шаблон «' + slotLabel(state) + '»'); }
+      else if (a === 'up') moveSlot(id, -1);
+      else if (a === 'down') moveSlot(id, 1);
+      else if (a === 'rename') renameSlot(id);
+      else if (a === 'dup') duplicateSlot(id);
+      else if (a === 'del') deleteSlot(id);
+      renderTplManager();
+    });
+    $('tplModal').addEventListener('mousedown', (e) => { if (e.target === $('tplModal')) $('tplModal').hidden = true; });
 
     // Глобальні комбінації
     document.addEventListener('keydown', (e) => {
       const mod = e.ctrlKey || e.metaKey;
-      if (e.key === 'Escape') { closeMenu(); if (!$('fldPop').hidden) closeFieldPop(); if (!$('findBox').hidden) closeFind(); }
+      if (e.key === 'Escape') { closeMenu(); $('tplModal').hidden = true;if (!$('fldPop').hidden) closeFieldPop(); if (!$('findBox').hidden) closeFind(); }
       if (!mod) return;
       const k = e.key.toLowerCase();
       if (k === 's') { e.preventDefault(); persist(true); }
