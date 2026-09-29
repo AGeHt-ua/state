@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Кабінет — State</title>
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20260929e" />
-  <link rel="stylesheet" href="../assets/styles.css?v=20260929e" />
+  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20260929f" />
+  <link rel="stylesheet" href="../assets/styles.css?v=20260929f" />
 </head>
 <body>
   <div class="topbar" id="top-office">Службовий кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../">
-        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20260929e" alt="STATE">
+        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20260929f" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p id="hdr-office">Кабінет</p>
@@ -105,9 +105,9 @@
       </form>
     </section>
   </div>
-  <script src="../assets/accounts.js?v=20260929e"></script>
-  <script src="../assets/app.js?v=20260929e"></script>
-  <script src="../assets/store.js?v=20260929e"></script>
+  <script src="../assets/accounts.js?v=20260929f"></script>
+  <script src="../assets/app.js?v=20260929f"></script>
+  <script src="../assets/store.js?v=20260929f"></script>
   <script>
     const user = requireAuth();
     if (user) {
@@ -169,9 +169,7 @@
       const img = document.getElementById("avatar");
       if (user.photo) img.src = user.photo;
       else img.outerHTML = `<div class="profile-photo large photo-placeholder" id="avatar" aria-label="Фото не завантажено">${esc(String(user.username || "?").charAt(0).toUpperCase())}</div>`;
-      if (!hasPermission(user, "managePeople") && !hasPermission(user, "manageStructure") && !hasPermission(user, "manageRoutes") && !hasPermission(user, "approveProfiles")) {
-        document.getElementById("nav-admin").style.display = "none";
-      }
+      if (!canAdmin(user)) document.getElementById("nav-admin").style.display = "none";
       if (isCitizen(user)) document.getElementById("nav-admin").style.display = "none";
       let pendingPhoto = "";
       const modal = document.getElementById("profile-modal");

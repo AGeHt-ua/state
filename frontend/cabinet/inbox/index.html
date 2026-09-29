@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Повідомлення — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929e" />
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260929e" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929f" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260929f" />
 </head>
 <body>
   <div class="topbar" id="top-office">Кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929e" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929f" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Погодження та повідомлення</p>
@@ -48,9 +48,9 @@
     </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/accounts.js?v=20260929e"></script>
-  <script src="../../assets/app.js?v=20260929e"></script>
-  <script src="../../assets/store.js?v=20260929e"></script>
+  <script src="../../assets/accounts.js?v=20260929f"></script>
+  <script src="../../assets/app.js?v=20260929f"></script>
+  <script src="../../assets/store.js?v=20260929f"></script>
   <script>
     const user = requireAuth();
     if (!user) throw new Error("auth");
@@ -59,14 +59,16 @@
       document.querySelectorAll('a[href="../all/"], a[href="../docs/"], .create-doc-link').forEach((el) => { el.style.display = "none"; });
       document.getElementById("inbox-lead").textContent = "Відповіді та оновлення за вашими зверненнями.";
     }
-    if (!hasPermission(user, "managePeople") && !hasPermission(user, "manageStructure") && !hasPermission(user, "manageRoutes") && !hasPermission(user, "approveProfiles")) {
-      document.getElementById("nav-admin").style.display = "none";
-    }
+    if (!canAdmin(user)) document.getElementById("nav-admin").style.display = "none";
     // Рішення — тільки кнопками з перевіркою прав у store.js (canApproveDoc), без дій через адресу сторінки
     function decide(id, action) {
       const doc = getDoc(id);
-      if (!doc || !canApproveDoc(doc, user)) { alert("Цей документ уже не чекає вашого рішення."); draw(); return; }
-      if (action === "return") {
+      const allowed = action === "publish" ? canForcePublish(doc, user) : action === "return" ? canReturnDoc(doc, user) : canApproveDoc(doc, user);
+      if (!doc || !allowed) { alert("Цей документ уже не чекає вашого рішення."); draw(); return; }
+      if (action === "publish") {
+        if (!confirm("Опублікувати «" + doc.title + "» одразу, без решти маршруту погодження?")) return;
+        forcePublishDoc(id, user);
+      } else if (action === "return") {
         const reason = prompt("Що треба доопрацювати? Автор побачить цей коментар.", "");
         if (reason === null) return;
         returnDoc(id, user, reason);
@@ -81,7 +83,15 @@
       draw();
       if (typeof enhanceCabinetNavigation === "function") enhanceCabinetNavigation();
     }
-    function docCard(d) {
+    // Адмінські дії над документом, що чекає не вас: погодити крок / повернути / опублікувати одразу
+    function overrideActions(d) {
+      return [
+        canApproveDoc(d, user) ? `<button class="btn ghost" type="button" data-decide="approve" data-id="${attr(d.id)}">Погодити крок</button>` : "",
+        canReturnDoc(d, user) ? `<button class="btn ghost" type="button" data-decide="return" data-id="${attr(d.id)}">Повернути</button>` : "",
+        canForcePublish(d, user) ? `<button class="btn gold" type="button" data-decide="publish" data-id="${attr(d.id)}">Опублікувати одразу</button>` : ""
+      ].join("");
+    }
+    function docCard(d, override) {
       const congress = d.approverOffice === "congress";
       const t = congress ? congressTally(d) : null;
       return `
@@ -95,7 +105,7 @@
         </div>
         <span class="row-actions">
           <a class="btn ghost" href="${attr(docHref(d))}">Переглянути</a>
-          ${congress
+          ${override ? overrideActions(d) : congress
             ? `<button class="btn gold" type="button" data-decide="for" data-id="${attr(d.id)}">За</button>
                <button class="btn ghost danger" type="button" data-decide="against" data-id="${attr(d.id)}">Проти</button>`
             : `<button class="btn gold" type="button" data-decide="approve" data-id="${attr(d.id)}">Погодити</button>
@@ -120,9 +130,14 @@
     }
     function draw() {
       const list = reviewDocsFor(user);
+      const others = isCitizen(user) ? [] : overrideDocsFor(user);
       document.getElementById("inbox-list").innerHTML = isCitizen(user) ? "" : `
         <h3 class="inbox-h">На ваше рішення <span class="count">${list.length}</span></h3>
-        ${list.length ? list.map(docCard).join("") : "<p class='muted empty-note'>Немає документів, що чекають вашого погодження чи голосу.</p>"}`;
+        ${list.length ? list.map((d) => docCard(d)).join("") : "<p class='muted empty-note'>Немає документів, що чекають вашого погодження чи голосу.</p>"}
+        ${others.length ? `
+        <h3 class="inbox-h">Усі документи на погодженні <span class="count">${others.length}</span></h3>
+        <p class="muted">Права адміністратора: можна погодити поточний крок за іншого посадовця, повернути документ автору або опублікувати одразу. Голосувати за Конгрес не можна — лише повернути або опублікувати.</p>
+        ${others.map((d) => docCard(d, true)).join("")}` : ""}`;
       const notes = notificationsFor(user).filter((n) => n.kind !== "approve" && n.kind !== "vote");
       document.getElementById("appeal-inbox").innerHTML = `
         <h3 class="inbox-h">${isCitizen(user) ? "Відповіді на звернення" : "Події кабінету"} <span class="count">${notes.length}</span></h3>

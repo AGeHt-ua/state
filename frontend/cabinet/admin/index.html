@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Адмін-панель — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929e" />
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260929e" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929f" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260929f" />
 </head>
 <body>
   <div class="topbar">Адмін-панель</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929e" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929f" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Люди, апарати і доступи</p>
@@ -29,7 +29,7 @@
           <div>
             <p class="eyebrow">Центр керування</p>
             <h2 class="page-title">Адмін-панель</h2>
-            <p class="lead" style="margin-bottom:0">Тут призначають людей на посади, створюють апарати й видають статус конгресмена. Усе інше — ролі, права, маршрути погодження — налаштовується автоматично.</p>
+            <p class="lead" style="margin-bottom:0">Тут призначають людей на посади, видають особисті права (аж до повного доступу адміністратора), створюють апарати й надають статус конгресмена. Ролі та маршрути погодження налаштовуються автоматично.</p>
           </div>
         </section>
 
@@ -132,6 +132,12 @@
         <label>Посада<select name="positionId"></select><span class="field-help" id="user-level-help"></span></label>
         <label>Підпис у документах<input name="post" placeholder=""><span class="field-help">Як посада підписуватиметься в документах. Порожнє — назва посади.</span></label>
         <label class="inline-check" id="user-congress-wrap"><input type="checkbox" name="congressMember"> Конгресмен — може голосувати в Конгресі</label>
+        <details class="advanced" id="user-perm-details">
+          <summary>Особисті права</summary>
+          <label class="inline-check"><input type="checkbox" id="user-full-admin"> <b>Повний доступ адміністратора</b> — усі права нижче</label>
+          <div class="perm-list" id="user-perm-list"></div>
+          <span class="field-help">Додаються до прав посади. Права, що вже є в посади, позначені й не змінюються тут.</span>
+        </details>
         <div class="modal-actions">
           <button class="btn gold" type="submit">Зберегти</button>
           <button class="btn ghost" type="button" data-close>Скасувати</button>
@@ -207,9 +213,9 @@
   </div>
 
   <footer class="footer"></footer>
-  <script src="../../assets/accounts.js?v=20260929e"></script>
-  <script src="../../assets/app.js?v=20260929e"></script>
-  <script src="../../assets/store.js?v=20260929e"></script>
+  <script src="../../assets/accounts.js?v=20260929f"></script>
+  <script src="../../assets/app.js?v=20260929f"></script>
+  <script src="../../assets/store.js?v=20260929f"></script>
   <script>
     const me = requireAuth();
     if (!me) throw new Error("auth");
@@ -269,6 +275,8 @@
       const r = role(u);
       let b = r === "pending" ? `<span class="badge warn">Без призначення</span>` : r === "citizen" ? `<span class="badge dead">Громадянин</span>` : "";
       if (isCongressMember(u)) b += `<span class="badge draft">Конгресмен</span>`;
+      if (isStaff(u) && isFullAdmin(u)) b += `<span class="badge ok">Адміністратор</span>`;
+      else if ((u.extraPermissions || []).length && isStaff(u)) b += `<span class="badge draft">+${u.extraPermissions.length} прав</span>`;
       return b;
     }
     function userMeta(u) {
@@ -355,10 +363,42 @@
       form.post.value = u.post || "";
       form.congressMember.checked = isCongressMember(u);
       $("user-congress-wrap").hidden = !can.congress;
+      editingExtra = (u.extraPermissions || []).slice();
+      drawUserPerms();
+      $("user-perm-details").open = editingExtra.length > 0;
       form.querySelector("[data-act=revoke]").hidden = !isStaff(u) || u.login === me.login;
       syncLevelHelp();
       $("user-modal").hidden = false;
     }
+    // Особисті права: права посади — позначені й заблоковані; видати можна лише ті, що є в самого адміна
+    let editingExtra = [];
+    function drawUserPerms() {
+      const form = $("user-form");
+      const staffSelected = !!form.office.value;
+      $("user-perm-details").hidden = !can.people || !staffSelected;
+      if (!staffSelected) return;
+      const p = positionById(form.positionId.value);
+      const fromPos = p ? (p.permissions || []) : [];
+      $("user-perm-list").innerHTML = Object.keys(PERMISSION_LABELS).map((k) => {
+        const byPos = fromPos.includes(k);
+        const mine = hasPermission(me, k);
+        return `<label class="inline-check"${byPos ? ` title="Є в посади"` : !mine ? ` title="У вас немає цього права"` : ""}><input type="checkbox" name="uperm" value="${k}"${byPos || editingExtra.includes(k) ? " checked" : ""}${byPos || !mine ? " disabled" : ""}> ${esc(PERMISSION_LABELS[k])}${byPos ? ` <small class="muted">· від посади</small>` : ""}</label>`;
+      }).join("");
+      syncFullAdmin();
+    }
+    function syncFullAdmin() {
+      const boxes = Array.from(document.querySelectorAll("#user-perm-list input"));
+      $("user-full-admin").checked = boxes.length > 0 && boxes.every((b) => b.checked);
+      $("user-full-admin").disabled = boxes.some((b) => !b.checked && b.disabled);
+    }
+    $("user-perm-list").addEventListener("change", () => {
+      editingExtra = Array.from(document.querySelectorAll("#user-perm-list input:checked:not(:disabled)")).map((b) => b.value);
+      syncFullAdmin();
+    });
+    $("user-full-admin").addEventListener("change", (e) => {
+      document.querySelectorAll("#user-perm-list input:not(:disabled)").forEach((b) => { b.checked = e.target.checked; });
+      editingExtra = Array.from(document.querySelectorAll("#user-perm-list input:checked:not(:disabled)")).map((b) => b.value);
+    });
     function syncLevelHelp() {
       const form = $("user-form");
       const p = positionById(form.positionId.value);
@@ -605,14 +645,18 @@
       f.positionId.innerHTML = e.target.value ? positionOptions(e.target.value) : `<option value="">Спершу оберіть апарат</option>`;
       f.positionId.disabled = !e.target.value;
       syncLevelHelp();
+      drawUserPerms();
     });
-    $("user-form").positionId.addEventListener("change", syncLevelHelp);
+    $("user-form").positionId.addEventListener("change", () => { syncLevelHelp(); drawUserPerms(); });
     $("user-form").addEventListener("submit", (e) => {
       e.preventDefault();
       const f = e.target;
       const patch = f.office.value ? { office: f.office.value, positionId: f.positionId.value, post: f.post.value } : { office: "" };
       if (can.congress) patch.congressMember = f.congressMember.checked;
       assignUser(f.login.value, patch, me);
+      // Права посади в особисті не дублюємо
+      const pos = positionById(f.positionId.value);
+      if (can.people && f.office.value) setUserPermissions(f.login.value, editingExtra.filter((k) => !(pos && (pos.permissions || []).includes(k))), me);
       closeAll(); toast("Збережено");
       refresh();
     });

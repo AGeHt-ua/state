@@ -42,9 +42,12 @@ const PERMISSION_LABELS = {
   createDocs: "Створювати документи",
   publishDocs: "Публікувати без погодження",
   approveDocs: "Погоджувати документи",
+  approveAnyDocs: "Погоджувати й повертати будь-які документи поза чергою",
   editOwnDocs: "Редагувати свої документи",
   editAllDocs: "Редагувати всі документи",
-  managePeople: "Призначати людей на посади",
+  manageDocs: "Керувати реєстром: чинність, архів, кошик",
+  manageAppeals: "Відповідати на звернення до всіх апаратів",
+  managePeople: "Призначати людей на посади й видавати права",
   manageStructure: "Створювати апарати й посади",
   manageRoutes: "Налаштовувати маршрути погодження",
   approveProfiles: "Підтверджувати зміни профілю",
@@ -55,7 +58,7 @@ const PERMISSION_LABELS = {
 const ACCESS_LEVELS = {
   head: { label: "Керівник апарату", hint: "створює документи й погоджує документи свого апарату", permissions: ["createDocs", "approveDocs", "editOwnDocs"] },
   staff: { label: "Співробітник", hint: "створює документи, вони йдуть на погодження керівнику", permissions: ["createDocs", "editOwnDocs"] },
-  admin: { label: "Адміністратор", hint: "усі права: люди, структура, публікація без погодження", permissions: Object.keys(PERMISSION_LABELS) },
+  admin: { label: "Адміністратор", hint: "усі права: створення, публікація й погодження будь-яких документів, реєстр, звернення, люди, структура", permissions: Object.keys(PERMISSION_LABELS) },
   viewer: { label: "Лише перегляд", hint: "бачить кабінет, але не створює документів", permissions: [] }
 };
 
@@ -297,7 +300,7 @@ function assignUser(login, patch, byUser) {
   if (!user) return null;
   const next = Object.assign({}, user);
   if ("office" in patch) {
-    if (!patch.office) { next.roles = ["pending"]; next.office = ""; next.positionId = ""; }
+    if (!patch.office) { next.roles = ["pending"]; next.office = ""; next.positionId = ""; next.extraPermissions = []; }
     else { next.office = patch.office; next.roles = [roleForOffice(patch.office)]; }
   }
   if ("positionId" in patch) next.positionId = patch.positionId || "";
@@ -351,6 +354,7 @@ function saveUser(user) {
   };
   // Статус конгресмена: зберігаємо, якщо переданий; інакше лишаємо як був
   if ("congressMember" in user) row.congressMember = !!user.congressMember;
+  if ("extraPermissions" in user) row.extraPermissions = (user.extraPermissions || []).slice();
   if (i >= 0) extra[i] = Object.assign({}, extra[i], row);
   else extra.push(row);
   saveLS("state_users", extra);
@@ -460,7 +464,8 @@ function allPositions() {
   const byId = {};
   DEFAULT_POSITIONS.forEach((p) => { byId[p.id] = p; });
   extra.forEach((p) => { byId[p.id] = Object.assign({}, byId[p.id] || {}, p); });
-  return Object.values(byId);
+  // Рівень «Адміністратор» завжди має всі права, зокрема ті, що з'явилися після збереження посади
+  return Object.values(byId).map((p) => p.level === "admin" ? Object.assign({}, p, { permissions: ACCESS_LEVELS.admin.permissions.slice() }) : p);
 }
 
 function positionById(id) {
@@ -629,11 +634,33 @@ function routeProgressLabel(doc) {
   return "Крок " + (current + 1) + " з " + steps.length + ": " + routeStepName(steps[current], doc);
 }
 
+// Права = права посади + особисті права, видані в адмін-панелі (лише посадовцям)
 function userPermissions(user) {
   if (!user) return [];
   if (((user.roles || [])[0]) === "governor") return Object.keys(PERMISSION_LABELS);
+  if (!isStaff(user)) return [];
   const position = positionById(user.positionId);
-  return position ? (position.permissions || []) : [];
+  const own = position ? (position.permissions || []) : [];
+  const full = "extraPermissions" in user ? user : allUsers().find((u) => u.login === (user.login || user.id));
+  const extra = ((full && full.extraPermissions) || []).filter((p) => PERMISSION_LABELS[p]);
+  return own.concat(extra.filter((p) => !own.includes(p)));
+}
+
+function isFullAdmin(user) {
+  return Object.keys(PERMISSION_LABELS).every((p) => hasPermission(user, p));
+}
+
+// Особисті права: видати можна лише ті, що є в самого адміністратора
+function setUserPermissions(login, permissions, byUser) {
+  if (!byUser || !hasPermission(byUser, "managePeople")) return null;
+  const user = allUsers().find((u) => u.login === login);
+  if (!user) return null;
+  const allowed = (permissions || []).filter((p) => PERMISSION_LABELS[p] && hasPermission(byUser, p));
+  // Права, яких адміністратор не має, він і не може забрати
+  const kept = (user.extraPermissions || []).filter((p) => PERMISSION_LABELS[p] && !hasPermission(byUser, p));
+  const next = Object.assign({}, user, { extraPermissions: kept.concat(allowed.filter((p) => !kept.includes(p))) });
+  saveUser(next);
+  return next;
 }
 
 function hasPermission(user, permission) {
@@ -771,8 +798,12 @@ function appealNumber() {
 function appealsForUser(user) {
   if (!user) return [];
   if (isCitizen(user)) return allAppeals().filter((a) => a.ownerLogin === user.login);
-  if (isStaff(user)) return allAppeals().filter((a) => a.ownerLogin === user.login || a.office === userOffice(user) || hasPermission(user, "managePeople"));
+  if (isStaff(user)) return allAppeals().filter((a) => a.ownerLogin === user.login || a.office === userOffice(user) || canSeeAllAppeals(user));
   return [];
+}
+
+function canSeeAllAppeals(user) {
+  return hasPermission(user, "manageAppeals") || hasPermission(user, "managePeople");
 }
 
 function citizenAppealsFor(user) {
@@ -781,7 +812,7 @@ function citizenAppealsFor(user) {
 
 function officeAppealsFor(user) {
   if (!isStaff(user)) return [];
-  return allAppeals().filter((a) => a.office === userOffice(user) || hasPermission(user, "managePeople"));
+  return allAppeals().filter((a) => a.office === userOffice(user) || canSeeAllAppeals(user));
 }
 
 function saveAppeal(appeal, meta = {}) {
@@ -1038,7 +1069,61 @@ function docSteps(doc) {
 
 function canApproveDoc(doc, user) {
   if (!doc || !user || (doc.status !== "review" && doc.status !== "congress")) return false;
-  return reviewDocsFor(user).some((d) => d.id === doc.id);
+  if (reviewDocsFor(user).some((d) => d.id === doc.id)) return true;
+  // Адміністратор погоджує будь-який крок поза чергою; голос Конгресу — лише особисто
+  return doc.status === "review" && hasPermission(user, "approveAnyDocs");
+}
+
+/* ---------- Права адміністратора над документами ---------- */
+// Документи на погодженні, що чекають не цього користувача, але він може втрутитися
+function overrideDocsFor(user) {
+  if (!isStaff(user) || !hasPermission(user, "approveAnyDocs")) return [];
+  const own = reviewDocsFor(user).map((d) => d.id);
+  return allDocs().filter((d) => (d.status === "review" || d.status === "congress") && !own.includes(d.id));
+}
+
+function canReturnDoc(doc, user) {
+  return canApproveDoc(doc, user) || !!(doc && user && doc.status === "congress" && hasPermission(user, "approveAnyDocs"));
+}
+
+function canForcePublish(doc, user) {
+  if (!doc || !user || !hasPermission(user, "publishDocs")) return false;
+  if (!["draft", "review", "congress", "adopted"].includes(doc.status)) return false;
+  return doc.ownerLogin === user.login || hasPermission(user, "approveAnyDocs");
+}
+
+// Публікація одразу, без решти маршруту
+function forcePublishDoc(id, user) {
+  const doc = getDoc(id);
+  if (!canForcePublish(doc, user)) return null;
+  const now = new Date().toISOString();
+  return saveDoc(Object.assign({}, doc, {
+    status: "ok",
+    approverOffice: "",
+    approverLogin: "",
+    approvals: (doc.approvals || []).concat([{ step: "admin", by: user.login, byName: actorName(user), post: user.post || "", at: now, decision: "approved" }]),
+    approvedAt: now,
+    approvedBy: user.login,
+    publishedAt: doc.publishedAt || now,
+    seeded: false
+  }), { user, action: "Опубліковано адміністратором", summary: "Документ опубліковано без решти маршруту погодження.", versionLabel: "Чинна версія" });
+}
+
+function canManageDocs(user) {
+  return ((user && user.roles) || [])[0] === "governor" || hasPermission(user, "manageDocs") || hasPermission(user, "editAllDocs");
+}
+
+// Чинний ↔ втратив чинність
+function setDocValidity(id, user, active) {
+  const doc = getDoc(id);
+  if (!doc || !canManageDocs(user)) return null;
+  if (active ? doc.status !== "dead" : doc.status !== "ok") return null;
+  return saveDoc(Object.assign({}, doc, { status: active ? "ok" : "dead", seeded: false }), {
+    user,
+    action: active ? "Відновлено чинність" : "Втратив чинність",
+    summary: active ? "Документ знову чинний." : "Документ переведено в архів як такий, що втратив чинність.",
+    versionLabel: active ? "Чинна версія" : "Архів"
+  });
 }
 
 function congressTally(doc) {
@@ -1101,7 +1186,13 @@ function approveDoc(id, user) {
   const doc = getDoc(id);
   if (!doc || !canApproveDoc(doc, user)) return null;
   if (doc.approverOffice === "congress") return voteDoc(id, user, "for");
-  return advanceDoc(doc, user, {});
+  const inQueue = reviewDocsFor(user).some((d) => d.id === doc.id);
+  if (inQueue) return advanceDoc(doc, user, {});
+  const step = docSteps(doc)[Number(doc.approvalIndex || 0)] || doc.approverOffice;
+  return advanceDoc(doc, user, {
+    action: "Погоджено адміністратором поза чергою",
+    summaryPrefix: "Адміністратор погодив крок «" + routeStepName(step, doc) + "» поза чергою."
+  });
 }
 
 function voteDoc(id, user, vote) {
@@ -1139,7 +1230,7 @@ function voteDoc(id, user, vote) {
 
 function returnDoc(id, user, reason) {
   const doc = getDoc(id);
-  if (!doc || !canApproveDoc(doc, user)) return null;
+  if (!doc || !canReturnDoc(doc, user)) return null;
   const now = new Date().toISOString();
   const text = String(reason || "").trim();
   return saveDoc(Object.assign({}, doc, {
