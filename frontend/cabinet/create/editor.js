@@ -1982,8 +1982,9 @@
       type: 'users', office: u.office || userOffice(u), value: 'user:' + u.login,
       label: (u.name || u.login) + ' · ' + (u.post || 'посадовець') + ' · ' + officeName(u.office || userOffice(u))
     }));
-    return positions.concat(users).filter((it) =>
-      (filter === 'all' || it.type === filter || (filter === 'my-office' && it.office === office)) &&
+    const congress = { type: 'congress', office: '', value: 'congress', label: 'Конгрес штату — голосування конгресменів' };
+    return [congress].concat(positions, users).filter((it) =>
+      (filter === 'all' || it.type === filter || (filter === 'my-office' && it.office === office) || (filter === 'positions' && it.type === 'congress')) &&
       (!q || it.label.toLowerCase().includes(q)));
   }
   function stepLabel(step) {
@@ -1997,14 +1998,19 @@
     if (items.some((it) => it.value === keep)) $('apTarget').value = keep;
     else if (items.length) $('apTarget').selectedIndex = 0;
   }
+  // Автоматичний маршрут апарату; «Закон» додатково проходить голосування Конгресу
+  function autoRoute() {
+    const route = activeApprovalRoute(office);
+    return state.type === 'zakon' ? withCongressStep(route) : route;
+  }
   function selectedApprovalRoute() {
     const mode = $('apMode').value;
     if (mode === 'direct') {
       const target = $('apTarget').value || 'position:governor-chief';
       return { id: 'direct-' + target.replace(/[^a-z0-9_-]+/gi, '-'), name: 'Пряме погодження: ' + stepLabel(target), steps: [target] };
     }
-    if (mode === 'route') return allApprovalRoutes().find((r) => r.id === $('apRoute').value) || activeApprovalRoute(office);
-    return activeApprovalRoute(office);
+    if (mode === 'route') return allApprovalRoutes().find((r) => r.id === $('apRoute').value) || autoRoute();
+    return autoRoute();
   }
   function updateApprovalPreview() {
     const mode = $('apMode').value;
@@ -2012,9 +2018,15 @@
     $('apTargetWrap').hidden = mode !== 'direct';
     const route = selectedApprovalRoute();
     const steps = route ? resolveApprovalSteps({ office: office, ownerLogin: user.login }, route) : [];
-    $('apPreview').textContent = !route ? 'Маршрут не налаштовано.'
+    let text = !route ? 'Маршрут не налаштовано.'
       : !steps.length ? 'У маршруті немає посадовців для погодження.'
       : 'Документ піде так: ' + steps.map(stepLabel).join(' → ') + '.';
+    if (steps.includes('congress')) {
+      const t = congressTally({});
+      text += !t.members ? ' Увага: конгресменів ще не призначено — голосування не зможе відбутися.'
+        : ' На кроці «Конгрес» голосують ' + t.members + ' конгресм. — потрібно ' + t.needed + ' «за».';
+    }
+    $('apPreview').textContent = text;
   }
   function openApproval(checked) {
     if (!canCreate) { toast('Для створення документів адміністратор має видати відповідний доступ'); return; }
@@ -2068,7 +2080,7 @@
     });
     let route = null;
     if (finalStatus === 'review') {
-      route = $('apModal').hidden && status !== 'review' ? activeApprovalRoute(office) : selectedApprovalRoute();
+      route = $('apModal').hidden && status !== 'review' ? autoRoute() : selectedApprovalRoute();
       const steps = route ? resolveApprovalSteps(doc, route) : [];
       if (!steps.length) { toast('Оберіть посадовця або маршрут погодження'); openApproval(); return; }
       // Нове коло погодження: попередні рішення, голоси й причина повернення лишаються лише в журналі
@@ -2218,7 +2230,7 @@
   }
   function initPublishUi() {
     $('btnPublish').textContent = canPublish ? 'Опублікувати' : 'Опублікувати…';
-    $('btnPublish').title = canPublish ? 'Опублікувати на сайті одразу' : 'Для вашої посади публікація йде через погодження: ' + ((activeApprovalRoute(office) || {}).name || 'маршрут');
+    $('btnPublish').title = canPublish ? 'Опублікувати на сайті одразу' : 'Для вашої посади публікація йде через погодження: ' + ((autoRoute() || {}).name || 'маршрут');
     if (!canCreate) {
       document.querySelectorAll('[data-act="saveDraft"],[data-act="sendReview"],[data-act="publish"]').forEach((b) => { b.disabled = true; b.title = 'Для створення документів адміністратор має видати відповідний доступ'; });
     }
@@ -2249,7 +2261,7 @@
     const typeKey = (d.editor && d.editor.type) || d.typeKey || officeTypes.filter(byLabel)[0] || Object.keys(TYPES).filter(byLabel)[0];
     const ymd = String(d.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
     const base = d.editor || { type: typeKey, fields: { number: d.number || '', date: ymd ? ymd[3] + '.' + ymd[2] + '.' + ymd[1] : (d.date || today()) } };
-    const html = d.html || (d.docHtml ? sanitizeDocHtml(d.docHtml) : '<p>' + esc(d.text || '').replace(/\n/g, '<br>') + '</p>');
+    const html = d.html ? sanitizeDocHtml(d.html) : (d.docHtml ? sanitizeDocHtml(d.docHtml) : '<p>' + esc(d.text || '').replace(/\n/g, '<br>') + '</p>');
     // Акт відкривається в окремому шаблоні, щоб не затерти поточну роботу; повторне відкриття — той самий шаблон
     const st = mergeState(Object.assign({}, base, { html: html, pristine: false, name: d.title || '', srcDoc: d.id }));
     persist(false);

@@ -2,17 +2,19 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Реєстрація — State</title>
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20260929f" />
-  <link rel="stylesheet" href="../assets/styles.css?v=20260929f" />
+  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20260929i" />
+  <link rel="stylesheet" href="../assets/styles.css?v=20260929i" />
 </head>
 <body>
   <div class="topbar">Офіційний портал Уряду штату Сан-Андреас</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../">
-        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20260929f" alt="STATE">
+        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20260929i" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p id="hdr-kind">Реєстрація в кабінеті</p>
@@ -30,14 +32,15 @@
     <h2 class="page-title" id="page-title">Реєстрація учасника</h2>
     <section class="card">
       <p class="lead" id="reg-lead">Після реєстрації Губернатор призначає апарат управління. Посаду вказуєте самі; змінити її може адміністратор.</p>
+      <div class="notice danger" role="note"><b>Бета-тест.</b> Сайт працює в тестовому режимі: дані зберігаються лише у вашому браузері, а паролі — у відкритому вигляді. Не вводьте реальних даних: справжніх імен, email, телефонів і паролів, якими ви користуєтесь деінде. Вигадайте тестовий логін і пароль.</div>
       <form id="reg-form">
         <table class="meta-table">
           <tr><th>Ігрове ім’я</th><td><input name="name" required placeholder="Dominic Castro"></td></tr>
           <tr id="stat-row"><th>Stat ID</th><td><input name="statId" placeholder="SA-000001"></td></tr>
           <tr id="contact-row"><th>Електронна адреса</th><td><input name="contact" placeholder="Discord або Telegram"></td></tr>
           <tr id="post-row"><th>Посада</th><td><input name="post" placeholder="Голова Верховного Суду"></td></tr>
-          <tr><th>Логін</th><td><input name="login" required placeholder="castro"></td></tr>
-          <tr><th>Пароль</th><td><input name="password" type="password" required></td></tr>
+          <tr><th>Логін</th><td><input name="login" required placeholder="castro" pattern="[A-Za-z0-9_.-]{3,32}" maxlength="32" autocomplete="username" title="3–32 символи: латиниця, цифри, крапка, дефіс, підкреслення"></td></tr>
+          <tr><th>Пароль</th><td><input name="password" type="password" required autocomplete="new-password"></td></tr>
         </table>
         <p class="lead" id="reg-msg"></p>
         <button class="btn gold" type="submit">Подати заявку</button>
@@ -45,9 +48,9 @@
     </section>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../assets/accounts.js?v=20260929f"></script>
-  <script src="../assets/app.js?v=20260929f"></script>
-  <script src="../assets/store.js?v=20260929f"></script>
+  <script src="../assets/accounts.js?v=20260929i"></script>
+  <script src="../assets/app.js?v=20260929i"></script>
+  <script src="../assets/store.js?v=20260929i"></script>
   <script>
     const type = new URLSearchParams(location.search).get("type") === "official" ? "official" : "citizen";
     const citizen = type === "citizen";

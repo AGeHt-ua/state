@@ -49,6 +49,14 @@ npx wrangler secret put DISCORD_GUILD_ID
 npx wrangler secret put SESSION_SECRET
 ```
 
+`SESSION_SECRET` — щонайменше 32 випадкові символи, наприклад:
+
+```bash
+openssl rand -base64 48
+```
+
+`FRONTEND_ORIGIN` у `wrangler.toml` — точний origin фронту (кілька — через кому). Запити з інших origin не отримують CORS-доступу.
+
 Redirect URI в Discord Developer Portal:
 
 `https://<worker>.workers.dev/api/callback`

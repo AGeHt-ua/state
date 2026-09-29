@@ -142,14 +142,42 @@ function attr(value) {
   return esc(value).replace(/`/g, "&#96;");
 }
 
+/* ---------- Санітизація HTML документів ----------
+   HTML документа пише автор, а бачать усі, тож перед показом прибираємо все, що може виконати код:
+   небезпечні теги, обробники подій, небезпечні URL (javascript:, data:text/html тощо) та CSS-трюки. */
+const DOC_DROP_TAGS = "script,style,iframe,frame,frameset,object,embed,applet,link,meta,base,form,input,button,textarea,select,option," +
+  "noscript,template,portal,svg,math,audio,video,source,track,dialog";
+const DOC_URL_ATTRS = ["href", "src", "xlink:href", "action", "formaction", "poster", "background", "cite", "data", "longdesc"];
+const DOC_DROP_ATTRS = ["srcset", "srcdoc", "ping", "contenteditable", "name", "form", "is", "autofocus"];
+
+// Дозволені URL: http(s), mailto, tel, якорі й відносні шляхи; для зображень ще data:image (крім SVG)
+function isSafeUrl(value, forImage) {
+  const v = String(value || "").replace(/[\x00-\x20\x7f-\x9f]/g, "");
+  if (!v) return true;
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(v)) return true;
+  if (/^(https?|mailto|tel):/i.test(v)) return true;
+  return !!forImage && /^data:image\/(png|jpe?g|gif|webp|bmp|avif);/i.test(v);
+}
+
+function isSafeStyle(style) {
+  const s = String(style || "").replace(/\\/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  if (/expression\s*\(|javascript:|vbscript:|behavior\s*:|-moz-binding|@import|position\s*:\s*fixed/i.test(s)) return false;
+  const urls = s.match(/url\s*\(\s*(['"]?)([^'")]*)\1\s*\)/gi) || [];
+  return urls.every((u) => isSafeUrl(u.replace(/^url\s*\(\s*['"]?|['"]?\s*\)$/gi, ""), true));
+}
+
 function sanitizeDocHtml(html) {
   const parsed = new DOMParser().parseFromString(String(html || ""), "text/html");
-  parsed.querySelectorAll("script, style, iframe, object, embed, link, meta").forEach((el) => el.remove());
+  parsed.body.querySelectorAll(DOC_DROP_TAGS).forEach((el) => el.remove());
   parsed.body.querySelectorAll("*").forEach((el) => {
+    const isImage = el.tagName === "IMG";
     Array.from(el.attributes).forEach((a) => {
-      if (/^on/i.test(a.name) || a.name === "contenteditable") el.removeAttribute(a.name);
-      if ((a.name === "href" || a.name === "src") && /^\s*javascript:/i.test(a.value)) el.removeAttribute(a.name);
+      const name = a.name.toLowerCase();
+      if (name.startsWith("on") || DOC_DROP_ATTRS.includes(name)) el.removeAttribute(a.name);
+      else if (DOC_URL_ATTRS.includes(name) && !isSafeUrl(a.value, isImage)) el.removeAttribute(a.name);
+      else if (name === "style" && !isSafeStyle(a.value)) el.removeAttribute(a.name);
     });
+    if (el.tagName === "A" && el.getAttribute("target")) el.setAttribute("rel", "noopener noreferrer");
   });
   return parsed.body.innerHTML;
 }
@@ -360,18 +388,25 @@ function saveUser(user) {
   saveLS("state_users", extra);
 }
 
+/* Бета-тест: паролі зберігаються відкрито в localStorage, вхід перевіряється лише в браузері.
+   Перед запуском авторизація має переїхати на сервер (Worker). */
+const LOGIN_RE = /^[a-z0-9_.-]{3,32}$/;
+
 function registerUser({ login, password, name, post, accountType, statId, contact }) {
   login = String(login || "").trim().toLowerCase();
+  name = String(name || "").trim();
   if (!login || !password || !name) return { ok: false, error: "Заповни всі поля." };
+  if (!LOGIN_RE.test(login)) return { ok: false, error: "Логін: 3–32 символи, лише латиниця, цифри, крапка, дефіс і підкреслення." };
+  if (name.length > 64) return { ok: false, error: "Ім'я занадто довге (до 64 символів)." };
   if (allUsers().some((u) => u.login === login)) return { ok: false, error: "Такий логін уже зайнятий." };
   const isCitizenAccount = accountType === "citizen";
   saveUser({
     login,
     password,
-    name: String(name).trim(),
-    statId: String(statId || "").trim(),
-    contact: String(contact || "").trim(),
-    post: String(post || "").trim(),
+    name,
+    statId: String(statId || "").trim().slice(0, 64),
+    contact: String(contact || "").trim().slice(0, 128),
+    post: String(post || "").trim().slice(0, 128),
     roles: isCitizenAccount ? ["citizen"] : ["pending"],
     office: isCitizenAccount ? "citizens" : ""
   });
@@ -549,6 +584,16 @@ function routesForOffice(office) {
 // Автоматичний маршрут: керівник апарату автора → Губернатор (кроки, де автор погоджував би сам себе, пропускаються)
 function autoApprovalRoute(office) {
   return { id: "auto", name: "Автоматично: керівник апарату → Губернатор", ownerOffice: office || "all", steps: ["authorOffice", "position:governor-chief"], active: true, auto: true };
+}
+
+// Закон завжди проходить голосування Конгресу: крок вставляється перед Губернатором (або в кінець маршруту)
+function withCongressStep(route) {
+  if (!route || (route.steps || []).includes("congress")) return route;
+  const steps = (route.steps || []).slice();
+  const gov = steps.indexOf("position:governor-chief");
+  if (gov >= 0) steps.splice(gov, 0, "congress");
+  else steps.push("congress");
+  return Object.assign({}, route, { id: route.id + "-congress", name: route.name + " (закон — через Конгрес)", steps });
 }
 
 function activeApprovalRoute(office) {

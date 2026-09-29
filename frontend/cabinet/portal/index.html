@@ -2,17 +2,19 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Електронний кабінет — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929f" />
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260929f" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929i" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260929i" />
 </head>
 <body>
   <div class="topbar">Офіційний портал Уряду штату Сан-Андреас</div>
   <header class="header citizen-header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929f" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929i" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Вхід до кабінету</p>
@@ -41,6 +43,7 @@
           <label class="muted">Пароль<input name="password" type="password" required autocomplete="current-password"></label>
           <p class="lead" id="login-error" style="color:#8a2b2b;margin-bottom:0"></p>
           <button class="btn gold" type="submit">Увійти до кабінету</button>
+          <p class="muted" style="font-size:12.5px;margin:10px 0 0"><b>Бета-тест:</b> не використовуйте реальні паролі — вони зберігаються відкрито.</p>
         </form>
         <div id="portal-authorized" hidden>
           <p class="muted" id="portal-user-line"></p>
@@ -74,9 +77,9 @@
     </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/accounts.js?v=20260929f"></script>
-  <script src="../../assets/app.js?v=20260929f"></script>
-  <script src="../../assets/store.js?v=20260929f"></script>
+  <script src="../../assets/accounts.js?v=20260929i"></script>
+  <script src="../../assets/app.js?v=20260929i"></script>
+  <script src="../../assets/store.js?v=20260929i"></script>
   <script>
     const existing = currentUser();
     if (existing && isCabinetUser(existing)) {

@@ -2,17 +2,19 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Адмін-панель — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929f" />
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260929f" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929i" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260929i" />
 </head>
 <body>
   <div class="topbar">Адмін-панель</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929f" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929i" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Люди, апарати і доступи</p>
@@ -213,9 +215,9 @@
   </div>
 
   <footer class="footer"></footer>
-  <script src="../../assets/accounts.js?v=20260929f"></script>
-  <script src="../../assets/app.js?v=20260929f"></script>
-  <script src="../../assets/store.js?v=20260929f"></script>
+  <script src="../../assets/accounts.js?v=20260929i"></script>
+  <script src="../../assets/app.js?v=20260929i"></script>
+  <script src="../../assets/store.js?v=20260929i"></script>
   <script>
     const me = requireAuth();
     if (!me) throw new Error("auth");
@@ -520,7 +522,7 @@
     function drawCongress() {
       const members = congressMembers();
       const t = { members: members.length, needed: Math.floor(Math.max(members.length, 1) / 2) + 1 };
-      $("congress-rule").innerHTML = `<b>Як голосує Конгрес</b>Зараз конгресменів: ${t.members}. Щоб документ пройшов, потрібно ${t.needed} ${t.needed === 1 ? "голос" : "голоси"} «за». Якщо стільки ж проголосує «проти» — документ відхиляється. Документ потрапляє на голосування, якщо в маршруті погодження є крок «Голосування Конгресу».`;
+      $("congress-rule").innerHTML = `<b>Як голосує Конгрес</b>Зараз конгресменів: ${t.members}. Щоб документ пройшов, потрібно ${t.needed} ${t.needed === 1 ? "голос" : "голоси"} «за». Якщо стільки ж проголосує «проти» — документ відхиляється. Документ потрапляє на голосування, якщо: автор обрав «Конгрес штату» у вікні «На погодження»; у маршруті апарату є крок «Голосування Конгресу»; або це «Закон» (для законів крок Конгресу додається автоматично перед Губернатором).`;
       const candidates = allUsers().filter((u) => isStaff(u) && !isCongressMember(u));
       $("congress-pick").innerHTML = candidates.length
         ? candidates.map((u) => `<option value="${attr(u.login)}">${esc(u.name || u.login)} · ${esc(officeName(u.office || userOffice(u)))}</option>`).join("")
