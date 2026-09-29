@@ -209,9 +209,10 @@
       document.getElementById("profile-photo-input").addEventListener("change", (ev) => {
         const file = ev.target.files && ev.target.files[0];
         if (!file) return;
-        const r = new FileReader();
-        r.onload = () => { pendingPhoto = r.result; };
-        r.readAsDataURL(file);
+        shrinkImage(file, 256, (url) => {
+          pendingPhoto = url;
+          if (!url) alert("Не вдалося прочитати зображення. Оберіть інший файл (JPG або PNG).");
+        });
       });
       form.addEventListener("submit", (ev) => {
         ev.preventDefault();

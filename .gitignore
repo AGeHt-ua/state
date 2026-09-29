@@ -5,3 +5,4 @@ node_modules/
 .env
 *.log
 seed-passwords.local.json
+worker/backups/

@@ -423,44 +423,50 @@ function rowId(coll, row) {
   return id && id.length <= 128 ? id : "";
 }
 
-// Публічна база бачить те саме, що показують publicLegislativeDocs() і homeDocs() у store.js
-function isPublicDoc(doc, legislative) {
-  const status = doc && doc.status;
-  if (status === "ok" || status === "dead") return true;
-  if (legislative.includes(doc.type) && ["review", "congress", "adopted", "draft"].includes(status)) return true;
-  return doc.publishHome === true && !["trash", "rejected", "deleted"].includes(status);
+// Що кому віддавати. Фільтрує й обрізає сама база (json_extract), а Worker лише склеює готові рядки:
+// розбір і збирання мегабайтів JSON (фото профілів) не вкладалися в ліміт процесорного часу Workers.
+// actor = null — анонім. Посадовці бачать усе, крім чужих заявок на зміну профілю (їх бачать ті, хто їх підтверджує);
+// громадяни й анонім — публічні документи (як publicLegislativeDocs() і homeDocs() у store.js), свої звернення, заявки й профіль.
+// У розглянутих заявок фото не віддається — воно вже в профілі.
+// data -> '$.k' повертає JSON-значення (true лишається true, а не 1)
+const PUBLIC_USER_SQL = "json_object(" + PUBLIC_USER_FIELDS.map((k) => k === "roles"
+  ? `'roles', json(COALESCE(data -> '$.roles', '[]'))`
+  : `'${k}', json(data -> '$.${k}')`).join(", ") + ")";
+const LEGISLATIVE_SQL = LEGISLATIVE_TYPES.map((t) => `'${t.replace(/'/g, "''")}'`).join(", ");
+
+async function readCollections(env, colls, actor) {
+  const list = colls.filter((c) => COLLECTIONS.includes(c));
+  const full = actor && actor.staff ? 1 : 0;
+  const me = (actor && actor.login) || "";
+  const reviewer = actor && actor.can(["approveProfiles"]) ? 1 : 0;
+  const sql = `
+    SELECT coll,
+      CASE
+        WHEN coll = 'state_users' AND ?1 = 0 AND id != ?2 THEN ${PUBLIC_USER_SQL}
+        WHEN coll = 'state_profile_requests' AND COALESCE(json_extract(data, '$.status'), '') != 'pending' THEN json_remove(data, '$.photo')
+        ELSE data
+      END AS data
+    FROM rows
+    WHERE coll IN (${list.map((c) => `'${c}'`).join(", ")})
+      AND (coll != 'state_appeals' OR ?1 = 1 OR json_extract(data, '$.ownerLogin') = ?2)
+      AND (coll != 'state_profile_requests' OR ?3 = 1 OR json_extract(data, '$.login') = ?2)
+      AND (coll != 'state_docs' OR ?1 = 1
+        OR json_extract(data, '$.status') IN ('ok', 'dead')
+        OR (json_extract(data, '$.status') IN ('review', 'congress', 'adopted', 'draft') AND (
+          json_extract(data, '$.type') IN (${LEGISLATIVE_SQL})
+          OR json_extract(data, '$.type') IN (SELECT json_extract(t.data, '$.label') FROM rows t WHERE t.coll = 'state_doc_types' AND json_extract(t.data, '$.congress') = 1)))
+        OR (json_extract(data, '$.publishHome') = 1 AND COALESCE(json_extract(data, '$.status'), '') NOT IN ('trash', 'rejected', 'deleted')))
+    ORDER BY rowid`;
+  const { results } = await env.DB.prepare(sql).bind(full, me, reviewer).all();
+  const parts = {};
+  list.forEach((c) => { parts[c] = []; });
+  results.forEach((r) => parts[r.coll].push(r.data));
+  return new RawJson("{" + list.map((c) => JSON.stringify(c) + ":[" + parts[c].join(",") + "]").join(",") + "}");
 }
 
-// actor = null — анонім. Посадовці бачать усе; громадяни й анонім — публічне плюс свої звернення, заявки й профіль
-async function readCollections(env, colls, actor) {
-  const data = {};
-  colls.forEach((c) => { data[c] = []; });
-  const placeholders = colls.map(() => "?").join(",");
-  const { results } = await env.DB.prepare(`SELECT coll, data FROM rows WHERE coll IN (${placeholders}) ORDER BY rowid`).bind(...colls).all();
-  const full = !!(actor && actor.staff);
-  const me = actor && actor.login;
-  // Законодавчі типи: вбудовані + створені в адмін-панелі з голосуванням Конгресу
-  const legislative = LEGISLATIVE_TYPES.slice();
-  if (!full && colls.includes("state_docs")) {
-    const types = await env.DB.prepare("SELECT data FROM rows WHERE coll = 'state_doc_types'").all();
-    types.results.forEach((r) => { try { const t = JSON.parse(r.data); if (t.congress && t.label) legislative.push(t.label); } catch { /* зіпсований рядок */ } });
-  }
-  for (const r of results) {
-    let item;
-    try { item = JSON.parse(r.data); } catch { continue; }
-    if (!full) {
-      if (r.coll === "state_appeals" && !(me && item.ownerLogin === me)) continue;
-      if (r.coll === "state_profile_requests" && !(me && item.login === me)) continue;
-      if (r.coll === "state_docs" && !isPublicDoc(item, legislative)) continue;
-      if (r.coll === "state_users" && item.login !== me) {
-        const slim = {};
-        PUBLIC_USER_FIELDS.forEach((k) => { if (k in item) slim[k] = item[k]; });
-        item = slim;
-      }
-    }
-    data[r.coll].push(item);
-  }
-  return data;
+// Готовий JSON-текст, який json() вставляє у відповідь без повторного перетворення
+class RawJson {
+  constructor(text) { this.text = text; }
 }
 
 async function tokenLogin(request, env) {
@@ -599,7 +605,14 @@ function redirect(location) {
 }
 
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
+  // RawJson (готові дані з бази) вставляються як є, без повторного JSON.stringify мегабайтного тексту
+  const raws = [];
+  let text = JSON.stringify(data, (key, value) => {
+    if (value instanceof RawJson) { raws.push(value.text); return "__raw_json_" + (raws.length - 1) + "__"; }
+    return value;
+  });
+  raws.forEach((raw, i) => { text = text.replace('"__raw_json_' + i + '__"', () => raw); });
+  return new Response(text, {
     status,
     headers: securityHeaders(new Headers({ "Content-Type": "application/json; charset=utf-8" }))
   });

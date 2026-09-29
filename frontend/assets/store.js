@@ -599,6 +599,30 @@ function logout() {
   if (REMOTE.cache) remoteBoot();
 }
 
+// Фото профілю зберігаємо зменшеним (до 256 px, JPEG): воно їде кожному відвідувачу разом зі списком людей,
+// а мегабайтні фото перевантажували сервер. done(dataUrl) або done("") при помилці.
+function shrinkImage(file, maxSize, done) {
+  const reader = new FileReader();
+  reader.onerror = () => done("");
+  reader.onload = () => {
+    const img = new Image();
+    img.onerror = () => done("");
+    img.onload = () => {
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      done(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
 function changePassword(oldPassword, newPassword) {
   const user = currentUser();
   if (!user) return { ok: false, error: "Спершу увійдіть." };
