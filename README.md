@@ -51,7 +51,7 @@ npx wrangler secret put SEED_ACCOUNTS
 npx wrangler deploy
 ```
 
-`SEED_ACCOUNTS` — паролі службових акаунтів з `accounts.js` у форматі `{"castro":"пароль","admin":"пароль"}`
+`SEED_ACCOUNTS` — пароль єдиного службового акаунта `admin` з `accounts.js` у форматі `{"admin":"пароль"}`
 (паролі в `accounts.js` публічні й у режимі сервера не працюють).
 
 Після деплою:

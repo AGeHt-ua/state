@@ -1,7 +1,5 @@
+/* Єдиний службовий акаунт — адміністратор порталу. Пароль задається на сервері секретом SEED_ACCOUNTS (worker),
+   тут його немає: файл публічний. Решта людей реєструються самі, а адміністратор призначає їх на посади. */
 window.STATE_ACCOUNTS = [
-  { login: "castro", password: "castro", name: "Dominic Castro", roles: ["governor"], post: "Губернатор штату Сан-Андреас" },
-  { login: "admin", password: "state-admin", name: "Адміністратор порталу", roles: ["governor"], post: "Адміністратор порталу" },
-  { login: "doj", password: "doj", name: "Attorney General", roles: ["prosecutor"], post: "Генеральний прокурор" },
-  { login: "dept", password: "dept", name: "Директор департаменту", roles: ["official"], post: "Директор департаменту" },
-  { login: "court", password: "court", name: "Голова Верховного Суду", roles: ["court"], post: "Голова Верховного Суду" }
+  { login: "admin", name: "Адміністратор порталу", roles: ["governor"], post: "Адміністратор порталу" }
 ];

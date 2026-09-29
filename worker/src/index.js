@@ -183,13 +183,9 @@ const DEFAULT_POSITIONS = {
   "prosecutor-chief": "head", "prosecutor-staff": "staff",
   "court-chief": "head", "court-staff": "staff"
 };
-// Службові акаунти з frontend/assets/accounts.js (їхній профіль може й не лежати в базі)
+// Службовий акаунт з frontend/assets/accounts.js (його профіль може й не лежати в базі)
 const SEED_PROFILES = {
-  castro: { roles: ["governor"], office: "governor", positionId: "governor-chief" },
-  admin: { roles: ["governor"], office: "governor", positionId: "governor-chief" },
-  doj: { roles: ["prosecutor"], office: "prosecutor", positionId: "prosecutor-chief" },
-  dept: { roles: ["official"], office: "directors", positionId: "director" },
-  court: { roles: ["court"], office: "court", positionId: "court-chief" }
+  admin: { roles: ["governor"], office: "governor", positionId: "governor-chief" }
 };
 const USER_ADMIN_PERMS = ["managePeople", "approveProfiles", "manageCongress"];
 const STRUCTURE_PERMS = ["manageStructure", "manageRoutes"];
