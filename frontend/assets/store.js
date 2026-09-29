@@ -241,7 +241,118 @@ const SEED_DOCS = [
   }
 ];
 
+/* ---------- Спільна база (Cloudflare Worker + D1) ----------
+   Якщо в config.js задано STATE_WORKER_URL, колекції з SHARED_KEYS читаються й пишуться на сервері,
+   тож усі користувачі бачать одні й ті самі дані. Без адреси — як раніше, лише в браузері.
+   Сторінки читають сховище синхронно, тому запити теж синхронні: дані завантажуються до запуску скриптів сторінки,
+   а запис завершується до переходу на іншу сторінку. */
+const SHARED_KEYS = [
+  "state_users", "state_offices", "state_positions", "state_approval_routes",
+  "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds"
+];
+const REMOTE = { url: String(window.STATE_WORKER_URL || "").trim().replace(/\/+$/, ""), cache: null, ok: false };
+
+function apiToken() {
+  try { return localStorage.getItem("state_token") || ""; } catch { return ""; }
+}
+
+function setApiToken(token) {
+  try {
+    if (token) localStorage.setItem("state_token", token);
+    else localStorage.removeItem("state_token");
+  } catch { /* приватний режим */ }
+}
+
+function apiRequest(method, path, body) {
+  const xhr = new XMLHttpRequest();
+  try {
+    xhr.open(method, REMOTE.url + path, false);
+    const token = apiToken();
+    if (token) xhr.setRequestHeader("Authorization", "Bearer " + token);
+    if (body !== undefined) xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.send(body === undefined ? null : JSON.stringify(body));
+  } catch (err) {
+    return { ok: false, status: 0, data: { error: "Немає зв'язку з сервером." } };
+  }
+  let data = {};
+  try { data = JSON.parse(xhr.responseText || "{}"); } catch { /* не JSON */ }
+  return { ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data };
+}
+
+function applyRemoteData(data) {
+  Object.keys(data || {}).forEach((key) => {
+    if (SHARED_KEYS.includes(key)) REMOTE.cache[key] = JSON.stringify(data[key] || []);
+  });
+}
+
+function remoteBoot() {
+  REMOTE.cache = {};
+  const res = apiRequest("GET", "/api/state");
+  if (!res.ok) {
+    console.warn("state: сервер недоступний", res.status, res.data);
+    document.addEventListener("DOMContentLoaded", () => {
+      document.body.insertAdjacentHTML("afterbegin",
+        '<div role="alert" style="background:#8a2b2b;color:#fff;padding:8px 16px;text-align:center;font-size:14px">' +
+        "Немає зв'язку з сервером порталу — дані не завантажені, зміни не зберігаються. Оновіть сторінку пізніше.</div>");
+    });
+    return;
+  }
+  REMOTE.ok = true;
+  // Токен недійсний або сесія з часів локального сховища — потрібно увійти на сервері
+  if (!res.data.user) {
+    setApiToken("");
+    try { localStorage.removeItem("state_session"); } catch { /* ignore */ }
+  }
+  applyRemoteData(res.data.data);
+}
+
+function remoteRowId(key, item) {
+  return item && typeof item === "object" ? String((key === "state_users" ? item.login : item.id) || "") : "";
+}
+
+// Надсилаємо лише різницю (змінені й видалені елементи), щоб не затерти одночасні зміни інших людей
+function remoteSave(key, value) {
+  if (!REMOTE.ok) return false;
+  const old = {};
+  JSON.parse(REMOTE.cache[key] || "[]").forEach((item) => {
+    const id = remoteRowId(key, item);
+    if (id) old[id] = JSON.stringify(item);
+  });
+  const upsert = [];
+  const seen = {};
+  (Array.isArray(value) ? value : []).forEach((item) => {
+    const id = remoteRowId(key, item);
+    if (!id) { console.warn("state: запис без id не збережено", key, item); return; }
+    seen[id] = true;
+    let row = item;
+    if (key === "state_users" && "password" in row) {
+      row = Object.assign({}, row);
+      delete row.password;
+    }
+    if (old[id] !== JSON.stringify(row)) upsert.push(row);
+  });
+  const remove = Object.keys(old).filter((id) => !seen[id]);
+  if (!upsert.length && !remove.length) return true;
+  const res = apiRequest("POST", "/api/sync", { ops: [{ coll: key, upsert, remove }] });
+  if (!res.ok) {
+    if (res.status === 401) {
+      setApiToken("");
+      try { localStorage.removeItem("state_session"); } catch { /* ignore */ }
+    }
+    alert(res.data.error || "Не вдалося зберегти зміни на сервері.");
+    return false;
+  }
+  applyRemoteData(res.data.data);
+  return true;
+}
+
+if (REMOTE.url) remoteBoot();
+
 function loadLS(key, fallback) {
+  if (REMOTE.cache && SHARED_KEYS.includes(key)) {
+    const raw = REMOTE.cache[key];
+    return raw ? JSON.parse(raw) : fallback;
+  }
   try {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
@@ -253,6 +364,7 @@ function loadLS(key, fallback) {
 // Сховище браузера ~5 МБ; фото профілю й зображення в документах швидко його заповнюють.
 // Запис ніколи не кидає помилку: при переповненні пробуємо зберегти без фото, інакше повертаємо false.
 function saveLS(key, value) {
+  if (REMOTE.cache && SHARED_KEYS.includes(key)) return remoteSave(key, value);
   try {
     localStorage.setItem(key, JSON.stringify(value));
     return true;
@@ -399,6 +511,10 @@ function registerUser({ login, password, name, post, accountType, statId, contac
   if (!LOGIN_RE.test(login)) return { ok: false, error: "Логін: 3–32 символи, лише латиниця, цифри, крапка, дефіс і підкреслення." };
   if (name.length > 64) return { ok: false, error: "Ім'я занадто довге (до 64 символів)." };
   if (allUsers().some((u) => u.login === login)) return { ok: false, error: "Такий логін уже зайнятий." };
+  if (REMOTE.cache) {
+    const res = apiRequest("POST", "/api/register", { login, password, name, post, accountType, statId, contact });
+    return res.ok ? { ok: true } : { ok: false, error: res.data.error || "Не вдалося зареєструватися." };
+  }
   const isCitizenAccount = accountType === "citizen";
   saveUser({
     login,
@@ -414,9 +530,17 @@ function registerUser({ login, password, name, post, accountType, statId, contac
 }
 
 function loginWithPassword(login, password) {
-  const found = allUsers().find(
-    (a) => a.login === String(login).trim().toLowerCase() && a.password === String(password)
-  );
+  login = String(login || "").trim().toLowerCase();
+  let found;
+  if (REMOTE.cache) {
+    const res = apiRequest("POST", "/api/auth", { login, password: String(password || "") });
+    if (!res.ok) return null;
+    setApiToken(res.data.token);
+    applyRemoteData(res.data.data);
+    found = allUsers().find((a) => a.login === res.data.login);
+  } else {
+    found = allUsers().find((a) => a.login === login && a.password === String(password));
+  }
   if (!found) return null;
   const session = {
     id: found.login,
@@ -461,6 +585,8 @@ function currentUser() {
 }
 
 function logout() {
+  if (REMOTE.cache && apiToken()) apiRequest("POST", "/api/signout", {});
+  setApiToken("");
   localStorage.removeItem("state_session");
 }
 

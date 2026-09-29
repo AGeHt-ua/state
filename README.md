@@ -31,15 +31,39 @@ python3 -m http.server 8080
 - `/cabinet/acts/` — чернетки
 - `/cabinet/court/` — суд
 
-## Cloudflare Worker
+## Cloudflare Worker (спільна база)
+
+Worker зберігає акаунти й дані порталу в базі D1, тож усі користувачі бачать одне й те саме.
+Поки `STATE_WORKER_URL` у `frontend/assets/config.js` порожній, дані живуть лише в браузері.
+
+Перший запуск (з папки `worker`):
 
 ```bash
-cd worker
 npx wrangler login
-npx wrangler dev
+npx wrangler d1 create state-db
 ```
 
-Секрети (пізніше):
+Отриманий `database_id` вставити в `wrangler.toml`, далі:
+
+```bash
+npx wrangler d1 execute state-db --remote --file=schema.sql
+npx wrangler secret put SEED_ACCOUNTS
+npx wrangler deploy
+```
+
+`SEED_ACCOUNTS` — паролі службових акаунтів з `accounts.js` у форматі `{"castro":"пароль","admin":"пароль"}`
+(паролі в `accounts.js` публічні й у режимі сервера не працюють).
+
+Після деплою:
+- адресу Worker (`https://state-ukraine-gta5.<акаунт>.workers.dev`) вписати в `STATE_WORKER_URL` у `frontend/assets/config.js`;
+- адресу GitHub Pages додати до `FRONTEND_ORIGIN` у `wrangler.toml` і знову `npx wrangler deploy`.
+
+Локально: `worker/dev.cmd` (або `npx wrangler dev`) — Worker на `http://localhost:8787` з локальною базою
+(схема: `npx wrangler d1 execute state-db --local --file=schema.sql`, секрети — у `worker/.dev.vars`).
+
+Бета-обмеження: права (хто що може редагувати) поки перевіряє лише фронт; сервер перевіряє вхід.
+
+Discord OAuth (пізніше):
 
 ```bash
 npx wrangler secret put DISCORD_CLIENT_ID
@@ -49,17 +73,7 @@ npx wrangler secret put DISCORD_GUILD_ID
 npx wrangler secret put SESSION_SECRET
 ```
 
-`SESSION_SECRET` — щонайменше 32 випадкові символи, наприклад:
-
-```bash
-openssl rand -base64 48
-```
-
-`FRONTEND_ORIGIN` у `wrangler.toml` — точний origin фронту (кілька — через кому). Запити з інших origin не отримують CORS-доступу.
-
-Redirect URI в Discord Developer Portal:
-
-`https://<worker>.workers.dev/api/callback`
+Redirect URI в Discord Developer Portal: `https://<worker>.workers.dev/api/callback`
 
 ## Деплой Pages
 

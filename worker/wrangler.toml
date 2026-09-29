@@ -3,7 +3,14 @@ main = "src/index.js"
 compatibility_date = "2026-09-09"
 
 [vars]
-FRONTEND_ORIGIN = "http://localhost:8080"
+# Додайте адресу GitHub Pages через кому, напр. "https://<нік>.github.io,http://localhost:8080"
+FRONTEND_ORIGIN = "https://ageht-ua.github.io,http://localhost:8080"
 DISCORD_CLIENT_ID = ""
 DISCORD_GUILD_ID = ""
 ROLE_MAP_JSON = "{\"admin_stub\":[\"cabinet\",\"acts\",\"court\"]}"
+
+# Створити базу: npx wrangler d1 create state-db  → вставити сюди отриманий database_id
+[[d1_databases]]
+binding = "DB"
+database_name = "state-db"
+database_id = "0fe2b205-f6a8-4227-907b-089dbd9958c3"
