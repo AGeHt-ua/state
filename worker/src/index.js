@@ -147,15 +147,46 @@ async function handleCallback(request, url, env) {
 }
 
 /* ---------- Спільна база порталу (D1): акаунти з паролем і колекції сайту ----------
-   Бета-тест: права доступу (хто що може редагувати) поки перевіряє лише фронт.
-   Сервер гарантує вхід (хеш пароля, токен сесії) і не віддає приватні колекції без входу. */
+   Сервер сам перевіряє права кожного запису й фільтрує, що кому віддавати — за тими ж правилами, що й store.js:
+   - люди (state_users) — лише адміністратори (managePeople / approveProfiles / manageCongress);
+   - апарати, посади, маршрути — manageStructure / manageRoutes;
+   - документи й фони — посадовці (governor / official / prosecutor / court);
+   - звернення й заявки на зміну профілю — посадовці будь-які, інші — лише свої. */
 const COLLECTIONS = [
   "state_users", "state_offices", "state_positions", "state_approval_routes",
   "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds"
 ];
-// Без входу видно лише те, що й так показують публічні сторінки
-const PUBLIC_COLLECTIONS = ["state_offices", "state_positions", "state_approval_routes", "state_docs", "state_doc_backgrounds"];
 const PUBLIC_USER_FIELDS = ["login", "name", "roles", "office", "positionId", "post", "photo", "congressMember"];
+const STAFF_ROLES = ["governor", "official", "prosecutor", "court"];
+const LEGISLATIVE_TYPES = ["Конституція штату", "Кодекс", "Закон"];
+
+// Має збігатися з PERMISSION_LABELS / ACCESS_LEVELS / DEFAULT_POSITIONS у store.js
+const ALL_PERMISSIONS = [
+  "createDocs", "publishDocs", "approveDocs", "approveAnyDocs", "editOwnDocs", "editAllDocs", "manageDocs",
+  "manageAppeals", "managePeople", "manageStructure", "manageRoutes", "approveProfiles", "manageCongress"
+];
+const LEVEL_PERMISSIONS = {
+  head: ["createDocs", "approveDocs", "editOwnDocs"],
+  staff: ["createDocs", "editOwnDocs"],
+  admin: ALL_PERMISSIONS,
+  viewer: []
+};
+const DEFAULT_POSITIONS = {
+  "governor-chief": "admin",
+  "director": "head", "directors-staff": "staff",
+  "prosecutor-chief": "head", "prosecutor-staff": "staff",
+  "court-chief": "head", "court-staff": "staff"
+};
+// Службові акаунти з frontend/assets/accounts.js (їхній профіль може й не лежати в базі)
+const SEED_PROFILES = {
+  castro: { roles: ["governor"], office: "governor", positionId: "governor-chief" },
+  admin: { roles: ["governor"], office: "governor", positionId: "governor-chief" },
+  doj: { roles: ["prosecutor"], office: "prosecutor", positionId: "prosecutor-chief" },
+  dept: { roles: ["official"], office: "directors", positionId: "director" },
+  court: { roles: ["court"], office: "court", positionId: "court-chief" }
+};
+const USER_ADMIN_PERMS = ["managePeople", "approveProfiles", "manageCongress"];
+const STRUCTURE_PERMS = ["manageStructure", "manageRoutes"];
 const LOGIN_RE = /^[a-z0-9_.-]{3,32}$/;
 const TOKEN_TTL = 30 * 24 * 3600;
 const PBKDF2_ITERATIONS = 100000; // максимум, який дозволяє Workers
@@ -164,7 +195,8 @@ const MAX_ROW = 1900 * 1024; // ліміт рядка D1 — 2 МБ
 
 async function handleState(request, env) {
   const login = await tokenLogin(request, env);
-  return json({ user: login, data: await readCollections(env, login ? COLLECTIONS : PUBLIC_COLLECTIONS.concat("state_users"), !login) });
+  const actor = login ? await loadActor(env, login) : null;
+  return json({ user: login, data: await readCollections(env, COLLECTIONS, actor) });
 }
 
 async function handleRegister(request, env) {
@@ -229,7 +261,7 @@ async function handlePasswordLogin(request, env) {
     env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now),
     env.DB.prepare("INSERT INTO sessions (token_hash, login, expires_at) VALUES (?, ?, ?)").bind(await sha256(token), login, now + TOKEN_TTL)
   ]);
-  return json({ ok: true, login, token, data: await readCollections(env, COLLECTIONS, false) });
+  return json({ ok: true, login, token, data: await readCollections(env, COLLECTIONS, await loadActor(env, login)) });
 }
 
 async function handleSignout(request, env) {
@@ -246,6 +278,7 @@ async function handleSync(request, env) {
   const ops = body && Array.isArray(body.ops) ? body.ops : null;
   if (!ops || !ops.length || ops.length > COLLECTIONS.length) return json({ error: "Невірний запит." }, 400);
 
+  const actor = await loadActor(env, login);
   const now = Date.now();
   const statements = [];
   const touched = new Set();
@@ -253,6 +286,7 @@ async function handleSync(request, env) {
     const coll = op && op.coll;
     if (!COLLECTIONS.includes(coll)) return json({ error: "Невідома колекція." }, 400);
     touched.add(coll);
+    const upserts = [];
     for (const item of Array.isArray(op.upsert) ? op.upsert : []) {
       if (!item || typeof item !== "object" || Array.isArray(item)) return json({ error: "Невірний запис." }, 400);
       const row = Object.assign({}, item);
@@ -261,18 +295,83 @@ async function handleSync(request, env) {
       if (!id) return json({ error: "Запис без id." }, 400);
       const data = JSON.stringify(row);
       if (data.length > MAX_ROW) return json({ error: "Запис завеликий (понад 1.9 МБ). Зменште зображення." }, 413);
-      statements.push(env.DB.prepare(
-        "INSERT INTO rows (coll, id, data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (coll, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at"
-      ).bind(coll, id, data, now));
+      upserts.push({ id, row, data });
     }
-    for (const rawId of Array.isArray(op.remove) ? op.remove : []) {
-      const id = String(rawId || "").slice(0, 128);
-      if (id) statements.push(env.DB.prepare("DELETE FROM rows WHERE coll = ? AND id = ?").bind(coll, id));
-    }
+    const removes = (Array.isArray(op.remove) ? op.remove : []).map((raw) => String(raw || "").slice(0, 128)).filter(Boolean);
+
+    const denied = await checkWrite(env, actor, coll, upserts, removes);
+    if (denied) return json({ error: denied }, 403);
+
+    upserts.forEach(({ id, data }) => statements.push(env.DB.prepare(
+      "INSERT INTO rows (coll, id, data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (coll, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at"
+    ).bind(coll, id, data, now)));
+    removes.forEach((id) => statements.push(env.DB.prepare("DELETE FROM rows WHERE coll = ? AND id = ?").bind(coll, id)));
   }
   if (statements.length > 500) return json({ error: "Забагато змін за раз." }, 400);
   if (statements.length) await env.DB.batch(statements);
-  return json({ ok: true, data: await readCollections(env, [...touched], false) });
+  return json({ ok: true, data: await readCollections(env, [...touched], actor) });
+}
+
+// Повертає текст помилки, якщо запис заборонений, інакше порожньо
+async function checkWrite(env, actor, coll, upserts, removes) {
+  const noRights = "Недостатньо прав для цієї дії.";
+  if (!upserts.length && !removes.length) return "";
+  if (coll === "state_users") return actor.can(USER_ADMIN_PERMS) ? "" : noRights;
+  if (coll === "state_offices" || coll === "state_positions" || coll === "state_approval_routes") return actor.can(STRUCTURE_PERMS) ? "" : noRights;
+  if (coll === "state_docs" || coll === "state_doc_backgrounds") return actor.staff ? "" : noRights;
+
+  // Звернення й заявки на зміну профілю: посадовець (або адміністратор профілів) — будь-які, інші — лише свої
+  const ownerField = coll === "state_appeals" ? "ownerLogin" : "login";
+  if (coll === "state_appeals" && actor.staff) return "";
+  if (coll === "state_profile_requests" && actor.can(["approveProfiles"])) return "";
+  const existing = await readRows(env, coll, upserts.map((u) => u.id).concat(removes));
+  const own = (row) => row && row[ownerField] === actor.login;
+  for (const { id, row } of upserts) {
+    if (!own(row) || (existing[id] && !own(existing[id]))) return noRights;
+    // Сам собі заявку не підтвердиш
+    if (coll === "state_profile_requests" && row.status !== "pending") return noRights;
+  }
+  for (const id of removes) if (existing[id] && !own(existing[id])) return noRights;
+  return "";
+}
+
+async function readRows(env, coll, ids) {
+  const out = {};
+  const unique = [...new Set(ids)];
+  for (let i = 0; i < unique.length; i += 50) {
+    const chunk = unique.slice(i, i + 50);
+    const { results } = await env.DB.prepare(`SELECT id, data FROM rows WHERE coll = ? AND id IN (${chunk.map(() => "?").join(",")})`).bind(coll, ...chunk).all();
+    results.forEach((r) => { try { out[r.id] = JSON.parse(r.data); } catch { /* зіпсований рядок */ } });
+  }
+  return out;
+}
+
+// Хто робить запит: профіль (з урахуванням службових акаунтів), роль посадовця і права — як userPermissions() у store.js
+async function loadActor(env, login) {
+  const row = await env.DB.prepare("SELECT data FROM rows WHERE coll = 'state_users' AND id = ?").bind(login).first();
+  let stored = {};
+  try { stored = row ? JSON.parse(row.data) : {}; } catch { /* зіпсований рядок */ }
+  const user = Object.assign({ login }, SEED_PROFILES[login] || {}, stored);
+  const roles = Array.isArray(user.roles) ? user.roles : [];
+  const staff = STAFF_ROLES.some((r) => roles.includes(r));
+  let perms = [];
+  if (roles[0] === "governor") perms = ALL_PERMISSIONS;
+  else if (staff) {
+    const position = await positionFor(env, user.positionId);
+    const own = position ? (position.level === "admin" ? ALL_PERMISSIONS : (position.permissions || [])) : [];
+    const extra = (Array.isArray(user.extraPermissions) ? user.extraPermissions : []).filter((p) => ALL_PERMISSIONS.includes(p));
+    perms = [...new Set(own.concat(extra))];
+  }
+  return { login, staff, perms, can: (list) => list.some((p) => perms.includes(p)) };
+}
+
+async function positionFor(env, id) {
+  if (!id) return null;
+  const level = DEFAULT_POSITIONS[id];
+  const base = level ? { id, level, permissions: LEVEL_PERMISSIONS[level] } : null;
+  const row = await env.DB.prepare("SELECT data FROM rows WHERE coll = 'state_positions' AND id = ?").bind(String(id)).first();
+  if (!row) return base;
+  try { return Object.assign({}, base || {}, JSON.parse(row.data)); } catch { return base; }
 }
 
 function rowId(coll, row) {
@@ -280,18 +379,34 @@ function rowId(coll, row) {
   return id && id.length <= 128 ? id : "";
 }
 
-async function readCollections(env, colls, publicOnly) {
+// Публічна база бачить те саме, що показують publicLegislativeDocs() і homeDocs() у store.js
+function isPublicDoc(doc) {
+  const status = doc && doc.status;
+  if (status === "ok" || status === "dead") return true;
+  if (LEGISLATIVE_TYPES.includes(doc.type) && ["review", "congress", "adopted", "draft"].includes(status)) return true;
+  return doc.publishHome === true && !["trash", "rejected", "deleted"].includes(status);
+}
+
+// actor = null — анонім. Посадовці бачать усе; громадяни й анонім — публічне плюс свої звернення, заявки й профіль
+async function readCollections(env, colls, actor) {
   const data = {};
   colls.forEach((c) => { data[c] = []; });
   const placeholders = colls.map(() => "?").join(",");
   const { results } = await env.DB.prepare(`SELECT coll, data FROM rows WHERE coll IN (${placeholders}) ORDER BY rowid`).bind(...colls).all();
+  const full = !!(actor && actor.staff);
+  const me = actor && actor.login;
   for (const r of results) {
     let item;
     try { item = JSON.parse(r.data); } catch { continue; }
-    if (publicOnly && r.coll === "state_users") {
-      const slim = {};
-      PUBLIC_USER_FIELDS.forEach((k) => { if (k in item) slim[k] = item[k]; });
-      item = slim;
+    if (!full) {
+      if (r.coll === "state_appeals" && !(me && item.ownerLogin === me)) continue;
+      if (r.coll === "state_profile_requests" && !(me && item.login === me)) continue;
+      if (r.coll === "state_docs" && !isPublicDoc(item)) continue;
+      if (r.coll === "state_users" && item.login !== me) {
+        const slim = {};
+        PUBLIC_USER_FIELDS.forEach((k) => { if (k in item) slim[k] = item[k]; });
+        item = slim;
+      }
     }
     data[r.coll].push(item);
   }

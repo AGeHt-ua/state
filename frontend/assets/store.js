@@ -292,7 +292,7 @@ function remoteBoot() {
     console.warn("state: сервер недоступний", res.status, res.data);
     document.addEventListener("DOMContentLoaded", () => {
       document.body.insertAdjacentHTML("afterbegin",
-        '<div role="alert" style="background:#8a2b2b;color:#fff;padding:8px 16px;text-align:center;font-size:14px">' +
+        '<div id="state-offline" role="alert" style="background:#8a2b2b;color:#fff;padding:8px 16px;text-align:center;font-size:14px">' +
         "Немає зв'язку з сервером порталу — дані не завантажені, зміни не зберігаються. Оновіть сторінку пізніше.</div>");
     });
     return;
@@ -312,7 +312,10 @@ function remoteRowId(key, item) {
 
 // Надсилаємо лише різницю (змінені й видалені елементи), щоб не затерти одночасні зміни інших людей
 function remoteSave(key, value) {
-  if (!REMOTE.ok) return false;
+  if (!REMOTE.ok) {
+    alert("Немає зв'язку з сервером порталу — зміни не збережено. Оновіть сторінку.");
+    return false;
+  }
   const old = {};
   JSON.parse(REMOTE.cache[key] || "[]").forEach((item) => {
     const id = remoteRowId(key, item);
@@ -500,7 +503,7 @@ function saveUser(user) {
   saveLS("state_users", extra);
 }
 
-/* Бета-тест: паролі зберігаються відкрито в localStorage, вхід перевіряється лише в браузері.
+/* Без STATE_WORKER_URL (локальний режим) паролі зберігаються відкрито в localStorage, вхід перевіряється лише в браузері.
    Перед запуском авторизація має переїхати на сервер (Worker). */
 const LOGIN_RE = /^[a-z0-9_.-]{3,32}$/;
 
@@ -536,7 +539,11 @@ function loginWithPassword(login, password) {
     const res = apiRequest("POST", "/api/auth", { login, password: String(password || "") });
     if (!res.ok) return null;
     setApiToken(res.data.token);
+    // Вхід віддає всі дані — навіть якщо під час завантаження сторінки сервер не відповідав, тепер зв'язок є
     applyRemoteData(res.data.data);
+    REMOTE.ok = true;
+    const banner = document.getElementById("state-offline");
+    if (banner) banner.remove();
     found = allUsers().find((a) => a.login === res.data.login);
   } else {
     found = allUsers().find((a) => a.login === login && a.password === String(password));
@@ -588,6 +595,8 @@ function logout() {
   if (REMOTE.cache && apiToken()) apiRequest("POST", "/api/signout", {});
   setApiToken("");
   localStorage.removeItem("state_session");
+  // Приватні дані попереднього користувача не лишаються в пам'яті сторінки
+  if (REMOTE.cache) remoteBoot();
 }
 
 function hasRole(user, role) {

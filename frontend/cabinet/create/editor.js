@@ -2050,6 +2050,18 @@
     const prev = curDocId ? getDoc(curDocId) : null;
     if (prev && !canEditDoc(prev)) { toast('Редагувати цей документ може лише автор'); return; }
     const finalStatus = status === 'ok' && needsApproval ? 'review' : status;
+    if (prev && (prev.status === 'ok' || prev.status === 'dead') && finalStatus !== 'ok' &&
+      !confirm('«' + prev.title + '» уже опубліковано.\n\nНова редакція піде як «' + (DOC_STATUSES[finalStatus] || finalStatus) +
+        '», і поки її не погодять, документ зникне з публічної бази.\n\nПродовжити?')) return;
+    // Новий документ із номером, який уже має інший документ цього типу, отримує наступний вільний номер
+    if (!prev && f.number) {
+      const typeName = t.docType || t.label;
+      if (allDocs().some((d) => (d.typeKey === state.type || d.type === typeName) && String(d.number) === String(f.number))) {
+        const taken = f.number;
+        setField('number', nextNumber());
+        toast('Номер ' + taken + ' уже зайнятий — присвоєно ' + state.fields.number);
+      }
+    }
     const subject = docSubject();
     const html = cleanHtml(true);
     const doc = Object.assign({}, prev || {}, {
@@ -2907,6 +2919,8 @@
   initPublishUi();
   switchTab(ui.tab || 'doc');
   loadSlot(slot);
+  // «Створити документ» (без ?id) — новий документ на основі шаблону, а не нова редакція останнього відкритого акта
+  if (!editId && curDocId) { curDocId = null; updateDocStatus(null); }
   setZoom(narrow ? (canvas.clientWidth - 24) / sheet.offsetWidth * 100 : zoom, true);
   if (editId) loadFromDoc(editId);
   if (!db.slots[slot]) persist(false);
