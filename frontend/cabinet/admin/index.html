@@ -144,6 +144,7 @@
           <button class="btn gold" type="submit">Зберегти</button>
           <button class="btn ghost" type="button" data-close>Скасувати</button>
           <button class="btn ghost danger" type="button" data-act="revoke" style="margin-left:auto">Забрати доступ</button>
+          <button class="btn ghost danger" type="button" data-act="delete-user">Видалити акаунт</button>
         </div>
       </form>
     </section>
@@ -370,6 +371,7 @@
       drawUserPerms();
       $("user-perm-details").open = editingExtra.length > 0;
       form.querySelector("[data-act=revoke]").hidden = !isStaff(u) || u.login === me.login;
+      form.querySelector("[data-act=delete-user]").hidden = !can.people || u.seeded || u.login === me.login;
       syncLevelHelp();
       $("user-modal").hidden = false;
     }
@@ -580,6 +582,16 @@
         assignUser(u.login, { office: "" }, me);
         if (can.congress) setCongressMember(u.login, false, me);
         closeAll(); toast("Доступ забрано");
+        return refresh();
+      }
+      if (a === "delete-user") {
+        const login = $("user-form").login.value;
+        const u = allUsers().find((x) => x.login === login);
+        if (!u || !confirm("Видалити акаунт «" + (u.name || u.login) + "» (" + u.login + ")?\n\nЛюдина більше не зможе увійти, профіль і заявки буде видалено. " +
+          "Її документи та звернення лишаться в реєстрі. Скасувати це не можна.")) return;
+        const res = deleteUserAccount(login, me);
+        if (!res.ok) { alert(res.error); return; }
+        closeAll(); toast("Акаунт " + login + " видалено");
         return refresh();
       }
       if (a === "new-office") return openOffice("");

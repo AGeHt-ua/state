@@ -46,6 +46,12 @@ export default {
       if (url.pathname === "/api/signout" && request.method === "POST") {
         return cors(await handleSignout(request, env), origin);
       }
+      if (url.pathname === "/api/password" && request.method === "POST") {
+        return cors(await handlePasswordChange(request, env), origin);
+      }
+      if (url.pathname === "/api/delete-user" && request.method === "POST") {
+        return cors(await handleDeleteUser(request, env), origin);
+      }
       if (url.pathname === "/api/sync" && request.method === "POST") {
         return cors(await handleSync(request, env), origin);
       }
@@ -268,6 +274,48 @@ async function handleSignout(request, env) {
   const token = bearer(request);
   if (token) await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256(token)).run();
   return json({ ok: true });
+}
+
+// Зміна власного пароля: потрібен чинний пароль; інші сесії цього акаунта завершуються
+async function handlePasswordChange(request, env) {
+  const token = bearer(request);
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const body = await readJson(request);
+  const oldPassword = String((body && body.oldPassword) || "");
+  const newPassword = String((body && body.newPassword) || "");
+  if (newPassword.length < 4 || newPassword.length > 128) return json({ error: "Новий пароль: від 4 до 128 символів." }, 400);
+  const account = await env.DB.prepare("SELECT salt, hash FROM accounts WHERE login = ?").bind(login).first();
+  if (!account) return json({ error: "Акаунт не знайдено." }, 404);
+  const { hash: oldHash } = await hashPassword(oldPassword, account.salt);
+  if (!timingSafeEqual(oldHash, account.hash)) return json({ error: "Поточний пароль невірний." }, 403);
+  const { salt, hash } = await hashPassword(newPassword);
+  await env.DB.batch([
+    env.DB.prepare("UPDATE accounts SET salt = ?, hash = ? WHERE login = ?").bind(salt, hash, login),
+    env.DB.prepare("DELETE FROM sessions WHERE login = ? AND token_hash != ?").bind(login, await sha256(token))
+  ]);
+  return json({ ok: true });
+}
+
+// Видалення акаунта адміністратором (managePeople): вхід, сесії, профіль і заявки на зміну профілю.
+// Документи й звернення людини лишаються в реєстрі як історія. Себе й службові акаунти видалити не можна.
+async function handleDeleteUser(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const actor = await loadActor(env, login);
+  if (!actor.can(["managePeople"])) return json({ error: "Недостатньо прав для цієї дії." }, 403);
+  const body = await readJson(request);
+  const target = String((body && body.login) || "").trim().toLowerCase();
+  if (!target) return json({ error: "Не вказано акаунт." }, 400);
+  if (target === login) return json({ error: "Свій акаунт видалити не можна." }, 400);
+  if (SEED_PROFILES[target] || target in seedAccounts(env)) return json({ error: "Службовий акаунт видалити не можна." }, 400);
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM accounts WHERE login = ?").bind(target),
+    env.DB.prepare("DELETE FROM sessions WHERE login = ?").bind(target),
+    env.DB.prepare("DELETE FROM rows WHERE coll = 'state_users' AND id = ?").bind(target),
+    env.DB.prepare("DELETE FROM rows WHERE coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?").bind(target)
+  ]);
+  return json({ ok: true, data: await readCollections(env, ["state_users", "state_profile_requests"], actor) });
 }
 
 // Зміни приходять як різниця: які елементи колекції додано/змінено і які видалено

@@ -599,6 +599,39 @@ function logout() {
   if (REMOTE.cache) remoteBoot();
 }
 
+function changePassword(oldPassword, newPassword) {
+  const user = currentUser();
+  if (!user) return { ok: false, error: "Спершу увійдіть." };
+  newPassword = String(newPassword || "");
+  if (newPassword.length < 4 || newPassword.length > 128) return { ok: false, error: "Новий пароль: від 4 до 128 символів." };
+  if (REMOTE.cache) {
+    const res = apiRequest("POST", "/api/password", { oldPassword: String(oldPassword || ""), newPassword });
+    return res.ok ? { ok: true } : { ok: false, error: res.data.error || "Не вдалося змінити пароль." };
+  }
+  const full = allUsers().find((u) => u.login === user.login);
+  if (!full || full.password !== String(oldPassword || "")) return { ok: false, error: "Поточний пароль невірний." };
+  saveUser(Object.assign({}, full, { password: newPassword }));
+  return { ok: true };
+}
+
+// Видалення акаунта: лише з правом managePeople; себе й службові акаунти (accounts.js) — не можна
+function deleteUserAccount(login, byUser) {
+  if (!byUser || !hasPermission(byUser, "managePeople")) return { ok: false, error: "Недостатньо прав для цієї дії." };
+  const user = allUsers().find((u) => u.login === login);
+  if (!user) return { ok: false, error: "Акаунт не знайдено." };
+  if (user.login === byUser.login) return { ok: false, error: "Свій акаунт видалити не можна." };
+  if (user.seeded) return { ok: false, error: "Службовий акаунт видалити не можна." };
+  if (REMOTE.cache) {
+    const res = apiRequest("POST", "/api/delete-user", { login });
+    if (!res.ok) return { ok: false, error: res.data.error || "Не вдалося видалити акаунт." };
+    applyRemoteData(res.data.data);
+    return { ok: true };
+  }
+  saveLS("state_users", loadLS("state_users", []).filter((u) => u.login !== login));
+  saveLS("state_profile_requests", loadLS("state_profile_requests", []).filter((r) => r.login !== login));
+  return { ok: true };
+}
+
 function hasRole(user, role) {
   const roles = (user && user.roles) || [];
   if (roles.includes("governor")) return true;

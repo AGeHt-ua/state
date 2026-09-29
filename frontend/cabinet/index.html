@@ -50,7 +50,10 @@
             <p class="lead" id="profile-subtitle">—</p>
             <div class="pill-list" id="f-perms"></div>
           </div>
-          <button class="btn gold" type="button" id="btn-edit-profile">Редагувати профіль</button>
+          <div style="display:flex;flex-direction:column;gap:8px;align-self:flex-start">
+            <button class="btn gold" type="button" id="btn-edit-profile">Редагувати профіль</button>
+            <button class="btn ghost" type="button" id="btn-change-password">Змінити пароль</button>
+          </div>
         </section>
         <section class="card">
           <div class="section-head">
@@ -103,6 +106,29 @@
         <div class="modal-actions">
           <button class="btn gold" type="submit">Подати на підтвердження</button>
           <button class="btn ghost" type="button" data-close-modal>Скасувати</button>
+        </div>
+      </form>
+    </section>
+  </div>
+  <div class="modal-backdrop" id="password-modal" hidden>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="password-modal-title">
+      <button class="modal-close" type="button" data-close-password aria-label="Закрити">×</button>
+      <h3 id="password-modal-title">Змінити пароль</h3>
+      <p class="muted">На інших пристроях після зміни пароля потрібно буде увійти знову.</p>
+      <form id="password-form">
+        <label>Поточний пароль
+          <input name="oldPassword" type="password" required autocomplete="current-password">
+        </label>
+        <label>Новий пароль
+          <input name="newPassword" type="password" required minlength="4" maxlength="128" autocomplete="new-password">
+        </label>
+        <label>Повторіть новий пароль
+          <input name="repeatPassword" type="password" required minlength="4" maxlength="128" autocomplete="new-password">
+        </label>
+        <p class="muted" id="password-msg" role="status" style="margin:0"></p>
+        <div class="modal-actions">
+          <button class="btn gold" type="submit">Змінити пароль</button>
+          <button class="btn ghost" type="button" data-close-password>Скасувати</button>
         </div>
       </form>
     </section>
@@ -207,6 +233,27 @@
         });
         modal.hidden = true;
         document.getElementById("f-profile-status").textContent = "Очікує підтвердження";
+      });
+
+      const pwModal = document.getElementById("password-modal");
+      const pwForm = document.getElementById("password-form");
+      const pwMsg = document.getElementById("password-msg");
+      document.getElementById("btn-change-password").addEventListener("click", () => {
+        pwForm.reset();
+        pwMsg.textContent = "";
+        pwModal.hidden = false;
+      });
+      document.querySelectorAll("[data-close-password]").forEach((btn) => btn.addEventListener("click", () => { pwModal.hidden = true; }));
+      pwForm.addEventListener("submit", (ev) => {
+        ev.preventDefault();
+        const data = new FormData(pwForm);
+        pwMsg.style.color = "#8a2b2b";
+        if (data.get("newPassword") !== data.get("repeatPassword")) { pwMsg.textContent = "Нові паролі не збігаються."; return; }
+        if (data.get("newPassword") === data.get("oldPassword")) { pwMsg.textContent = "Новий пароль має відрізнятися від поточного."; return; }
+        const res = changePassword(data.get("oldPassword"), data.get("newPassword"));
+        if (!res.ok) { pwMsg.textContent = res.error; return; }
+        pwModal.hidden = true;
+        alert("Пароль змінено.");
       });
     }
   </script>
