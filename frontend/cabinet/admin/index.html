@@ -97,6 +97,16 @@
             <div class="hint" style="margin-bottom:14px"><b>Як іде погодження</b>Документ співробітника автоматично йде до керівника свого апарату, а потім — до Губернатора. Керівник свої документи сам не погоджує: вони йдуть одразу Губернатору. Змінювати порядок потрібно лише в особливих випадках.</div>
             <div id="offices-box" class="office-grid"></div>
           </section>
+          <section class="card" id="doctypes-card">
+            <div class="admin-section-head">
+              <div>
+                <h3>Типи документів</h3>
+                <p class="muted">Власні види документів: з'являються в редакторі в обраних апаратів і окремим розділом у законодавчій базі.</p>
+              </div>
+              <button class="btn gold" type="button" data-act="new-doctype">+ Новий тип</button>
+            </div>
+            <div id="doctypes-box" class="admin-list"></div>
+          </section>
         </section>
 
         <!-- КОНГРЕС -->
@@ -145,6 +155,38 @@
           <button class="btn ghost" type="button" data-close>Скасувати</button>
           <button class="btn ghost danger" type="button" data-act="revoke" style="margin-left:auto">Забрати доступ</button>
           <button class="btn ghost danger" type="button" data-act="delete-user">Видалити акаунт</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- Тип документа -->
+  <div class="modal-backdrop" id="doctype-modal" hidden>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="doctype-title">
+      <button class="modal-close" type="button" data-close aria-label="Закрити">×</button>
+      <h3 id="doctype-title">Новий тип документа</h3>
+      <form id="doctype-form">
+        <input type="hidden" name="id">
+        <label>Назва типу<input name="label" required maxlength="60" placeholder="Постанова"><span class="field-help">Як тип зветься в редакторі й у картці документа.</span></label>
+        <label>Назва розділу в законодавчій базі<input name="section" maxlength="60" placeholder="Постанови"><span class="field-help">Порожнє — як назва типу.</span></label>
+        <label class="inline-check"><input type="checkbox" name="showInBase" checked> Показувати окремим розділом у законодавчій базі</label>
+        <label class="inline-check"><input type="checkbox" name="congress"> Проходить голосування Конгресу (як закон); проєкти видно в публічній базі</label>
+        <fieldset class="choice-list" style="border:0;padding:0;margin:0">
+          <legend class="field-help" style="margin-bottom:6px">Хто може створювати (нічого не обрано — усі апарати; Губернатор — завжди)</legend>
+          <div id="doctype-offices"></div>
+        </fieldset>
+        <details class="advanced">
+          <summary>Шаблон у редакторі</summary>
+          <label>Заголовок<input name="title" maxlength="200" placeholder="Постанова №{НОМЕР}"><span class="field-help">{НОМЕР}, {ДАТА}, {МІСТО}, {ПІБ}, {ПОСАДА} підставляються автоматично.</span></label>
+          <label>Про що<input name="subject" maxlength="300" placeholder="“Про …”"></label>
+          <label>Вступ<textarea name="preamble" maxlength="1000" rows="2" placeholder="Керуючись Конституцією штату San-Andreas…"></textarea></label>
+          <label>Заключна фраза<input name="effective" maxlength="500" placeholder="Набирає чинності з моменту опублікування."></label>
+        </details>
+        <p class="field-help" id="doctype-usage"></p>
+        <div class="modal-actions">
+          <button class="btn gold" type="submit">Зберегти</button>
+          <button class="btn ghost" type="button" data-close>Скасувати</button>
+          <button class="btn ghost danger" type="button" data-act="delete-doctype" style="margin-left:auto">Видалити тип</button>
         </div>
       </form>
     </section>
@@ -541,12 +583,49 @@
         </article>`).join("") : `<div class="admin-empty">Конгресменів ще немає. Оберіть посадовця вище й натисніть «Надати статус».</div>`;
     }
 
+    /* ---------- Типи документів ---------- */
+    function drawDocTypes() {
+      const items = customDocTypes();
+      $("doctypes-box").innerHTML = items.length ? items.map((t) => {
+        const who = (t.offices || []).length ? t.offices.map(officeName).join(", ") : "усі апарати";
+        const n = docTypeUsage(t.label);
+        return `<article class="admin-list-row">
+          <div class="admin-row-main">
+            <div class="admin-row-title"><b>${esc(t.label)}</b>${t.congress ? ` <span class="badge">Конгрес</span>` : ""}</div>
+            <div class="admin-row-meta">${t.showInBase !== false ? "Розділ «" + esc(t.section || t.label) + "»" : "Без окремого розділу"} · створюють: ${esc(who)} · документів: ${n}</div>
+          </div>
+          <div class="admin-row-actions"><button class="btn ghost" type="button" data-edit-doctype="${attr(t.id)}">Змінити</button></div>
+        </article>`;
+      }).join("") : `<div class="admin-empty">Власних типів ще немає. Вбудовані (закони, накази, укази…) працюють як і раніше.</div>`;
+    }
+    function openDocType(id) {
+      const t = customDocTypes().find((x) => x.id === id) || { offices: [], showInBase: true };
+      const f = $("doctype-form");
+      f.id.value = t.id || "";
+      f.label.value = t.label || "";
+      f.section.value = t.section && t.section !== t.label ? t.section : "";
+      f.showInBase.checked = t.showInBase !== false;
+      f.congress.checked = !!t.congress;
+      f.title.value = t.title && t.title !== (t.label + " №{НОМЕР}") ? t.title : "";
+      f.subject.value = t.subject || "";
+      f.preamble.value = t.preamble || "";
+      f.effective.value = t.effective || "";
+      $("doctype-offices").innerHTML = allOffices().map((o) => `<label class="inline-check"><input type="checkbox" value="${attr(o.id)}" ${(t.offices || []).includes(o.id) ? "checked" : ""}> ${esc(o.name)}</label>`).join("");
+      $("doctype-title").textContent = t.id ? "Тип «" + t.label + "»" : "Новий тип документа";
+      const n = t.id ? docTypeUsage(t.label) : 0;
+      $("doctype-usage").textContent = n ? "Документів цього типу: " + n + ". Назву типу змінити не можна — інакше вони випадуть із розділу." : "";
+      f.label.readOnly = n > 0;
+      f.querySelector("[data-act=delete-doctype]").hidden = !t.id;
+      $("doctype-modal").hidden = false;
+    }
+
     /* ---------- Малювання всього ---------- */
     function refresh() {
       drawTabs();
       if (can.people || can.profiles) drawTodo();
       if (can.people) drawPeople();
       if (can.structure || can.routes) drawStructure();
+      if (can.structure || can.routes) drawDocTypes();
       if (can.congress) drawCongress();
       if (typeof enhanceCabinetNavigation === "function" && document.querySelector(".side-me")) enhanceCabinetNavigation();
     }
@@ -592,6 +671,17 @@
         const res = deleteUserAccount(login, me);
         if (!res.ok) { alert(res.error); return; }
         closeAll(); toast("Акаунт " + login + " видалено");
+        return refresh();
+      }
+      if (a === "new-doctype") return openDocType("");
+      const dt = t.closest("[data-edit-doctype]");
+      if (dt) return openDocType(dt.dataset.editDoctype);
+      if (a === "delete-doctype") {
+        const f = $("doctype-form");
+        const n = docTypeUsage(f.label.value);
+        if (!confirm("Видалити тип «" + f.label.value + "»?" + (n ? "\n\n" + n + " документ(ів) цього типу лишаться в реєстрі й у розділі «Усі акти», але окремого розділу вже не буде." : ""))) return;
+        deleteDocType(f.id.value);
+        closeAll(); toast("Тип видалено");
         return refresh();
       }
       if (a === "new-office") return openOffice("");
@@ -673,6 +763,26 @@
       const pos = positionById(f.positionId.value);
       if (can.people && f.office.value) setUserPermissions(f.login.value, editingExtra.filter((k) => !(pos && (pos.permissions || []).includes(k))), me);
       closeAll(); toast("Збережено");
+      refresh();
+    });
+    $("doctype-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const res = saveDocType({
+        id: f.id.value,
+        label: f.label.value,
+        section: f.section.value,
+        showInBase: f.showInBase.checked,
+        congress: f.congress.checked,
+        offices: Array.from(document.querySelectorAll("#doctype-offices input:checked")).map((i) => i.value),
+        title: f.title.value,
+        subject: f.subject.value,
+        preamble: f.preamble.value,
+        effective: f.effective.value
+      });
+      if (!res.ok) { alert(res.error); return; }
+      closeAll();
+      toast(f.id.value ? "Тип збережено" : "Тип «" + res.type.label + "» створено");
       refresh();
     });
     $("office-form").addEventListener("submit", (e) => {

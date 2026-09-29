@@ -262,6 +262,31 @@
     }
   };
 
+  // Типи, створені в адмін-панелі (state_doc_types): тексти шаблону задає адміністратор, пункти — загальні
+  const CUSTOM_TYPE_KEYS = [];
+  (typeof customDocTypes === 'function' ? customDocTypes() : []).forEach((ct) => {
+    const key = 'c-' + ct.id;
+    if (TYPES[key]) return;
+    CUSTOM_TYPE_KEYS.push(key);
+    TYPES[key] = {
+      label: ct.label,
+      docType: ct.label,
+      title: ct.title || ct.label + ' №{НОМЕР}',
+      subject: ct.subject || '“Про …”',
+      preamble: ct.preamble || 'Керуючись Конституцією штату San-Andreas та іншими нормативно-правовими актами,',
+      effective: ct.effective || 'Набирає чинності з моменту опублікування.',
+      officer: '',
+      copies: '',
+      congress: !!ct.congress,
+      offices: ct.offices || [],
+      tpls: [
+        { label: 'Пункт', text: 'Перший пункт документа.' },
+        { label: 'Пункт', text: 'Другий пункт документа.' },
+        { label: 'Виконання', text: 'Контроль за виконанням покласти на {ПОСАДА_ПІДПИСАНТА}.' }
+      ]
+    };
+  });
+
   const ICONS = (() => {
     const s = (d) => '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
     const dot = (x, y) => '<circle cx="' + x + '" cy="' + y + '" r="1.1" fill="currentColor" stroke="none"/>';
@@ -362,7 +387,8 @@
   // Нові апарати з адмінки отримують набір типів за своєю гілкою влади; конгресмен (статус) — ще й «Закон»
   const ROLE_DOCS = { governor: 'governor', official: 'directors', prosecutor: 'prosecutor', court: 'court' };
   const baseTypes = OFFICE_DOCS[office] || OFFICE_DOCS[ROLE_DOCS[typeof roleForOffice === 'function' ? roleForOffice(office) : 'official']] || OFFICE_DOCS.directors;
-  const officeTypes = baseTypes.concat(typeof isCongressMember === 'function' && isCongressMember(user) && baseTypes.indexOf('zakon') === -1 ? ['zakon'] : []);
+  const officeTypes = baseTypes.concat(typeof isCongressMember === 'function' && isCongressMember(user) && baseTypes.indexOf('zakon') === -1 ? ['zakon'] : [])
+    .concat(CUSTOM_TYPE_KEYS.filter((k) => !TYPES[k].offices.length || TYPES[k].offices.indexOf(office) !== -1 || (user.roles || [])[0] === 'governor'));
   const ui = Object.assign({ pane: window.innerWidth > 900, ruler: true, shade: true, zoom: 100 }, loadUi());
 
   /* ---------- Стан документа ---------- */
@@ -2001,7 +2027,7 @@
   // Автоматичний маршрут апарату; «Закон» додатково проходить голосування Конгресу
   function autoRoute() {
     const route = activeApprovalRoute(office);
-    return state.type === 'zakon' ? withCongressStep(route) : route;
+    return state.type === 'zakon' || (TYPES[state.type] && TYPES[state.type].congress) ? withCongressStep(route) : route;
   }
   function selectedApprovalRoute() {
     const mode = $('apMode').value;

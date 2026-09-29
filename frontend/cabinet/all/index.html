@@ -112,7 +112,7 @@
       if (a === "delete" && confirm("Видалити «" + doc.title + "» остаточно?\nЦю дію не можна скасувати.")) deleteDoc(doc.id);
       drawRegistry();
     });
-    DOC_TYPES.concat(["Кодекс","Наказ","Указ","Розпорядження","Постанова","Доручення","Ордер","Повістка","Ухвала суду","Наказ Голови ВС"]).filter((v, i, a) => a.indexOf(v) === i).forEach((type) => {
+    DOC_TYPES.concat(["Кодекс","Наказ","Указ","Розпорядження","Постанова","Доручення","Ордер","Повістка","Ухвала суду","Наказ Голови ВС"], customDocTypes().map((t) => t.label)).filter((v, i, a) => a.indexOf(v) === i).forEach((type) => {
       const option = document.createElement("option");
       option.value = type;
       option.textContent = type;

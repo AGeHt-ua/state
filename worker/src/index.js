@@ -155,12 +155,12 @@ async function handleCallback(request, url, env) {
 /* ---------- Спільна база порталу (D1): акаунти з паролем і колекції сайту ----------
    Сервер сам перевіряє права кожного запису й фільтрує, що кому віддавати — за тими ж правилами, що й store.js:
    - люди (state_users) — лише адміністратори (managePeople / approveProfiles / manageCongress);
-   - апарати, посади, маршрути — manageStructure / manageRoutes;
+   - апарати, посади, маршрути, типи документів — manageStructure / manageRoutes;
    - документи й фони — посадовці (governor / official / prosecutor / court);
    - звернення й заявки на зміну профілю — посадовці будь-які, інші — лише свої. */
 const COLLECTIONS = [
   "state_users", "state_offices", "state_positions", "state_approval_routes",
-  "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds"
+  "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds", "state_doc_types"
 ];
 const PUBLIC_USER_FIELDS = ["login", "name", "roles", "office", "positionId", "post", "photo", "congressMember"];
 const STAFF_ROLES = ["governor", "official", "prosecutor", "court"];
@@ -361,7 +361,7 @@ async function checkWrite(env, actor, coll, upserts, removes) {
   const noRights = "Недостатньо прав для цієї дії.";
   if (!upserts.length && !removes.length) return "";
   if (coll === "state_users") return actor.can(USER_ADMIN_PERMS) ? "" : noRights;
-  if (coll === "state_offices" || coll === "state_positions" || coll === "state_approval_routes") return actor.can(STRUCTURE_PERMS) ? "" : noRights;
+  if (["state_offices", "state_positions", "state_approval_routes", "state_doc_types"].includes(coll)) return actor.can(STRUCTURE_PERMS) ? "" : noRights;
   if (coll === "state_docs" || coll === "state_doc_backgrounds") return actor.staff ? "" : noRights;
 
   // Звернення й заявки на зміну профілю: посадовець (або адміністратор профілів) — будь-які, інші — лише свої
@@ -424,10 +424,10 @@ function rowId(coll, row) {
 }
 
 // Публічна база бачить те саме, що показують publicLegislativeDocs() і homeDocs() у store.js
-function isPublicDoc(doc) {
+function isPublicDoc(doc, legislative) {
   const status = doc && doc.status;
   if (status === "ok" || status === "dead") return true;
-  if (LEGISLATIVE_TYPES.includes(doc.type) && ["review", "congress", "adopted", "draft"].includes(status)) return true;
+  if (legislative.includes(doc.type) && ["review", "congress", "adopted", "draft"].includes(status)) return true;
   return doc.publishHome === true && !["trash", "rejected", "deleted"].includes(status);
 }
 
@@ -439,13 +439,19 @@ async function readCollections(env, colls, actor) {
   const { results } = await env.DB.prepare(`SELECT coll, data FROM rows WHERE coll IN (${placeholders}) ORDER BY rowid`).bind(...colls).all();
   const full = !!(actor && actor.staff);
   const me = actor && actor.login;
+  // Законодавчі типи: вбудовані + створені в адмін-панелі з голосуванням Конгресу
+  const legislative = LEGISLATIVE_TYPES.slice();
+  if (!full && colls.includes("state_docs")) {
+    const types = await env.DB.prepare("SELECT data FROM rows WHERE coll = 'state_doc_types'").all();
+    types.results.forEach((r) => { try { const t = JSON.parse(r.data); if (t.congress && t.label) legislative.push(t.label); } catch { /* зіпсований рядок */ } });
+  }
   for (const r of results) {
     let item;
     try { item = JSON.parse(r.data); } catch { continue; }
     if (!full) {
       if (r.coll === "state_appeals" && !(me && item.ownerLogin === me)) continue;
       if (r.coll === "state_profile_requests" && !(me && item.login === me)) continue;
-      if (r.coll === "state_docs" && !isPublicDoc(item)) continue;
+      if (r.coll === "state_docs" && !isPublicDoc(item, legislative)) continue;
       if (r.coll === "state_users" && item.login !== me) {
         const slim = {};
         PUBLIC_USER_FIELDS.forEach((k) => { if (k in item) slim[k] = item[k]; });

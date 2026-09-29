@@ -69,7 +69,7 @@
     const cur = params.get("type") || "all";
     const nav = document.getElementById("sec-nav");
     // Розділи з кількістю актів; порожні ховаємо, щоб меню не було довгим
-    nav.innerHTML = `<nav class="side-links">${ACT_SECTIONS.map((s) => {
+    nav.innerHTML = `<nav class="side-links">${actSections().map((s) => {
       const n = docsBySection(s.key).length;
       if (!n && s.key !== "all" && s.key !== cur) return "";
       const p = new URLSearchParams(params);

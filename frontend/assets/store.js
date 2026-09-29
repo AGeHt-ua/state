@@ -248,7 +248,7 @@ const SEED_DOCS = [
    а запис завершується до переходу на іншу сторінку. */
 const SHARED_KEYS = [
   "state_users", "state_offices", "state_positions", "state_approval_routes",
-  "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds"
+  "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds", "state_doc_types"
 ];
 const REMOTE = { url: String(window.STATE_WORKER_URL || "").trim().replace(/\/+$/, ""), cache: null, ok: false };
 
@@ -949,7 +949,8 @@ function publishedDocs() {
 }
 
 function isLegislativeDoc(doc) {
-  return ["Конституція штату", "Кодекс", "Закон"].includes(doc && doc.type);
+  return ["Конституція штату", "Кодекс", "Закон"].includes(doc && doc.type) ||
+    customDocTypes().some((t) => t.congress && t.label === (doc && doc.type));
 }
 
 // Публічна база: чинні й архівні акти будь-якого виду; проєкти (у т.ч. на погодженні) — лише законодавчі
@@ -1149,6 +1150,61 @@ const ACT_SECTIONS = [
   { key: "Повістка", label: "Повістки" },
   { key: "Ухвала суду", label: "Ухвали" }
 ];
+
+/* ---------- Типи документів, створені в адмін-панелі (state_doc_types) ----------
+   { id, label: «Постанова», section: «Постанови» (розділ у законодавчій базі), offices: [апарати, порожньо — усі],
+     title / subject / preamble / effective — тексти шаблону в редакторі, congress: іде через голосування Конгресу,
+     showInBase: окремий розділ у законодавчій базі } */
+function customDocTypes() {
+  return loadLS("state_doc_types", []);
+}
+
+function isBuiltinDocType(label) {
+  return ACT_SECTIONS.some((s) => s.key === label) || DOC_TYPES.includes(label) ||
+    ["Наказ суду", "Статут органу"].includes(label);
+}
+
+function saveDocType(type) {
+  const label = String(type.label || "").trim().slice(0, 60);
+  if (!label) return { ok: false, error: "Вкажіть назву типу." };
+  const items = customDocTypes();
+  const id = type.id || uniqueId(slugId(label) || "type", items.map((t) => t.id));
+  if (isBuiltinDocType(label) || items.some((t) => t.id !== id && t.label.toLowerCase() === label.toLowerCase())) {
+    return { ok: false, error: "Тип «" + label + "» уже існує." };
+  }
+  const row = {
+    id,
+    label,
+    section: String(type.section || "").trim().slice(0, 60) || label,
+    offices: (type.offices || []).filter((o) => allOffices().some((x) => x.id === o)),
+    title: String(type.title || "").trim().slice(0, 200) || label + " №{НОМЕР}",
+    subject: String(type.subject || "").trim().slice(0, 300),
+    preamble: String(type.preamble || "").trim().slice(0, 1000),
+    effective: String(type.effective || "").trim().slice(0, 500),
+    congress: !!type.congress,
+    showInBase: type.showInBase !== false
+  };
+  const i = items.findIndex((t) => t.id === id);
+  if (i >= 0) items[i] = row;
+  else items.push(row);
+  return saveLS("state_doc_types", items) ? { ok: true, type: row } : { ok: false, error: "Не вдалося зберегти тип." };
+}
+
+function deleteDocType(id) {
+  return saveLS("state_doc_types", customDocTypes().filter((t) => t.id !== id));
+}
+
+function docTypeUsage(label) {
+  return allDocs().filter((d) => d.type === label).length;
+}
+
+// Розділи законодавчої бази: вбудовані + створені адміністратором
+function actSections() {
+  const custom = customDocTypes()
+    .filter((t) => t.showInBase !== false && !ACT_SECTIONS.some((s) => s.key === t.label))
+    .map((t) => ({ key: t.label, label: t.section || t.label }));
+  return ACT_SECTIONS.concat(custom);
+}
 
 function docsBySection(section) {
   const list = publicLegislativeDocs();
