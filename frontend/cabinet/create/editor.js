@@ -2013,10 +2013,6 @@
       (filter === 'all' || it.type === filter || (filter === 'my-office' && it.office === office) || (filter === 'positions' && it.type === 'congress')) &&
       (!q || it.label.toLowerCase().includes(q)));
   }
-  function stepLabel(step) {
-    if (String(step || '').startsWith('office:')) return officeName(String(step).slice(7));
-    return routeStepName(step, { office: office });
-  }
   function fillApprovalTargets() {
     const keep = $('apTarget').value;
     const items = approvalTargetItems();
@@ -2029,41 +2025,38 @@
     const route = activeApprovalRoute(office);
     return state.type === 'zakon' || (TYPES[state.type] && TYPES[state.type].congress) ? withCongressStep(route) : route;
   }
+  // Звичайний шлях апарату, або — якщо розгорнуто «Надіслати комусь іншому» — один обраний адресат
   function selectedApprovalRoute() {
-    const mode = $('apMode').value;
-    if (mode === 'direct') {
-      const target = $('apTarget').value || 'position:governor-chief';
-      return { id: 'direct-' + target.replace(/[^a-z0-9_-]+/gi, '-'), name: 'Пряме погодження: ' + stepLabel(target), steps: [target] };
+    if ($('apOther').open && $('apTarget').value) {
+      const target = $('apTarget').value;
+      return { id: 'direct-' + target.replace(/[^a-z0-9_-]+/gi, '-'), name: 'Напряму: ' + stepShortName(target, { office: office }), steps: [target] };
     }
-    if (mode === 'route') return allApprovalRoutes().find((r) => r.id === $('apRoute').value) || autoRoute();
     return autoRoute();
   }
+  function currentSteps(route) {
+    return route ? resolveApprovalSteps({ office: office, ownerLogin: user.login }, route) : [];
+  }
   function updateApprovalPreview() {
-    const mode = $('apMode').value;
-    $('apRouteWrap').hidden = mode !== 'route';
-    $('apTargetWrap').hidden = mode !== 'direct';
-    const route = selectedApprovalRoute();
-    const steps = route ? resolveApprovalSteps({ office: office, ownerLogin: user.login }, route) : [];
-    let text = !route ? 'Маршрут не налаштовано.'
-      : !steps.length ? 'У маршруті немає посадовців для погодження.'
-      : 'Документ піде так: ' + steps.map(stepLabel).join(' → ') + '.';
-    if (steps.includes('congress')) {
-      const t = congressTally({});
-      text += !t.members ? ' Увага: конгресменів ще не призначено — голосування не зможе відбутися.'
-        : ' На кроці «Конгрес» голосують ' + t.members + ' конгресм. — потрібно ' + t.needed + ' «за».';
-    }
-    $('apPreview').textContent = text;
+    const other = $('apOther').open;
+    const steps = currentSteps(selectedApprovalRoute());
+    $('apLead').textContent = other
+      ? 'Документ піде лише обраному адресату. Після його рішення документ з\'явиться на сайті.'
+      : 'Документ по черзі погодять ці люди. Після останнього він з\'явиться на сайті. Будь-хто з них може повернути його вам із коментарем.';
+    $('apPath').innerHTML = steps.length ? approvalPathHtml({ approvalSteps: steps }, { preview: true, authorLabel: 'Ви', authorName: user.username }) : '';
+    let note = '';
+    if (!steps.length) note = 'Погоджувати нікому: ви — останній крок шляху свого апарату.' + (canPublish ? ' Скористайтеся «Опублікувати» або' : '') + ' оберіть адресата в «Надіслати комусь іншому».';
+    else if (steps.includes('congress') && !congressTally({}).members) note = 'Увага: конгресменів ще не призначено — голосування не зможе відбутися.';
+    $('apPreview').textContent = note;
+    $('apPreview').hidden = !note;
+    $('apConfirm').disabled = !steps.length;
   }
   function openApproval(checked) {
+    closeMenu();
     if (!canCreate) { toast('Для створення документів адміністратор має видати відповідний доступ'); return; }
     if (checked !== true && !checkBeforeSend()) return;
-    const routes = routesForOffice(office);
-    $('apRoute').innerHTML = routes.map((r) => '<option value="' + esc(r.id) + '">' + esc(r.name) +
-      (r.ownerOffice && r.ownerOffice !== 'all' ? ' · ' + esc(officeName(r.ownerOffice)) : '') + '</option>').join('');
-    const active = activeApprovalRoute(office);
-    if (active) $('apRoute').value = active.id;
     $('apSearch').value = '';
     fillApprovalTargets();
+    $('apOther').open = !currentSteps(autoRoute()).length;
     updateApprovalPreview();
     $('apModal').hidden = false;
   }
@@ -2120,7 +2113,7 @@
     if (finalStatus === 'review') {
       route = $('apModal').hidden && status !== 'review' ? autoRoute() : selectedApprovalRoute();
       const steps = route ? resolveApprovalSteps(doc, route) : [];
-      if (!steps.length) { toast('Оберіть посадовця або маршрут погодження'); openApproval(); return; }
+      if (!steps.length) { toast('Погоджувати нікому — оберіть адресата в «Надіслати комусь іншому»'); openApproval(true); return; }
       // Нове коло погодження: попередні рішення, голоси й причина повернення лишаються лише в журналі
       Object.assign(doc, {
         approvals: [], votes: {}, returnedReason: '', rejectedReason: '',
@@ -2161,54 +2154,21 @@
     if (canPublish) saveToSite('ok'); else openApproval(true);
   }
 
-  /* ---------- Кнопка «Надіслати»: одне меню з тим, що дозволяє доступ ----------
-     Опублікувати — лише з правом publishDocs; погодження й проєкт — з правом createDocs;
-     «Одразу в Конгрес» — лише для законодавчих типів; Discord — якщо для апарату налаштовано webhook. */
-  function isCongressType() {
-    return state.type === 'zakon' || !!(TYPES[state.type] && TYPES[state.type].congress);
-  }
-  function routeText(route) {
-    const steps = route ? resolveApprovalSteps({ office: office, ownerLogin: user.login }, route) : [];
-    if (!route) return 'маршрут не налаштовано';
-    return steps.length ? steps.map(stepLabel).join(' → ') : 'погоджувати нікому — ви останній крок маршруту';
-  }
+  /* ---------- Кнопка «Надіслати» ----------
+     Три дії: опублікувати (лише з правом publishDocs), на погодження (вікно зі шляхом документа), зберегти чернетку;
+     Discord — якщо для апарату налаштовано webhook. */
   function buildSendMenu() {
     const item = (act, title, hint, disabled) => '<button type="button" data-act="' + act + '"' + (disabled ? ' disabled' : '') + '><b>' + esc(title) + '</b><small>' + esc(hint) + '</small></button>';
-    const t = congressTally({});
-    const congressHint = t.members ? 'голосують ' + t.members + ' конгресм., потрібно ' + t.needed + ' «за»' : 'конгресменів ще не призначено';
     const prev = curDocId ? getDoc(curDocId) : null;
+    const steps = currentSteps(autoRoute());
     const html = [];
     if (canPublish) {
-      html.push('<div class="menu-title">Опублікувати</div>');
-      html.push(item('sendPublish', 'Опублікувати на сайті', prev && prev.status === 'ok' ? 'оновити чинну редакцію без погодження' : 'одразу чинний, без погодження'));
-      html.push('<div class="menu-sep"></div>');
+      html.push(item('sendPublish', 'Опублікувати', prev && prev.status === 'ok' ? 'оновити чинну редакцію одразу, без погодження' : 'одразу на сайті, без погодження'));
     }
-    html.push('<div class="menu-title">На погодження</div>');
-    const auto = autoRoute();
-    const autoSteps = auto ? resolveApprovalSteps({ office: office, ownerLogin: user.login }, auto) : [];
-    html.push(item('sendAuto', isCongressType() ? 'За маршрутом (з Конгресом)' : 'За маршрутом апарату', routeText(auto) + (isCongressType() ? ' · ' + congressHint : ''), !autoSteps.length));
-    if (isCongressType()) html.push(item('sendCongress', 'Одразу на голосування Конгресу', 'без інших кроків · ' + congressHint, !t.members));
-    html.push(item('sendDirect', 'Конкретному посадовцю…', 'обрати людину або посаду зі списку'));
-    if (routesForOffice(office).length > 1) html.push(item('sendRoute', 'Інший маршрут…', 'обрати з маршрутів, налаштованих в адмін-панелі'));
-    html.push('<div class="menu-sep"></div><div class="menu-title">Без відправки</div>');
-    html.push(item('saveDraft', 'Зберегти як проєкт', 'у реєстрі документів, ніхто не погоджує'));
-    if (hasWebhooks()) html.push(item('discord', 'Надіслати в Discord', 'у канал вашого апарату'));
+    html.push(item('sendReview', 'На погодження…', steps.length ? 'погодять: ' + steps.map((s) => stepShortName(s, { office: office })).join(' → ') : 'обрати, кому надіслати'));
+    html.push(item('saveDraft', 'Зберегти чернетку', 'лише в реєстрі документів, нікуди не йде'));
+    if (hasWebhooks()) html.push('<div class="menu-sep"></div>' + item('discord', 'Надіслати в Discord', 'у канал вашого апарату'));
     $('menu-send').innerHTML = html.join('');
-  }
-  // Погодження одним кліком: режим задається тут, а saveToSite бере маршрут із вікна погодження
-  function sendWithMode(mode, target) {
-    closeMenu();
-    if (!checkBeforeSend()) return;
-    $('apMode').value = mode;
-    if (mode === 'direct') { fillApprovalTargets(); $('apTarget').value = target; }
-    saveToSite('review');
-  }
-  function openApprovalWithMode(mode) {
-    closeMenu();
-    if (!checkBeforeSend()) return;
-    openApproval(true);
-    $('apMode').value = mode;
-    updateApprovalPreview();
   }
 
   /* ---------- Зручності: перевірка, автономер, учасники, відкриття, перегляд, посилання ---------- */
@@ -2571,10 +2531,6 @@
     applyTemplate: () => applyTemplate(false),
     saveDraft: () => { closeMenu(); saveToSite('draft'); },
     sendPublish: () => { closeMenu(); if (canPublish && checkBeforeSend()) saveToSite('ok'); },
-    sendAuto: () => sendWithMode('auto'),
-    sendCongress: () => sendWithMode('direct', 'congress'),
-    sendDirect: () => openApprovalWithMode('direct'),
-    sendRoute: () => openApprovalWithMode('route'),
     sendReview: openApproval,
     apCancel: () => { $('apModal').hidden = true; },
     apConfirm: () => { $('apModal').hidden = true; saveToSite('review'); },
@@ -2874,8 +2830,7 @@
     $('optShadeDoc').addEventListener('change', () => setShade($('optShadeDoc').checked));
 
     // Погодження
-    $('apMode').addEventListener('change', updateApprovalPreview);
-    $('apRoute').addEventListener('change', updateApprovalPreview);
+    $('apOther').addEventListener('toggle', updateApprovalPreview);
     $('apTarget').addEventListener('change', updateApprovalPreview);
     $('apSearch').addEventListener('input', () => { fillApprovalTargets(); updateApprovalPreview(); });
     $('apFilter').addEventListener('change', () => { fillApprovalTargets(); updateApprovalPreview(); });

@@ -49,7 +49,7 @@ const PERMISSION_LABELS = {
   manageAppeals: "Відповідати на звернення до всіх апаратів",
   managePeople: "Призначати людей на посади й видавати права",
   manageStructure: "Створювати апарати й посади",
-  manageRoutes: "Налаштовувати маршрути погодження",
+  manageRoutes: "Налаштовувати, хто погоджує документи апаратів",
   approveProfiles: "Підтверджувати зміни профілю",
   manageCongress: "Надавати статус конгресмена"
 };
@@ -678,6 +678,7 @@ function saveOffice(office) {
     role: office.role || "official",
     canApprove: !!office.canApprove
   };
+  if (office.approval) row.approval = { head: office.approval.head !== false, governor: office.approval.governor !== false };
   if (!row.id || !row.name) return null;
   const i = extra.findIndex((o) => o.id === row.id);
   if (i >= 0) extra[i] = Object.assign({}, extra[i], row);
@@ -731,11 +732,11 @@ function deleteApprovalRoute(id) {
 }
 
 // Новий апарат одним кроком: апарат + посади «Керівник» і «Співробітник»
-function createOffice({ name, role }) {
+function createOffice({ name, role, approval }) {
   const title = String(name || "").trim();
   if (!title) return null;
   const id = uniqueId(slugId(title) || "office", allOffices().map((o) => o.id));
-  const office = saveOffice({ id, name: title, role: role || "official", canApprove: true });
+  const office = saveOffice({ id, name: title, role: role || "official", canApprove: true, approval });
   if (!office) return null;
   const taken = allPositions().map((p) => p.id);
   savePosition({ id: uniqueId(id + "-head", taken), office: id, title: "Керівник · " + title, level: "head" });
@@ -788,11 +789,67 @@ function withCongressStep(route) {
   return Object.assign({}, route, { id: route.id + "-congress", name: route.name + " (закон — через Конгрес)", steps });
 }
 
+/* ---------- Шлях погодження ----------
+   Кожен апарат має простий шлях: [керівник апарату] → [Конгрес — лише для законодавчих типів] → [Губернатор] → публікація.
+   Що з цього вмикати, адміністратор задає в картці апарату. Автор не погоджує сам себе: його крок пропускається. */
+function officeApproval(officeId) {
+  const office = allOffices().find((o) => o.id === officeId);
+  const a = (office && office.approval) || {};
+  return { head: a.head !== false, governor: a.governor !== false };
+}
+
 function activeApprovalRoute(office) {
-  const routes = routesForOffice(office);
-  return routes.find((r) => r.active && r.ownerOffice === office && !r.seeded) ||
-    routes.find((r) => r.active && (!r.ownerOffice || r.ownerOffice === "all") && !r.seeded) ||
-    autoApprovalRoute(office);
+  const a = officeApproval(office);
+  const steps = [];
+  if (a.head) steps.push("authorOffice");
+  if (a.governor) steps.push("position:governor-chief");
+  const names = { authorOffice: "керівник апарату", "position:governor-chief": "Губернатор" };
+  return { id: "path-" + (office || "all"), name: "Шлях апарату: " + (steps.map((x) => names[x]).join(" → ") || "без погодження"), ownerOffice: office || "all", steps, active: true, auto: true };
+}
+
+// Хто саме зараз займає посаду кроку — щоб у шляху було видно не лише посаду, а й людину
+function stepHolders(step) {
+  const raw = String(step || "");
+  if (raw.startsWith("position:")) return allUsers().filter((u) => u.positionId === raw.slice(9) && isStaff(u)).map((u) => u.name || u.login);
+  if (raw.startsWith("user:")) { const u = allUsers().find((x) => x.login === raw.slice(5)); return u ? [u.name || u.login] : []; }
+  return [];
+}
+
+function stepShortName(step, doc) {
+  if (step === "congress") return "Конгрес";
+  if (String(step || "").startsWith("user:")) {
+    const u = allUsers().find((x) => x.login === String(step).slice(5));
+    const p = u && positionById(u.positionId);
+    return p ? p.title : "Посадовець";
+  }
+  return routeStepName(step, doc).split(" · ")[0];
+}
+
+/* Шлях документа ланцюжком: Автор → кроки → Публікація. Пройдені кроки — ✓, поточний підсвічено.
+   Для попереднього перегляду (ще не відправлено) передайте { approvalSteps, preview: true }. */
+function approvalPathHtml(doc, opts = {}) {
+  const steps = doc.approvalSteps || [];
+  const status = doc.status;
+  const current = Number(doc.approvalIndex || 0);
+  const inRoute = !opts.preview && (status === "review" || status === "congress");
+  const finished = !opts.preview && ["ok", "adopted", "dead"].includes(status);
+  const returned = !opts.preview && (status === "draft" || status === "rejected") && (doc.returnedReason || doc.rejectedReason);
+  const item = (cls, title, sub) => `<li class="${cls}"><b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</li>`;
+  const parts = [item("done", opts.authorLabel || "Автор", opts.authorName || doc.author || "")];
+  steps.forEach((step, i) => {
+    let cls = "wait";
+    if (finished || (inRoute && i < current)) cls = "done";
+    else if (inRoute && i === current) cls = "current";
+    else if (returned && i === current) cls = "back";
+    let sub = "";
+    if (step === "congress") {
+      const t = congressTally(doc);
+      sub = inRoute && i === current ? "за " + t.pro + " з " + t.needed + " потрібних" : t.members + " конгресм., потрібно " + t.needed + " «за»";
+    } else sub = stepHolders(step).join(", ") || (String(step).startsWith("position:") ? "посада вакантна" : "");
+    parts.push(item(cls, stepShortName(step, doc), sub));
+  });
+  parts.push(item(finished ? "done final" : "wait final", status === "dead" && !opts.preview ? "Втратив чинність" : "Публікація", ""));
+  return `<ol class="approval-path${opts.compact ? " compact" : ""}">${parts.join("")}</ol>`;
 }
 
 function saveApprovalRoute(route) {
@@ -839,12 +896,16 @@ function resolveApprovalSteps(doc, route) {
   // Автор не погоджує власний документ: його посада / він сам у маршруті пропускаються
   const author = doc && doc.ownerLogin ? allUsers().find((u) => u.login === doc.ownerLogin) : null;
   const own = author ? ["user:" + author.login, author.positionId ? "position:" + author.positionId : ""] : [];
-  return raw.map((step) => normalizeApprovalStep(step, doc))
+  const steps = raw.map((step) => normalizeApprovalStep(step, doc))
     .filter((step) => {
       if (!step || seen[step] || own.includes(step)) return false;
       seen[step] = true;
       return true;
     });
+  // Вакантна посада (ніхто її не займає) пропускається, інакше документ застряг би на ній.
+  // Якщо вакантне все — лишаємо останній крок: такі документи може погодити адміністратор (approveAnyDocs).
+  const staffed = steps.filter((step) => !String(step).startsWith("position:") || stepHolders(step).length);
+  return staffed.length ? staffed : steps.slice(-1);
 }
 
 function routeStepName(step, doc) {
@@ -868,7 +929,8 @@ function routeProgressLabel(doc) {
   const steps = doc.approvalSteps || [];
   if (!steps.length) return doc.approverOffice ? officeName(doc.approverOffice) : "Погодження";
   const current = Math.min(Number(doc.approvalIndex || 0), steps.length - 1);
-  return "Крок " + (current + 1) + " з " + steps.length + ": " + routeStepName(steps[current], doc);
+  const who = stepHolders(steps[current]).join(", ");
+  return "Зараз у: " + stepShortName(steps[current], doc) + (who ? " (" + who + ")" : "") + " · крок " + (current + 1) + " з " + steps.length;
 }
 
 // Права = права посади + особисті права, видані в адмін-панелі (лише посадовцям)

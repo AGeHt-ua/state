@@ -361,7 +361,15 @@ body.no-shade #editor .fld:hover { background: #eef2f8; }
 @media (max-width: 1100px) { #tbUser { display: none; } }
 
 /* Вікно погодження */
-.ap-box { width: min(460px, calc(100% - 32px)); }
+.ap-box { width: min(620px, calc(100% - 32px)); }
+.ap-lead { margin: 0 0 4px; font-size: 12.5px; color: var(--wd-muted); line-height: 1.45; }
+#apPath { margin: 4px 0 12px; }
+#apPath .approval-path li { font-family: var(--wd-ui); }
+.ap-other { margin: 10px 0 0; border-top: 1px solid var(--wd-line); padding-top: 8px; }
+.ap-other summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--wd-navy-2); }
+.ap-other[open] summary { margin-bottom: 6px; }
+.ap-other select[size] { width: 100%; margin-top: 6px; height: auto; }
+:root[data-theme="dark"] .ap-other summary { color: #8fb6ec; }
 .modal-box .ap-field { display: block; border: 0; padding: 0; margin: 0 0 10px; font-size: 12px; color: var(--wd-muted); cursor: default; }
 .ap-field select, .ap-field input { display: block; width: 100%; margin-top: 4px; height: 30px; padding: 0 8px; font: 13px var(--wd-ui); border: 1px solid #c9ced6; border-radius: 3px; background: #fff; color: var(--wd-text); }
 .ap-field select[size] { height: auto; padding: 4px; }

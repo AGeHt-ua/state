@@ -6,16 +6,16 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Реєстр документів — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260929i" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260930a" />
   <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260929i" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260930a" />
 </head>
 <body>
   <div class="topbar" id="top-office">Кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260929i" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260930a" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Повний документообіг кабінету</p>
@@ -83,10 +83,10 @@
     </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/config.js?v=20260929i"></script>
-  <script src="../../assets/accounts.js?v=20260929i"></script>
-  <script src="../../assets/app.js?v=20260929i"></script>
-  <script src="../../assets/store.js?v=20260929i"></script>
+  <script src="../../assets/config.js?v=20260930a"></script>
+  <script src="../../assets/accounts.js?v=20260930a"></script>
+  <script src="../../assets/app.js?v=20260930a"></script>
+  <script src="../../assets/store.js?v=20260930a"></script>
   <script>
     const user = requireAuth();
     if (!user) throw new Error("auth");
@@ -153,8 +153,8 @@
           <div>
             <h3><a href="${attr(docHref(doc))}">${esc(doc.title)}</a></h3>
             <div class="act-meta">${esc(doc.type)} · ${esc(doc.number)} · ${esc(officeName(doc.office) !== "—" ? officeName(doc.office) : (doc.body || ""))}</div>
+            ${doc.status === "review" || doc.status === "congress" ? approvalPathHtml(doc, { compact: true }) : ""}
             <div class="route-line">
-              ${doc.status === "review" || doc.status === "congress" ? `${esc(routeProgressLabel(doc))} · ` : ""}
               ${esc((doc.versions || []).length)} версій · ${esc((doc.history || []).length)} записів журналу
             </div>
           </div>
