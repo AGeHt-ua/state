@@ -512,7 +512,8 @@ async function readCollections(env, colls, actor, opts = {}) {
         WHEN coll = 'state_docs' THEN ${DOC_LIST_SQL}
         ELSE data
       END, '$._rev', updated_at) AS data
-    FROM rows
+    -- Живе оновлення читає лише змінені записи (індекс за часом зміни), а не всю таблицю
+    FROM rows${since ? " INDEXED BY rows_updated" : ""}
     WHERE coll IN (${list.map((c) => `'${c}'`).join(", ")})
       AND updated_at > ?5
       AND (coll != 'state_appeals' OR ?1 = 1 OR json_extract(data, '$.ownerLogin') = ?2)
