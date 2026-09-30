@@ -52,6 +52,18 @@ export default {
       if (url.pathname === "/api/delete-user" && request.method === "POST") {
         return cors(await handleDeleteUser(request, env), origin);
       }
+      if (url.pathname === "/api/changes" && request.method === "GET") {
+        return cors(await handleChanges(request, env, url), origin);
+      }
+      if (url.pathname.startsWith("/api/doc/") && request.method === "GET") {
+        return cors(await handleDoc(request, env, url), origin);
+      }
+      if (url.pathname.startsWith("/api/photo/") && request.method === "GET") {
+        return handlePhoto(env, url);
+      }
+      if (url.pathname === "/api/vote" && request.method === "POST") {
+        return cors(await handleVote(request, env, url), origin);
+      }
       if (url.pathname === "/api/sync" && request.method === "POST") {
         return cors(await handleSync(request, env), origin);
       }
@@ -198,7 +210,7 @@ const MAX_ROW = 1900 * 1024; // ліміт рядка D1 — 2 МБ
 async function handleState(request, env) {
   const login = await tokenLogin(request, env);
   const actor = login ? await loadActor(env, login) : null;
-  return json({ user: login, data: await readCollections(env, COLLECTIONS, actor) });
+  return json({ user: login, data: await readCollections(env, COLLECTIONS, actor, { base: baseOf(request) }) });
 }
 
 async function handleRegister(request, env) {
@@ -263,7 +275,7 @@ async function handlePasswordLogin(request, env) {
     env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now),
     env.DB.prepare("INSERT INTO sessions (token_hash, login, expires_at) VALUES (?, ?, ?)").bind(await sha256(token), login, now + TOKEN_TTL)
   ]);
-  return json({ ok: true, login, token, data: await readCollections(env, COLLECTIONS, await loadActor(env, login)) });
+  return json({ ok: true, login, token, data: await readCollections(env, COLLECTIONS, await loadActor(env, login), { base: baseOf(request) }) });
 }
 
 async function handleSignout(request, env) {
@@ -311,7 +323,7 @@ async function handleDeleteUser(request, env) {
     env.DB.prepare("DELETE FROM rows WHERE coll = 'state_users' AND id = ?").bind(target),
     env.DB.prepare("DELETE FROM rows WHERE coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?").bind(target)
   ]);
-  return json({ ok: true, data: await readCollections(env, ["state_users", "state_profile_requests"], actor) });
+  return json({ ok: true, data: await readCollections(env, ["state_users", "state_profile_requests"], actor, { base: baseOf(request) }) });
 }
 
 // Зміни приходять як різниця: які елементи колекції додано/змінено і які видалено
@@ -323,9 +335,10 @@ async function handleSync(request, env) {
   if (!ops || !ops.length || ops.length > COLLECTIONS.length) return json({ error: "Невірний запит." }, 400);
 
   const actor = await loadActor(env, login);
-  const now = Date.now();
-  const statements = [];
+  const base = baseOf(request);
+  const prepared = [];
   const touched = new Set();
+  let maxRev = 0;
   for (const op of ops) {
     const coll = op && op.coll;
     if (!COLLECTIONS.includes(coll)) return json({ error: "Невідома колекція." }, 400);
@@ -334,26 +347,68 @@ async function handleSync(request, env) {
     for (const item of Array.isArray(op.upsert) ? op.upsert : []) {
       if (!item || typeof item !== "object" || Array.isArray(item)) return json({ error: "Невірний запис." }, 400);
       const row = Object.assign({}, item);
-      if (coll === "state_users") delete row.password; // паролі живуть лише в accounts
+      // Службові поля, які додає видача (версія запису, скорочений документ) — у базі не зберігаються
+      const rev = row._rev;
+      const partial = row._partial === true;
+      ["_rev", "_partial", "_versions", "_history", "password"].forEach((k) => { delete row[k]; });
       const id = rowId(coll, row);
       if (!id) return json({ error: "Запис без id." }, 400);
-      const data = JSON.stringify(row);
-      if (data.length > MAX_ROW) return json({ error: "Запис завеликий (понад 1.9 МБ). Зменште зображення." }, 413);
-      upserts.push({ id, row, data });
+      upserts.push({ id, row, rev: typeof rev === "number" ? rev : null, partial });
     }
     const removes = (Array.isArray(op.remove) ? op.remove : []).map((raw) => String(raw || "").slice(0, 128)).filter(Boolean);
 
     const denied = await checkWrite(env, actor, coll, upserts, removes);
     if (denied) return json({ error: denied }, 403);
 
-    upserts.forEach(({ id, data }) => statements.push(env.DB.prepare(
-      "INSERT INTO rows (coll, id, data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (coll, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at"
-    ).bind(coll, id, data, now)));
+    // Хтось уже змінив запис після того, як його завантажили — не перезаписуємо чужу роботу
+    const current = await readRevs(env, coll, upserts.map((u) => u.id));
+    const conflict = upserts.find((u) => u.rev === null ? current[u.id] !== undefined : current[u.id] !== u.rev);
+    if (conflict) {
+      return json({ error: "Цей запис щойно змінив інший користувач. Дані оновлено — перевірте й повторіть дію.", conflict: true,
+        data: await readCollections(env, [...touched], actor, { base }) }, 409);
+    }
+    Object.values(current).forEach((r) => { maxRev = Math.max(maxRev, r); });
+
+    // Скорочений документ (без версій та історії) доповнюємо збереженими в базі; фото профілю, що прийшло посиланням, лишається тим, що в базі
+    const needExisting = upserts.filter((u) => (coll === "state_docs" && u.partial) ||
+      (coll === "state_users" && typeof u.row.photo === "string" && u.row.photo.includes("/api/photo/")));
+    const existing = needExisting.length ? await readRows(env, coll, needExisting.map((u) => u.id)) : {};
+    for (const u of upserts) {
+      const old = existing[u.id];
+      if (coll === "state_docs" && u.partial && old) {
+        u.row.history = (old.history || []).concat(u.row.history || []).slice(-80);
+        u.row.versions = (old.versions || []).concat(u.row.versions || []).slice(-30);
+      }
+      if (coll === "state_users" && typeof u.row.photo === "string" && u.row.photo.includes("/api/photo/")) u.row.photo = (old && old.photo) || "";
+      u.data = JSON.stringify(u.row);
+      if (u.data.length > MAX_ROW) return json({ error: "Запис завеликий (понад 1.9 МБ). Зменште зображення." }, 413);
+    }
+    prepared.push({ coll, upserts, removes });
+  }
+
+  // Версія запису = час зміни; строго більша за попередню, щоб перевірка вище працювала навіть у межах однієї мілісекунди
+  const now = Math.max(Date.now(), maxRev + 1);
+  const statements = [];
+  for (const { coll, upserts, removes } of prepared) {
+    upserts.forEach((u) => statements.push(u.rev === null
+      ? env.DB.prepare("INSERT INTO rows (coll, id, data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (coll, id) DO NOTHING").bind(coll, u.id, u.data, now)
+      : env.DB.prepare("UPDATE rows SET data = ?, updated_at = ? WHERE coll = ? AND id = ? AND updated_at = ?").bind(u.data, now, coll, u.id, u.rev)));
     removes.forEach((id) => statements.push(env.DB.prepare("DELETE FROM rows WHERE coll = ? AND id = ?").bind(coll, id)));
   }
   if (statements.length > 500) return json({ error: "Забагато змін за раз." }, 400);
   if (statements.length) await env.DB.batch(statements);
-  return json({ ok: true, data: await readCollections(env, [...touched], actor) });
+  return json({ ok: true, data: await readCollections(env, [...touched], actor, { base }) });
+}
+
+async function readRevs(env, coll, ids) {
+  const out = {};
+  const unique = [...new Set(ids)];
+  for (let i = 0; i < unique.length; i += 50) {
+    const chunk = unique.slice(i, i + 50);
+    const { results } = await env.DB.prepare(`SELECT id, updated_at FROM rows WHERE coll = ? AND id IN (${chunk.map(() => "?").join(",")})`).bind(coll, ...chunk).all();
+    results.forEach((r) => { out[r.id] = r.updated_at; });
+  }
+  return out;
 }
 
 // Повертає текст помилки, якщо запис заборонений, інакше порожньо
@@ -406,7 +461,7 @@ async function loadActor(env, login) {
     const extra = (Array.isArray(user.extraPermissions) ? user.extraPermissions : []).filter((p) => ALL_PERMISSIONS.includes(p));
     perms = [...new Set(own.concat(extra))];
   }
-  return { login, staff, perms, can: (list) => list.some((p) => perms.includes(p)) };
+  return { login, staff, perms, profile: user, can: (list) => list.some((p) => perms.includes(p)) };
 }
 
 async function positionFor(env, id) {
@@ -434,20 +489,32 @@ const PUBLIC_USER_SQL = "json_object(" + PUBLIC_USER_FIELDS.map((k) => k === "ro
   : `'${k}', json(data -> '$.${k}')`).join(", ") + ")";
 const LEGISLATIVE_SQL = LEGISLATIVE_TYPES.map((t) => `'${t.replace(/'/g, "''")}'`).join(", ");
 
-async function readCollections(env, colls, actor) {
+/* Легка видача: документи — без версій та історії (вони завантажуються на сторінці документа через /api/doc/…),
+   фото профілів — посиланням на /api/photo/… (браузер кешує картинку), до кожного запису додається _rev — версія запису
+   для захисту від перезапису. opts.since — лише записи, змінені після цієї версії (живе оновлення, /api/changes). */
+const DOC_LIST_SQL = "json_set(json_remove(data, '$.versions', '$.history'), '$._partial', json('true'), " +
+  "'$._versions', COALESCE(json_array_length(data, '$.versions'), 0), '$._history', COALESCE(json_array_length(data, '$.history'), 0))";
+
+async function readCollections(env, colls, actor, opts = {}) {
   const list = colls.filter((c) => COLLECTIONS.includes(c));
   const full = actor && actor.staff ? 1 : 0;
   const me = (actor && actor.login) || "";
   const reviewer = actor && actor.can(["approveProfiles"]) ? 1 : 0;
+  const since = Number(opts.since) || 0;
   const sql = `
-    SELECT coll,
+    SELECT coll, updated_at, json_set(
       CASE
-        WHEN coll = 'state_users' AND ?1 = 0 AND id != ?2 THEN ${PUBLIC_USER_SQL}
+        WHEN coll = 'state_users' THEN json_set(
+          CASE WHEN ?1 = 0 AND id != ?2 THEN ${PUBLIC_USER_SQL} ELSE data END,
+          '$.photo', CASE WHEN json_extract(data, '$.photo') LIKE 'data:%' THEN ?4 || '/api/photo/' || id || '?v=' || updated_at
+                          ELSE COALESCE(json_extract(data, '$.photo'), '') END)
         WHEN coll = 'state_profile_requests' AND COALESCE(json_extract(data, '$.status'), '') != 'pending' THEN json_remove(data, '$.photo')
+        WHEN coll = 'state_docs' THEN ${DOC_LIST_SQL}
         ELSE data
-      END AS data
+      END, '$._rev', updated_at) AS data
     FROM rows
     WHERE coll IN (${list.map((c) => `'${c}'`).join(", ")})
+      AND updated_at > ?5
       AND (coll != 'state_appeals' OR ?1 = 1 OR json_extract(data, '$.ownerLogin') = ?2)
       AND (coll != 'state_profile_requests' OR ?3 = 1 OR json_extract(data, '$.login') = ?2)
       AND (coll != 'state_docs' OR ?1 = 1
@@ -457,11 +524,85 @@ async function readCollections(env, colls, actor) {
           OR json_extract(data, '$.type') IN (SELECT json_extract(t.data, '$.label') FROM rows t WHERE t.coll = 'state_doc_types' AND json_extract(t.data, '$.congress') = 1)))
         OR (json_extract(data, '$.publishHome') = 1 AND COALESCE(json_extract(data, '$.status'), '') NOT IN ('trash', 'rejected', 'deleted')))
     ORDER BY rowid`;
-  const { results } = await env.DB.prepare(sql).bind(full, me, reviewer).all();
+  const { results } = await env.DB.prepare(sql).bind(full, me, reviewer, opts.base || "", since).all();
   const parts = {};
   list.forEach((c) => { parts[c] = []; });
-  results.forEach((r) => parts[r.coll].push(r.data));
-  return new RawJson("{" + list.map((c) => JSON.stringify(c) + ":[" + parts[c].join(",") + "]").join(",") + "}");
+  let maxRev = since;
+  results.forEach((r) => { parts[r.coll].push(r.data); maxRev = Math.max(maxRev, r.updated_at); });
+  const raw = new RawJson("{" + list.map((c) => JSON.stringify(c) + ":[" + parts[c].join(",") + "]").join(",") + "}");
+  raw.maxRev = maxRev;
+  return raw;
+}
+
+function baseOf(request) {
+  return new URL(request.url).origin;
+}
+
+// Зміни після версії since — для живого оновлення сторінок (голосування, повідомлення)
+async function handleChanges(request, env, url) {
+  const since = Number(url.searchParams.get("since")) || 0;
+  if (!since) return json({ error: "Потрібен параметр since." }, 400);
+  const login = await tokenLogin(request, env);
+  const actor = login ? await loadActor(env, login) : null;
+  const data = await readCollections(env, COLLECTIONS, actor, { base: baseOf(request), since });
+  return json({ user: login, now: data.maxRev, data });
+}
+
+// Повний документ з версіями та історією (для сторінки документа) — з тими ж правилами видимості
+async function handleDoc(request, env, url) {
+  const id = decodeURIComponent(url.pathname.slice("/api/doc/".length)).slice(0, 128);
+  const login = await tokenLogin(request, env);
+  const actor = login ? await loadActor(env, login) : null;
+  const row = await env.DB.prepare(
+    "SELECT json_set(data, '$._rev', updated_at) AS data, json_extract(data, '$.status') AS status, json_extract(data, '$.type') AS type, json_extract(data, '$.publishHome') AS home FROM rows WHERE coll = 'state_docs' AND id = ?"
+  ).bind(id).first();
+  if (!row) return json({ error: "Документ не знайдено." }, 404);
+  if (!(actor && actor.staff)) {
+    let visible = row.status === "ok" || row.status === "dead" || (row.home === 1 && !["trash", "rejected", "deleted"].includes(row.status));
+    if (!visible && ["review", "congress", "adopted", "draft"].includes(row.status)) {
+      const custom = await env.DB.prepare("SELECT 1 FROM rows WHERE coll = 'state_doc_types' AND json_extract(data, '$.label') = ? AND json_extract(data, '$.congress') = 1").bind(row.type).first();
+      visible = LEGISLATIVE_TYPES.includes(row.type) || !!custom;
+    }
+    if (!visible) return json({ error: "Документ не знайдено." }, 404);
+  }
+  return json({ doc: new RawJson(row.data) });
+}
+
+// Фото профілю окремою картинкою: браузер кешує її назавжди (адреса змінюється разом із фото — ?v=версія)
+async function handlePhoto(env, url) {
+  const login = decodeURIComponent(url.pathname.slice("/api/photo/".length)).slice(0, 64);
+  const row = await env.DB.prepare("SELECT json_extract(data, '$.photo') AS photo FROM rows WHERE coll = 'state_users' AND id = ?").bind(login).first();
+  const m = row && /^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)$/.exec(row.photo || "");
+  if (!m) return new Response("Not found", { status: 404, headers: { "Access-Control-Allow-Origin": "*" } });
+  const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+  return new Response(bytes, {
+    headers: {
+      "Content-Type": m[1],
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "Access-Control-Allow-Origin": "*",
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
+}
+
+// Голос Конгресу записується одним атомарним оновленням у базі: одночасні голоси не затирають один одного
+async function handleVote(request, env, url) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const actor = await loadActor(env, login);
+  if (!actor.staff || actor.profile.congressMember !== true) return json({ error: "Голосувати можуть лише конгресмени." }, 403);
+  const body = await readJson(request);
+  const id = String((body && body.id) || "").slice(0, 128);
+  const vote = body && body.vote === "against" ? "against" : "for";
+  const record = JSON.stringify({ vote, name: String(actor.profile.name || login).slice(0, 64), at: new Date().toISOString() });
+  const res = await env.DB.prepare(
+    "UPDATE rows SET data = json_set(json_set(data, '$.votes', json(COALESCE(data -> '$.votes', '{}'))), '$.votes.' || json_quote(?1), json(?2)), " +
+    "updated_at = MAX(updated_at + 1, ?3) " +
+    "WHERE coll = 'state_docs' AND id = ?4 AND json_extract(data, '$.status') = 'congress' AND json_extract(data, '$.approverOffice') = 'congress'"
+  ).bind(login, record, Date.now(), id).run();
+  const row = await env.DB.prepare(`SELECT json_set(${DOC_LIST_SQL}, '$._rev', updated_at) AS data FROM rows WHERE coll = 'state_docs' AND id = ?`).bind(id).first();
+  if (!res.meta.changes) return json({ error: "Голосування за цим документом уже завершене.", doc: row ? new RawJson(row.data) : null }, 409);
+  return json({ ok: true, doc: new RawJson(row.data) });
 }
 
 // Готовий JSON-текст, який json() вставляє у відповідь без повторного перетворення

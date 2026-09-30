@@ -6,18 +6,18 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Документ — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260930b" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260930c" />
   <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260930b" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260930c" />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Great+Vibes&family=Playfair+Display:ital,wght@0,700;0,800;1,600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../assets/doc.css?v=20260930b" />
+  <link rel="stylesheet" href="../../assets/doc.css?v=20260930c" />
 </head>
 <body>
   <div class="topbar">Законодавча база штату Сан-Андреас</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260930b" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260930c" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Картка документа</p>
@@ -33,13 +33,16 @@
   </nav>
   <main class="wrap article" id="doc-root"></main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/config.js?v=20260930b"></script>
-  <script src="../../assets/accounts.js?v=20260930b"></script>
-  <script src="../../assets/app.js?v=20260930b"></script>
-  <script src="../../assets/store.js?v=20260930b"></script>
+  <script src="../../assets/config.js?v=20260930c"></script>
+  <script src="../../assets/accounts.js?v=20260930c"></script>
+  <script src="../../assets/app.js?v=20260930c"></script>
+  <script src="../../assets/store.js?v=20260930c"></script>
   <script>
     const id = new URLSearchParams(location.search).get("id");
-    const doc = getDoc(id);
+    // Список документів приходить скороченим — тут завантажуємо повний (з версіями й журналом)
+    const doc = loadFullDoc(id);
+    // Хтось проголосував чи погодив — оновлюємо картку, щоб було видно актуальний стан
+    if (doc) watchState(() => { const fresh = getDoc(id); if (fresh && fresh._rev !== doc._rev) location.reload(); });
     const root = document.getElementById("doc-root");
     const viewer = currentUser();
     if (!doc || (doc.status === "trash" && !(viewer && isStaff(viewer)))) {

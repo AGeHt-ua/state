@@ -264,6 +264,13 @@ function setApiToken(token) {
 }
 
 function apiRequest(method, path, body) {
+  const res = apiRequestOnce(method, path, body);
+  // Короткочасний збій (мережа, перевантаження Cloudflare) — одна повторна спроба для читання
+  if (method === "GET" && (res.status === 0 || res.status >= 500)) return apiRequestOnce(method, path, body);
+  return res;
+}
+
+function apiRequestOnce(method, path, body) {
   const xhr = new XMLHttpRequest();
   try {
     xhr.open(method, REMOTE.url + path, false);
@@ -281,8 +288,66 @@ function apiRequest(method, path, body) {
 
 function applyRemoteData(data) {
   Object.keys(data || {}).forEach((key) => {
-    if (SHARED_KEYS.includes(key)) REMOTE.cache[key] = JSON.stringify(data[key] || []);
+    if (!SHARED_KEYS.includes(key)) return;
+    REMOTE.cache[key] = JSON.stringify(data[key] || []);
+    noteRevs(data[key]);
   });
+}
+
+// Найсвіжіша відома версія запису (_rev) — з неї живе оновлення запитує лише нові зміни
+function noteRevs(items) {
+  (items || []).forEach((it) => { if (it && typeof it._rev === "number" && it._rev > (REMOTE.since || 0)) REMOTE.since = it._rev; });
+}
+
+// Точкове злиття: змінені записи замінюють старі за id, решта лишається
+function mergeRemoteRows(data) {
+  let changed = false;
+  Object.keys(data || {}).forEach((key) => {
+    const rows = data[key] || [];
+    if (!SHARED_KEYS.includes(key) || !rows.length) return;
+    const list = JSON.parse(REMOTE.cache[key] || "[]");
+    rows.forEach((row) => {
+      const id = remoteRowId(key, row);
+      const i = list.findIndex((it) => remoteRowId(key, it) === id);
+      if (i >= 0) list[i] = row; else list.push(row);
+    });
+    REMOTE.cache[key] = JSON.stringify(list);
+    noteRevs(rows);
+    changed = true;
+  });
+  return changed;
+}
+
+/* Живе оновлення: сторінка, якій важливі свіжі дані (голосування, повідомлення), підписується через watchState(cb).
+   Поки вкладка відкрита на екрані, раз на ~8 с запитуємо лише змінені записи (асинхронно, сторінка не підвисає). */
+const STATE_WATCHERS = [];
+let stateWatchTimer = null;
+function watchState(cb) {
+  if (!REMOTE.cache) return;
+  STATE_WATCHERS.push(cb);
+  if (stateWatchTimer) return;
+  const tick = async () => {
+    if (document.hidden || !REMOTE.ok || !REMOTE.since) return;
+    try {
+      const token = apiToken();
+      const r = await fetch(REMOTE.url + "/api/changes?since=" + REMOTE.since, { headers: token ? { Authorization: "Bearer " + token } : {} });
+      if (!r.ok) return;
+      const body = await r.json();
+      if (mergeRemoteRows(body.data)) STATE_WATCHERS.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
+    } catch (e) { /* мережа — спробуємо наступного разу */ }
+  };
+  stateWatchTimer = setInterval(tick, 8000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
+}
+
+// Повний документ (з версіями й історією) — список приходить скороченим, повний потрібен лише на сторінці документа
+function loadFullDoc(id) {
+  if (!REMOTE.cache) return getDoc(id);
+  const cached = JSON.parse(REMOTE.cache.state_docs || "[]").find((d) => d.id === id);
+  if (cached && !cached._partial) return getDoc(id);
+  const res = apiRequest("GET", "/api/doc/" + encodeURIComponent(id));
+  if (res.ok && res.data.doc) mergeRemoteRows({ state_docs: [res.data.doc] });
+  return getDoc(id);
 }
 
 function remoteBoot() {
@@ -342,6 +407,7 @@ function remoteSave(key, value) {
       setApiToken("");
       try { localStorage.removeItem("state_session"); } catch { /* ignore */ }
     }
+    if (res.status === 409 && res.data.data) applyRemoteData(res.data.data);
     alert(res.data.error || "Не вдалося зберегти зміни на сервері.");
     return false;
   }
@@ -1553,9 +1619,27 @@ function approveDoc(id, user) {
 function voteDoc(id, user, vote) {
   const doc = getDoc(id);
   if (!doc || !canApproveDoc(doc, user) || doc.approverOffice !== "congress") return null;
+  if (REMOTE.cache) {
+    // На сервері голос дописується до документа атомарно — одночасні голоси не затирають один одного
+    const res = apiRequest("POST", "/api/vote", { id, vote: vote === "against" ? "against" : "for" });
+    if (res.data && res.data.doc) mergeRemoteRows({ state_docs: [res.data.doc] });
+    if (!res.ok) { alert(res.data.error || "Не вдалося зарахувати голос."); return null; }
+    return congressOutcome(getDoc(id), user) || getDoc(id);
+  }
   const votes = Object.assign({}, doc.votes || {});
   votes[user.login] = { vote: vote === "against" ? "against" : "for", name: actorName(user), at: new Date().toISOString() };
   const next = Object.assign({}, doc, { votes, status: "congress" });
+  return congressOutcome(next, user) || saveDoc(next, {
+    user,
+    action: "Голос у Конгресі",
+    summary: actorName(user) + " проголосував(ла) «" + (vote === "against" ? "проти" : "за") + "».",
+    versionLabel: "Голосування Конгресу"
+  });
+}
+
+// Підсумок голосування: більшість «за» — документ іде далі шляхом, більшість «проти» — відхилено; інакше null
+function congressOutcome(next, user) {
+  if (!next || next.approverOffice !== "congress") return null;
   const t = congressTally(next);
   if (t.pro >= t.needed) {
     return advanceDoc(next, user, {
@@ -1572,15 +1656,10 @@ function voteDoc(id, user, vote) {
       approverLogin: "",
       rejectedAt: new Date().toISOString(),
       rejectedReason: "Конгрес проголосував проти (" + t.contra + " з " + t.members + ").",
-      approvals: (doc.approvals || []).concat([{ step: "congress", byName: "Конгрес штату", post: "За — " + t.pro + ", проти — " + t.contra, at: new Date().toISOString(), decision: "rejected" }])
+      approvals: (next.approvals || []).concat([{ step: "congress", byName: "Конгрес штату", post: "За — " + t.pro + ", проти — " + t.contra, at: new Date().toISOString(), decision: "rejected" }])
     }), { user, action: "Конгрес відхилив документ", summary: "Більшість членів Конгресу проголосувала проти.", versionLabel: "Відхилено" });
   }
-  return saveDoc(next, {
-    user,
-    action: "Голос у Конгресі",
-    summary: actorName(user) + " проголосував(ла) «" + (vote === "against" ? "проти" : "за") + "». За — " + t.pro + ", проти — " + t.contra + ", потрібно " + t.needed + ".",
-    versionLabel: "Голосування Конгресу"
-  });
+  return null;
 }
 
 function returnDoc(id, user, reason) {

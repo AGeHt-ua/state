@@ -24,3 +24,6 @@ CREATE TABLE IF NOT EXISTS rows (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (coll, id)
 );
+
+-- Живе оновлення (/api/changes) шукає записи, змінені після певної версії
+CREATE INDEX IF NOT EXISTS rows_updated ON rows (updated_at);

@@ -1521,7 +1521,8 @@
     const saved = db.slots[slot];
     state = saved ? mergeState(saved) : defaultState();
     window.state = state;
-    if (!state.seal.src && user.photo) state.seal.src = user.photo;
+    // Фото профілю як печатка — лише якщо це вбудоване зображення (посилання на сервер не експортується в PNG)
+    if (!state.seal.src && user.photo && String(user.photo).startsWith('data:image/')) state.seal.src = user.photo;
     curDocId = state.srcDoc || null;
     updateDocStatus(curDocId && typeof getDoc === 'function' ? getDoc(curDocId) : null);
     editor.innerHTML = state.html != null ? state.html : buildTemplate(state.type);
