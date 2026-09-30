@@ -6,16 +6,16 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Повідомлення — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260930a" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260930b" />
   <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260930a" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20260930b" />
 </head>
 <body>
   <div class="topbar" id="top-office">Кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260930a" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260930b" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Погодження та повідомлення</p>
@@ -44,17 +44,18 @@
       </aside>
       <section class="card">
         <h2 class="page-title" style="margin-top:0">Повідомлення</h2>
-        <p class="lead" id="inbox-lead">Документи, які очікують підпису або погодження відповідним апаратом.</p>
-        <div id="inbox-list"></div>
-        <div id="appeal-inbox"></div>
+        <p class="lead" id="inbox-lead">Що чекає вашої дії і що сталося з вашими документами.</p>
+        <nav class="admin-tabs inbox-tabs" role="tablist" id="inbox-tabs"></nav>
+        <p class="muted inbox-tab-hint" id="inbox-hint"></p>
+        <div id="inbox-body"></div>
       </section>
     </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/config.js?v=20260930a"></script>
-  <script src="../../assets/accounts.js?v=20260930a"></script>
-  <script src="../../assets/app.js?v=20260930a"></script>
-  <script src="../../assets/store.js?v=20260930a"></script>
+  <script src="../../assets/config.js?v=20260930b"></script>
+  <script src="../../assets/accounts.js?v=20260930b"></script>
+  <script src="../../assets/app.js?v=20260930b"></script>
+  <script src="../../assets/store.js?v=20260930b"></script>
   <script>
     const user = requireAuth();
     if (!user) throw new Error("auth");
@@ -132,22 +133,80 @@
           <div class="admin-row-actions"><a class="btn ${n.attention ? "gold" : "ghost"}" href="${attr(href)}">${label}</a></div>
         </article>`;
     }
-    function draw() {
-      const list = reviewDocsFor(user);
+    // Мій документ: де він зараз (ланцюжок шляху), а для поверненого — причина й кнопка «Доопрацювати»
+    function myDocCard(n) {
+      const d = getDoc(n.doc.id) || n.doc;
+      const returned = n.kind === "returned" || n.kind === "rejected";
+      const reason = n.kind === "rejected" ? d.rejectedReason : d.returnedReason;
+      return `
+      <article class="act-row inbox-row${returned ? " is-attention" : ""}">
+        <div class="act-num">${esc(d.number || "б/н")}<br>${esc(formatDocWhen({ date: n.at || d.updatedAt || d.date }))}</div>
+        <div>
+          <h3><a href="${attr(docHref(d))}">${esc(d.title)}</a></h3>
+          <div class="act-meta">${esc(d.type)} · <span class="badge ${attr(badgeClass(d.status))}">${esc(DOC_STATUSES[d.status] || d.status)}</span></div>
+          ${(d.approvalSteps || []).length ? approvalPathHtml(d, { compact: true }) : ""}
+          ${returned && reason ? `<p class="notice${n.kind === "rejected" ? " danger" : ""}" style="margin:8px 0 0">${esc(n.title)}: ${esc(reason)}</p>` : ""}
+        </div>
+        <span class="row-actions">
+          ${n.kind === "returned"
+            ? `<a class="btn gold" href="../create/?id=${encodeURIComponent(d.id)}">Доопрацювати</a>`
+            : `<a class="btn ghost" href="${attr(docHref(d))}">Відкрити</a>`}
+        </span>
+      </article>`;
+    }
+
+    /* Вкладки: кожна — окремий тип справ. Порожні службові вкладки не показуються. */
+    function sections() {
+      const review = isCitizen(user) ? [] : reviewDocsFor(user);
+      const approve = review.filter((d) => d.approverOffice !== "congress");
+      const vote = review.filter((d) => d.approverOffice === "congress");
       const others = isCitizen(user) ? [] : overrideDocsFor(user);
-      document.getElementById("inbox-list").innerHTML = isCitizen(user) ? "" : `
-        <h3 class="inbox-h">На ваше рішення <span class="count">${list.length}</span></h3>
-        ${list.length ? list.map((d) => docCard(d)).join("") : "<p class='muted empty-note'>Немає документів, що чекають вашого погодження чи голосу.</p>"}
-        ${others.length ? `
-        <h3 class="inbox-h">Усі документи на погодженні <span class="count">${others.length}</span></h3>
-        <p class="muted">Права адміністратора: можна погодити поточний крок за іншого посадовця, повернути документ автору або опублікувати одразу. Голосувати за Конгрес не можна — лише повернути або опублікувати.</p>
-        ${others.map((d) => docCard(d, true)).join("")}` : ""}`;
       const notes = notificationsFor(user).filter((n) => n.kind !== "approve" && n.kind !== "vote");
-      document.getElementById("appeal-inbox").innerHTML = `
-        <h3 class="inbox-h">${isCitizen(user) ? "Відповіді на звернення" : "Події кабінету"} <span class="count">${notes.length}</span></h3>
-        ${notes.length ? `<div class="admin-list">${notes.map(noteRow).join("")}</div>` : "<p class='muted empty-note'>Нових подій немає.</p>"}`;
+      const mine = notes.filter((n) => n.doc);
+      const events = notes.filter((n) => !n.doc);
+      const empty = (text) => `<p class="muted empty-note">${text}</p>`;
+      if (isCitizen(user)) {
+        return [{ id: "events", label: "Відповіді на звернення", items: events, badge: events.filter((n) => n.attention).length,
+          html: () => events.length ? `<div class="admin-list">${events.map(noteRow).join("")}</div>` : empty("Нових відповідей немає.") }];
+      }
+      return [
+        { id: "approve", label: "Погодити", items: approve, badge: approve.length,
+          hint: "Документи, які чекають саме вашого рішення: погодьте — і документ піде далі шляхом, або поверніть автору з коментарем.",
+          html: () => approve.length ? approve.map((d) => docCard(d)).join("") : empty("Нічого не чекає вашого погодження.") },
+        { id: "vote", label: "Голосування Конгресу", items: vote, badge: vote.length, show: vote.length || isCongressMember(user),
+          hint: "Документи на голосуванні Конгресу. Рішення — більшість голосів усіх конгресменів.",
+          html: () => vote.length ? vote.map((d) => docCard(d)).join("") : empty("Зараз немає документів на голосуванні.") },
+        { id: "mine", label: "Мої документи", items: mine, badge: mine.filter((n) => n.attention).length, neutral: mine.filter((n) => !n.attention).length,
+          hint: "Ваші документи за останній тиждень: де вони зараз на шляху погодження, що опубліковано, що повернули на доопрацювання.",
+          html: () => mine.length ? mine.map(myDocCard).join("") : empty("За останній тиждень змін у ваших документах немає.") },
+        { id: "events", label: "Події", items: events, badge: events.filter((n) => n.attention).length, neutral: events.filter((n) => !n.attention).length,
+          hint: "Звернення громадян до вашого апарату, заявки на зміну профілю та інші події кабінету.",
+          html: () => events.length ? `<div class="admin-list">${events.map(noteRow).join("")}</div>` : empty("Нових подій немає.") },
+        { id: "all", label: "Усі на погодженні", items: others, neutral: others.length, show: others.length > 0,
+          hint: "Права адміністратора: можна погодити поточний крок за іншого посадовця, повернути документ автору або опублікувати одразу. Голосувати за Конгрес не можна — лише повернути або опублікувати.",
+          html: () => others.map((d) => docCard(d, true)).join("") }
+      ].filter((t) => t.show === undefined || t.show);
+    }
+    let current = (location.hash || "").slice(1);
+    function draw() {
+      const tabs = sections();
+      // Без вибору відкриваємо те, що потребує дії, інакше — першу непорожню вкладку
+      if (!tabs.some((t) => t.id === current)) current = (tabs.find((t) => t.badge) || tabs.find((t) => t.items.length) || tabs[0]).id;
+      const tab = tabs.find((t) => t.id === current);
+      document.getElementById("inbox-tabs").hidden = tabs.length < 2;
+      document.getElementById("inbox-tabs").innerHTML = tabs.map((t) => `<button type="button" role="tab" data-inbox-tab="${t.id}" class="${t.id === current ? "active" : ""}" aria-selected="${t.id === current}">${esc(t.label)}${t.badge ? `<span class="nav-badge">${t.badge}</span>` : t.neutral ? `<span class="pill">${t.neutral}</span>` : ""}</button>`).join("");
+      document.getElementById("inbox-hint").textContent = tab.hint || "";
+      document.getElementById("inbox-hint").hidden = !tab.hint;
+      document.getElementById("inbox-body").innerHTML = tab.html();
       document.querySelectorAll("[data-decide]").forEach((b) => b.addEventListener("click", () => decide(b.dataset.id, b.dataset.decide)));
     }
+    document.getElementById("inbox-tabs").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-inbox-tab]");
+      if (!b) return;
+      current = b.dataset.inboxTab;
+      history.replaceState(null, "", "#" + current);
+      draw();
+    });
     draw();
   </script>
 </body>

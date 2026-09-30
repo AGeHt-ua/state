@@ -976,3 +976,8 @@ label > input, label > select, label > textarea { margin-top: 5px; }
 @media print {
   :root[data-theme="dark"] { color-scheme: light; }
 }
+
+/* Повідомлення: вкладки й підказка під ними */
+.inbox-tabs { margin: 6px 0 4px; }
+.inbox-tab-hint { margin: 8px 2px 4px; font-size: 13px; }
+.inbox-row.is-attention { border-left: 3px solid var(--danger); padding-left: 10px; }
