@@ -25,8 +25,28 @@ const SITE_ICONS = {
   logout: "M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10",
   user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20c.8-3.6 3.8-5.6 7.5-5.6s6.7 2 7.5 5.6",
   menu: "M4 7h16M4 12h16M4 17h16",
-  search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"
+  search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4",
+  moon: "M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z",
+  sun: "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
 };
+
+/* Тема сайту: світла або темна. Вибір зберігається в браузері; без вибору — як у системі.
+   Атрибут на <html> ставить ще короткий скрипт у <head> кожної сторінки, щоб не було спалаху світлої теми. */
+function siteTheme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+function setSiteTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem("state_theme", theme); } catch (e) { /* приватний режим */ }
+  const btn = document.getElementById("theme-toggle");
+  if (btn) themeToggleSync(btn);
+}
+function themeToggleSync(btn) {
+  const dark = siteTheme() === "dark";
+  btn.innerHTML = siteIcon(dark ? "sun" : "moon");
+  btn.title = dark ? "Світла тема" : "Темна тема";
+  btn.setAttribute("aria-label", btn.title);
+}
 function siteIcon(name) {
   return `<svg class="ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${SITE_ICONS[name] || ""}"/></svg>`;
 }
@@ -79,7 +99,8 @@ function ensureAccountActions() {
       </a>
       <a class="account-sub" href="#" data-logout>Вийти</a>`;
   }
-  inner.insertAdjacentHTML("beforeend", `<div class="account-actions" id="account-actions">${html}</div>`);
+  inner.insertAdjacentHTML("beforeend", `<div class="account-actions" id="account-actions"><button type="button" class="theme-toggle" id="theme-toggle"></button>${html}</div>`);
+  themeToggleSync(document.getElementById("theme-toggle"));
 }
 
 /* Головне меню: однакове на всіх сторінках, з підсвіткою розділу */
@@ -218,6 +239,7 @@ function bindSearch() {
 
 function bindLogout() {
   document.addEventListener("click", (e) => {
+    if (e.target.closest("#theme-toggle")) { setSiteTheme(siteTheme() === "dark" ? "light" : "dark"); return; }
     const el = e.target.closest("#logout, [data-logout]");
     if (!el) return;
     e.preventDefault();

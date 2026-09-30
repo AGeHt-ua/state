@@ -541,3 +541,7 @@ body.exporting .sheet { box-shadow: none; }
 .kbd-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: center; font-size: 13px; }
 kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px solid #c9ced6; border-bottom-width: 2px; border-radius: 4px; background: #f6f8fb; font: 12px var(--wd-ui); text-align: center; }
 #openModal .tpl-bar select { width: auto; flex: 0 0 auto; height: 30px; }
+
+/* Меню «Надіслати»: пункти з поясненням, куди піде документ */
+.menu.send-menu { min-width: 320px; max-width: 420px; }
+.menu.send-menu button b { font-weight: 600; }

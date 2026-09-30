@@ -871,3 +871,86 @@ label > input, label > select, label > textarea { margin-top: 5px; }
   .cabinet-layout { display: block; }
   .a4-page { width: 210mm; min-height: 297mm; border: 0; box-shadow: none; margin: 0; }
 }
+
+/* ---------- Темна тема ----------
+   Вмикається атрибутом data-theme="dark" на <html> (перемикач у шапці, вибір зберігається в браузері).
+   Темно-сині змінні лишаються фоном шапки й кнопок, тому тексти, що ними пофарбовані, перевизначено окремо.
+   Аркуші документів (.a4-page, .ch-sheet) навмисно лишаються світлими — як папір. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --sky: #1b2a42;
+  --gold-tint: #2a2413;
+  --paper: #0a111d;
+  --surface: #111a2a;
+  --surface-2: #162133;
+  --ink: #e5eaf2;
+  --ink-2: #c3ccda;
+  --muted: #8e9bb1;
+  --line: #223049;
+  --line-strong: #30405c;
+  --ok: #52c08f;
+  --ok-tint: #11301f;
+  --draft: #a792f7;
+  --draft-tint: #221c3b;
+  --warn: #e2b64d;
+  --warn-tint: #2d250f;
+  --dead: #9aa3b4;
+  --dead-tint: #1b2232;
+  --danger: #f2787e;
+  --danger-tint: #37161a;
+  --shadow: 0 18px 44px rgba(0, 0, 0, .45);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .3);
+}
+:root[data-theme="dark"] body {
+  background: radial-gradient(1200px 420px at 50% -120px, rgba(60, 110, 190, .14), transparent 70%), var(--paper);
+}
+/* Заголовки й підписи, що були темно-синіми */
+:root[data-theme="dark"] :is(.page-title, .card h3, .side-me b, .side-nav a:hover, .side-nav a.active, .hint b, .guide-step b,
+  .act-row h3 a, .inbox-h, .admin-row-title b, .lifecycle-grid h4, .timeline-item b, .signer-row b, .quick-links b, .org-list b,
+  .structure-row b, .metric b, .profile-details b, .admin-stat b, .admin-section-head h3, .office-card header b, .link-btn:hover,
+  .choice b, .modal-card h3, .modal-close, .article h3, .const-title, .const-sec h3, .const-art h4) { color: var(--ink); }
+/* Посилання й акценти */
+/* Звичайні посилання: :where дає вагу як у базового «a», тож кнопки й пункти меню зберігають свої кольори */
+:where(:root[data-theme="dark"]) a { color: #8fb6ec; }
+:where(:root[data-theme="dark"]) a:hover { color: #b5cff4; }
+:root[data-theme="dark"] .crumbs a,
+:root[data-theme="dark"] .route-line,
+:root[data-theme="dark"] .route-inline,
+:root[data-theme="dark"] .link-btn,
+:root[data-theme="dark"] .advanced summary,
+:root[data-theme="dark"] .side-nav a.active .ico { color: #8fb6ec; }
+:root[data-theme="dark"] .act-row h3 a:hover { color: #b5cff4; }
+:root[data-theme="dark"] :is(.side-nav a:not(.create-doc-link), .account-sub, .footer-links a) { color: var(--ink-2); }
+:root[data-theme="dark"] :is(.side-nav a:not(.create-doc-link):hover, .side-nav a.active:not(.create-doc-link)) { color: var(--ink); }
+:root[data-theme="dark"] :is(.user-avatar, .admin-code, .step-num, .inbox-h .count) { color: #bcd3f2; }
+:root[data-theme="dark"] .btn.ghost { color: #dbe6f6 !important; }
+:root[data-theme="dark"] .btn.gold, :root[data-theme="dark"] .account-main:not(.is-user) { color: var(--navy-950) !important; }
+:root[data-theme="dark"] .const-sec h3 { border-top-color: var(--line-strong); }
+/* Поверхні, що були білими */
+:root[data-theme="dark"] :is(input, select, textarea, .search input, .portal-login-card, .modal-card) { background: var(--surface); color: var(--ink); }
+:root[data-theme="dark"] .search input { background: var(--surface-2); }
+:root[data-theme="dark"] .admin-hero-panel { background: linear-gradient(135deg, var(--surface), var(--sky)); }
+:root[data-theme="dark"] .admin-list-row.is-attention { border-color: #5a4a1e; background: linear-gradient(90deg, var(--gold-tint), var(--surface) 60%); }
+:root[data-theme="dark"] .signer-row.is-draft { border-color: #3b3263; background: var(--draft-tint); }
+:root[data-theme="dark"] .appeal-thread div.from-office { border-color: var(--line-strong); }
+:root[data-theme="dark"] .profile-photo { border-color: var(--surface); }
+:root[data-theme="dark"] .notice { border-color: #5a4a1e; }
+:root[data-theme="dark"] .notice.danger { border-color: #5c2a2e; }
+:root[data-theme="dark"] .btn.danger, :root[data-theme="dark"] .btn.ghost.danger { border-color: #5c2a2e !important; }
+:root[data-theme="dark"] .admin-tabs button.active { background: var(--navy-700); }
+:root[data-theme="dark"] .footer { background: #050a13; }
+
+/* Перемикач теми в шапці */
+.theme-toggle {
+  display: inline-grid; place-items: center;
+  width: 36px; height: 36px; flex: 0 0 auto;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  background: rgba(255, 255, 255, .08);
+  color: #fff; cursor: pointer;
+}
+.theme-toggle:hover { background: rgba(255, 255, 255, .18); }
+.theme-toggle .ico { width: 18px; height: 18px; }
+@media print {
+  :root[data-theme="dark"] { color-scheme: light; }
+}

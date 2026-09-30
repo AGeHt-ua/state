@@ -2161,6 +2161,56 @@
     if (canPublish) saveToSite('ok'); else openApproval(true);
   }
 
+  /* ---------- Кнопка «Надіслати»: одне меню з тим, що дозволяє доступ ----------
+     Опублікувати — лише з правом publishDocs; погодження й проєкт — з правом createDocs;
+     «Одразу в Конгрес» — лише для законодавчих типів; Discord — якщо для апарату налаштовано webhook. */
+  function isCongressType() {
+    return state.type === 'zakon' || !!(TYPES[state.type] && TYPES[state.type].congress);
+  }
+  function routeText(route) {
+    const steps = route ? resolveApprovalSteps({ office: office, ownerLogin: user.login }, route) : [];
+    if (!route) return 'маршрут не налаштовано';
+    return steps.length ? steps.map(stepLabel).join(' → ') : 'погоджувати нікому — ви останній крок маршруту';
+  }
+  function buildSendMenu() {
+    const item = (act, title, hint, disabled) => '<button type="button" data-act="' + act + '"' + (disabled ? ' disabled' : '') + '><b>' + esc(title) + '</b><small>' + esc(hint) + '</small></button>';
+    const t = congressTally({});
+    const congressHint = t.members ? 'голосують ' + t.members + ' конгресм., потрібно ' + t.needed + ' «за»' : 'конгресменів ще не призначено';
+    const prev = curDocId ? getDoc(curDocId) : null;
+    const html = [];
+    if (canPublish) {
+      html.push('<div class="menu-title">Опублікувати</div>');
+      html.push(item('sendPublish', 'Опублікувати на сайті', prev && prev.status === 'ok' ? 'оновити чинну редакцію без погодження' : 'одразу чинний, без погодження'));
+      html.push('<div class="menu-sep"></div>');
+    }
+    html.push('<div class="menu-title">На погодження</div>');
+    const auto = autoRoute();
+    const autoSteps = auto ? resolveApprovalSteps({ office: office, ownerLogin: user.login }, auto) : [];
+    html.push(item('sendAuto', isCongressType() ? 'За маршрутом (з Конгресом)' : 'За маршрутом апарату', routeText(auto) + (isCongressType() ? ' · ' + congressHint : ''), !autoSteps.length));
+    if (isCongressType()) html.push(item('sendCongress', 'Одразу на голосування Конгресу', 'без інших кроків · ' + congressHint, !t.members));
+    html.push(item('sendDirect', 'Конкретному посадовцю…', 'обрати людину або посаду зі списку'));
+    if (routesForOffice(office).length > 1) html.push(item('sendRoute', 'Інший маршрут…', 'обрати з маршрутів, налаштованих в адмін-панелі'));
+    html.push('<div class="menu-sep"></div><div class="menu-title">Без відправки</div>');
+    html.push(item('saveDraft', 'Зберегти як проєкт', 'у реєстрі документів, ніхто не погоджує'));
+    if (hasWebhooks()) html.push(item('discord', 'Надіслати в Discord', 'у канал вашого апарату'));
+    $('menu-send').innerHTML = html.join('');
+  }
+  // Погодження одним кліком: режим задається тут, а saveToSite бере маршрут із вікна погодження
+  function sendWithMode(mode, target) {
+    closeMenu();
+    if (!checkBeforeSend()) return;
+    $('apMode').value = mode;
+    if (mode === 'direct') { fillApprovalTargets(); $('apTarget').value = target; }
+    saveToSite('review');
+  }
+  function openApprovalWithMode(mode) {
+    closeMenu();
+    if (!checkBeforeSend()) return;
+    openApproval(true);
+    $('apMode').value = mode;
+    updateApprovalPreview();
+  }
+
   /* ---------- Зручності: перевірка, автономер, учасники, відкриття, перегляд, посилання ---------- */
   // Перед відправкою попереджаємо про незаповнені поля, щоб на погодження не пішов «[ПІБ особи]»
   function checkBeforeSend() {
@@ -2267,10 +2317,8 @@
     el.title = 'Статус у реєстрі: ' + el.textContent + (d.approvalRouteName && d.status === 'review' ? ' · ' + routeProgressLabel(d) : '');
   }
   function initPublishUi() {
-    $('btnPublish').textContent = canPublish ? 'Опублікувати' : 'Опублікувати…';
-    $('btnPublish').title = canPublish ? 'Опублікувати на сайті одразу' : 'Для вашої посади публікація йде через погодження: ' + ((autoRoute() || {}).name || 'маршрут');
     if (!canCreate) {
-      document.querySelectorAll('[data-act="saveDraft"],[data-act="sendReview"],[data-act="publish"]').forEach((b) => { b.disabled = true; b.title = 'Для створення документів адміністратор має видати відповідний доступ'; });
+      document.querySelectorAll('[data-menu="menu-send"]').forEach((b) => { b.disabled = true; b.title = 'Для створення документів адміністратор має видати відповідний доступ'; });
     }
   }
 
@@ -2368,6 +2416,7 @@
     const m = $(id);
     if (!m) return;
     if (id === 'menu-bg') buildBgMenu();
+    if (id === 'menu-send') buildSendMenu();
     m.classList.add('open');
     openMenuEl = m;
     let x, y;
@@ -2520,7 +2569,12 @@
     fitWidth: fitWidth,
     fitPage: fitPage,
     applyTemplate: () => applyTemplate(false),
-    saveDraft: () => saveToSite('draft'),
+    saveDraft: () => { closeMenu(); saveToSite('draft'); },
+    sendPublish: () => { closeMenu(); if (canPublish && checkBeforeSend()) saveToSite('ok'); },
+    sendAuto: () => sendWithMode('auto'),
+    sendCongress: () => sendWithMode('direct', 'congress'),
+    sendDirect: () => openApprovalWithMode('direct'),
+    sendRoute: () => openApprovalWithMode('route'),
     sendReview: openApproval,
     apCancel: () => { $('apModal').hidden = true; },
     apConfirm: () => { $('apModal').hidden = true; saveToSite('review'); },

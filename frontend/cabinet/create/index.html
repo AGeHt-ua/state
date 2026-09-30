@@ -49,9 +49,7 @@
       <div class="tb-right">
         <span class="tb-status" id="tbStatus" hidden></span>
         <span id="tbUser"></span>
-        <button type="button" class="tb-pub ghost" data-act="saveDraft" title="Зберегти як проєкт у реєстрі документів">Проєкт</button>
-        <button type="button" class="tb-pub ghost" data-act="sendReview" id="btnReview" title="Відправити на погодження за маршрутом">На погодження</button>
-        <button type="button" class="tb-pub gold" data-act="publish" id="btnPublish">Опублікувати</button>
+        <button type="button" class="tb-pub gold" data-menu="menu-send" id="btnSend" title="Опублікувати, відправити на погодження чи зберегти проєкт">Надіслати ▾</button>
       </div>
     </div>
 
@@ -103,9 +101,7 @@
         </div>
         <div class="rb-group">
           <div class="rb-row">
-            <button type="button" class="rb-btn big" data-act="saveDraft"><i data-icon="save"></i><span>Зберегти<br>проєкт</span></button>
-            <button type="button" class="rb-btn big" data-act="sendReview"><i data-icon="send"></i><span>На пого-<br>дження</span></button>
-            <button type="button" class="rb-btn big accent" data-act="publish"><i data-icon="globe"></i><span>Опублікувати<br>на сайт</span></button>
+            <button type="button" class="rb-btn big accent" data-menu="menu-send" data-send-btn><i data-icon="send"></i><span>Надіслати<br>документ ▾</span></button>
             <div class="rb-col">
               <label class="rb-check"><input type="checkbox" id="chkHome"> На головну сайту</label>
               <a class="rb-link" href="../all/">Реєстр документів →</a>
@@ -467,6 +463,7 @@
   <div class="menu" id="menu-field"></div>
   <div class="menu symbols" id="menu-symbol"></div>
   <div class="menu" id="menu-tpl"></div>
+  <div class="menu send-menu" id="menu-send"></div>
   <div class="menu" id="menu-margins">
     <button type="button" data-act="margins" data-val="20,20,30,15"><b>Звичайні</b><small>Верх 2 см · Низ 2 см · Ліве 3 см · Праве 1,5 см</small></button>
     <button type="button" data-act="margins" data-val="13,13,13,13"><b>Вузькі</b><small>усі по 1,27 см</small></button>
