@@ -545,3 +545,74 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 /* Меню «Надіслати»: пункти з поясненням, куди піде документ */
 .menu.send-menu { min-width: 320px; max-width: 420px; }
 .menu.send-menu button b { font-weight: 600; }
+
+/* ---------- Темна тема редактора ----------
+   Та сама data-theme="dark", що й на сайті (перемикач — «Вигляд → Темна тема»).
+   Затемнюється інтерфейс: стрічка, панелі, меню, вікна, полотно. Аркуш документа, прев'ю стилів і палітри
+   лишаються світлими — документ друкується й публікується на білому. */
+:root[data-theme="dark"] {
+  --wd-ribbon: #1b2331;
+  --wd-line: #2e3a4f;
+  --wd-hover: #2a364b;
+  --wd-on: #2f4568;
+  --wd-on-line: #4f6d9c;
+  --wd-canvas: #0f141d;
+  --wd-text: #e3e8f0;
+  --wd-muted: #95a1b5;
+}
+:root[data-theme="dark"] body.wd-body { background: var(--wd-canvas); color: var(--wd-text); }
+:root[data-theme="dark"] .wd-ribbon { box-shadow: 0 1px 3px rgba(0, 0, 0, .4); }
+:root[data-theme="dark"] .wd-body :where(input, select, textarea),
+:root[data-theme="dark"] :is(.rb-select, .combo, .pf input, .pf select, .pf-today, .ap-field select, .ap-field input,
+  .fld-pop input, .fld-pop select, .fb-row input, .tpl-bar input) {
+  background: #121925; color: var(--wd-text); border-color: #3a475d;
+}
+:root[data-theme="dark"] .pf.hot :is(input, select) { background: #16223a; border-color: #5b86cf; }
+:root[data-theme="dark"] .pf label { color: var(--wd-muted); }
+:root[data-theme="dark"] .pf-ins { color: #8fb6ec; }
+:root[data-theme="dark"] :is(.rb-btn:hover, .pf-ins:hover) { border-color: #3d4b63; }
+:root[data-theme="dark"] .rb-btn.big.accent { color: #5fc796; }
+:root[data-theme="dark"] .rb-btn.big.accent:hover { background: #14301f; border-color: #2d6b48; }
+:root[data-theme="dark"] .combo-arrow { border-left-color: #3a475d; }
+/* Лінійка */
+:root[data-theme="dark"] .ruler { background: #1b2331; border-color: #2e3a4f; color: #aab4c5; }
+:root[data-theme="dark"] .rl-m { background: #2a3446; }
+:root[data-theme="dark"] .rl-t { background: #8a95a8; }
+:root[data-theme="dark"] .rl-h { background: #1b2331; border-color: #aab4c5; }
+/* Аркуш на темному полотні */
+:root[data-theme="dark"] .sheet { box-shadow: 0 0 0 1px #000, 0 4px 18px rgba(0, 0, 0, .6); }
+:root[data-theme="dark"] :is(.page-mark) { border-top-color: #4a5670; }
+:root[data-theme="dark"] .page-num, :root[data-theme="dark"] .page-mark span { color: #8a95a8; }
+/* Меню, спливні вікна, пошук, модальні вікна */
+:root[data-theme="dark"] :is(.menu, .fld-pop, .find-box, .modal-box) {
+  background: #1b2331; color: var(--wd-text); border-color: #34425a; box-shadow: 0 8px 28px rgba(0, 0, 0, .55);
+}
+:root[data-theme="dark"] .menu button { color: var(--wd-text); }
+:root[data-theme="dark"] .menu button:hover { background: #26324a; }
+:root[data-theme="dark"] .menu button:disabled { color: #5d6980; background: none; }
+:root[data-theme="dark"] .menu-sep { background: #2e3a4f; }
+:root[data-theme="dark"] :is(.fld-pop-actions button, .modal-actions button, .fb-row button, .tpl-tools button) {
+  background: #222c3d; color: var(--wd-text); border-color: #3a475d;
+}
+:root[data-theme="dark"] :is(.fld-pop-actions .primary, .modal-actions .primary) { background: var(--wd-navy-2); border-color: #3f5f95; color: #fff; }
+:root[data-theme="dark"] .modal-box label { border-color: #2e3a4f; }
+:root[data-theme="dark"] .ap-preview { background: #121925; border-color: #2e3a4f; color: var(--wd-text); }
+:root[data-theme="dark"] .ap-hint { color: var(--wd-muted); }
+:root[data-theme="dark"] :is(.tpl-list) { border-color: #2e3a4f; }
+:root[data-theme="dark"] .tpl-row { border-bottom-color: #242f41; }
+:root[data-theme="dark"] .tpl-row.cur { background: #1d2a40; }
+:root[data-theme="dark"] .tpl-open:hover { background: #222c3d; }
+:root[data-theme="dark"] .tpl-open b { color: #cfe0f7; }
+:root[data-theme="dark"] .preview-body { background: #0f141d; }
+:root[data-theme="dark"] kbd { background: #222c3d; color: var(--wd-text); border-color: #3a475d; }
+:root[data-theme="dark"] .wd-tab.ctx.active { color: #e8d48b; }
+/* Тексти, що були темно-синіми (--wd-navy) на світлій стрічці */
+:root[data-theme="dark"] .wd-tab.active:not(.file),
+:root[data-theme="dark"] .modal-box h3,
+:root[data-theme="dark"] .help-box h4 { color: var(--wd-text); }
+:root[data-theme="dark"] .rb-link { color: #8fb6ec; }
+:root[data-theme="dark"] .style-item.on { border-color: #8fb6ec; box-shadow: inset 0 0 0 1px #8fb6ec; }
+:root[data-theme="dark"] .help-box { color: var(--wd-text); }
+@media print {
+  :root[data-theme="dark"] body.wd-body { background: #fff; color: #000; }
+}

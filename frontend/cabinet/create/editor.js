@@ -2865,6 +2865,12 @@
     // Вигляд
     $('optRuler').addEventListener('change', () => { ui.ruler = $('optRuler').checked; saveUi(); drawRuler(); updateSizer(); });
     $('optShade').addEventListener('change', () => setShade($('optShade').checked));
+    // Темна тема — спільна із сайтом (setSiteTheme з app.js); аркуш документа лишається білим
+    $('optDark').checked = document.documentElement.dataset.theme === 'dark';
+    $('optDark').addEventListener('change', () => {
+      if (typeof setSiteTheme === 'function') setSiteTheme($('optDark').checked ? 'dark' : 'light');
+      else document.documentElement.dataset.theme = $('optDark').checked ? 'dark' : 'light';
+    });
     $('optShadeDoc').addEventListener('change', () => setShade($('optShadeDoc').checked));
 
     // Погодження
