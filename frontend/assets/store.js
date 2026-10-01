@@ -603,6 +603,7 @@ function loginWithPassword(login, password) {
   let found;
   if (REMOTE.cache) {
     const res = apiRequest("POST", "/api/auth", { login, password: String(password || "") });
+    REMOTE.lastError = res.ok ? "" : (res.data.error || "");
     if (!res.ok) return null;
     setApiToken(res.data.token);
     // Вхід віддає всі дані — навіть якщо під час завантаження сторінки сервер не відповідав, тепер зв'язок є
@@ -693,7 +694,7 @@ function changePassword(oldPassword, newPassword) {
   const user = currentUser();
   if (!user) return { ok: false, error: "Спершу увійдіть." };
   newPassword = String(newPassword || "");
-  if (newPassword.length < 4 || newPassword.length > 128) return { ok: false, error: "Новий пароль: від 4 до 128 символів." };
+  if (newPassword.length < 8 || newPassword.length > 128) return { ok: false, error: "Новий пароль: від 8 до 128 символів." };
   if (REMOTE.cache) {
     const res = apiRequest("POST", "/api/password", { oldPassword: String(oldPassword || ""), newPassword });
     return res.ok ? { ok: true } : { ok: false, error: res.data.error || "Не вдалося змінити пароль." };

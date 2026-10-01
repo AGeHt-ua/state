@@ -2,20 +2,21 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.workers.dev http://localhost:8787 http://127.0.0.1:8787 http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
   <meta name="referrer" content="strict-origin-when-cross-origin">
+  <script>if(window.top!==window.self){try{window.top.location=window.self.location}catch(e){document.documentElement.style.display="none"}}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Електронний кабінет — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20260930c" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001a" />
   <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20260930c" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20261001a" />
 </head>
 <body>
   <div class="topbar">Офіційний портал Уряду штату Сан-Андреас</div>
   <header class="header citizen-header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20260930c" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001a" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Вхід до кабінету</p>
@@ -78,10 +79,10 @@
     </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/config.js?v=20260930c"></script>
-  <script src="../../assets/accounts.js?v=20260930c"></script>
-  <script src="../../assets/app.js?v=20260930c"></script>
-  <script src="../../assets/store.js?v=20260930c"></script>
+  <script src="../../assets/config.js?v=20261001a"></script>
+  <script src="../../assets/accounts.js?v=20261001a"></script>
+  <script src="../../assets/app.js?v=20261001a"></script>
+  <script src="../../assets/store.js?v=20261001a"></script>
   <script>
     const existing = currentUser();
     if (existing && isCabinetUser(existing)) {
@@ -95,7 +96,7 @@
       const data = new FormData(e.target);
       const user = loginWithPassword(data.get("login"), data.get("password"));
       if (!user) {
-        document.getElementById("login-error").textContent = "Невірний логін або пароль.";
+        document.getElementById("login-error").textContent = (typeof REMOTE !== "undefined" && REMOTE.lastError) || "Невірний логін або пароль.";
         return;
       }
       location.href = isCabinetUser(user) ? pathTo("cabinet/") : pathTo("cabinet/pending/");

@@ -27,3 +27,10 @@ CREATE TABLE IF NOT EXISTS rows (
 
 -- Живе оновлення (/api/changes) шукає записи, змінені після певної версії
 CREATE INDEX IF NOT EXISTS rows_updated ON rows (updated_at);
+
+-- Обмеження частоти: спроби входу, реєстрації, звернення (ключ → лічильник у вікні часу)
+CREATE TABLE IF NOT EXISTS limits (
+  key TEXT PRIMARY KEY,
+  count INTEGER NOT NULL,
+  reset_at INTEGER NOT NULL
+);

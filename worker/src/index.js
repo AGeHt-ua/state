@@ -202,6 +202,22 @@ const SEED_PROFILES = {
 const USER_ADMIN_PERMS = ["managePeople", "approveProfiles", "manageCongress"];
 const STRUCTURE_PERMS = ["manageStructure", "manageRoutes"];
 const LOGIN_RE = /^[a-z0-9_.-]{3,32}$/;
+const MIN_PASSWORD = 8;
+// Обмеження частоти (вікно в секундах): захист від перебору паролів, масової реєстрації та спаму
+const LIMITS = {
+  authIp: { max: 30, window: 15 * 60 },       // невдалих спроб входу з однієї адреси
+  authFail: { max: 10, window: 15 * 60 },     // невдалих спроб на один акаунт
+  register: { max: 5, window: 60 * 60 },      // реєстрацій з однієї адреси
+  appeal: { max: 30, window: 60 * 60 },       // записів у звернення від громадянина
+  profile: { max: 5, window: 60 * 60 }        // заявок на зміну профілю
+};
+// Ліміти розміру для того, що пишуть громадяни
+const MAX_APPEAL_TEXT = 5000;
+const MAX_APPEAL_ROW = 100 * 1024;
+const MAX_PHOTO = 300 * 1024;
+const SEED_DOC_IDS = ["const-sa-01", "law-gov-01", "decree-warrant-01", "project-congress-law-01"];
+const DOC_CONTENT_FIELDS = ["title", "html", "docHtml", "text", "type", "typeKey", "number", "date", "subject", "body"];
+const DOC_FROZEN_FIELDS = ["ownerLogin", "author", "office"];
 const TOKEN_TTL = 30 * 24 * 3600;
 const PBKDF2_ITERATIONS = 100000; // максимум, який дозволяє Workers
 const MAX_BODY = 8 * 1024 * 1024;
@@ -221,8 +237,9 @@ async function handleRegister(request, env) {
   const name = String(body.name || "").trim();
   if (!login || !password || !name) return json({ error: "Заповни всі поля." }, 400);
   if (!LOGIN_RE.test(login)) return json({ error: "Логін: 3–32 символи, лише латиниця, цифри, крапка, дефіс і підкреслення." }, 400);
-  if (password.length < 4 || password.length > 128) return json({ error: "Пароль: від 4 до 128 символів." }, 400);
+  if (password.length < MIN_PASSWORD || password.length > 128) return json({ error: "Пароль: від " + MIN_PASSWORD + " до 128 символів." }, 400);
   if (name.length > 64) return json({ error: "Ім'я занадто довге (до 64 символів)." }, 400);
+  if (!(await hit(env, "reg:" + clientIp(request), LIMITS.register))) return tooMany("Забагато реєстрацій з вашої мережі. Спробуйте за годину.");
 
   const taken = login in seedAccounts(env) ||
     await env.DB.prepare("SELECT 1 FROM accounts WHERE login = ?").bind(login).first() ||
@@ -254,21 +271,32 @@ async function handlePasswordLogin(request, env) {
   const body = await readJson(request);
   const login = String((body && body.login) || "").trim().toLowerCase();
   const password = String((body && body.password) || "");
-  const fail = json({ error: "Невірний логін або пароль." }, 401);
-  if (!login || !password) return fail;
+  if (!login || !password) return json({ error: "Невірний логін або пароль." }, 401);
+  // Перебір паролів: обмеження на адресу й на акаунт (рахуються лише невдалі спроби)
+  // Рахуються лише невдалі спроби: люди в одній мережі не заважають одне одному входити
+  const ipKey = "auth-ip:" + clientIp(request);
+  if ((await peek(env, ipKey)) >= LIMITS.authIp.max) return tooMany("Забагато невдалих спроб входу з вашої мережі. Спробуйте за 15 хвилин.");
+  const failKey = "auth-fail:" + login;
+  if ((await peek(env, failKey)) >= LIMITS.authFail.max) return tooMany("Акаунт тимчасово заблоковано після кількох невдалих спроб. Спробуйте за 15 хвилин.");
+  const failed = async () => {
+    await hit(env, failKey, LIMITS.authFail);
+    await hit(env, ipKey, LIMITS.authIp);
+    return json({ error: "Невірний логін або пароль." }, 401);
+  };
 
   const account = await env.DB.prepare("SELECT salt, hash FROM accounts WHERE login = ?").bind(login).first();
   if (account) {
     const { hash } = await hashPassword(password, account.salt);
-    if (!timingSafeEqual(hash, account.hash)) return fail;
+    if (!timingSafeEqual(hash, account.hash)) return failed();
   } else {
     // Службові акаунти з accounts.js: пароль задається секретом SEED_ACCOUNTS і при першому вході переходить у базу
     const seedPassword = seedAccounts(env)[login];
-    if (typeof seedPassword !== "string" || !timingSafeEqual(password, seedPassword)) return fail;
+    if (typeof seedPassword !== "string" || !timingSafeEqual(password, seedPassword)) return failed();
     const { salt, hash } = await hashPassword(password);
     await env.DB.prepare("INSERT INTO accounts (login, salt, hash, created_at) VALUES (?, ?, ?, ?)").bind(login, salt, hash, Date.now()).run();
   }
 
+  await env.DB.prepare("DELETE FROM limits WHERE key = ?").bind(failKey).run();
   const token = randomToken(32);
   const now = Math.floor(Date.now() / 1000);
   await env.DB.batch([
@@ -292,7 +320,7 @@ async function handlePasswordChange(request, env) {
   const body = await readJson(request);
   const oldPassword = String((body && body.oldPassword) || "");
   const newPassword = String((body && body.newPassword) || "");
-  if (newPassword.length < 4 || newPassword.length > 128) return json({ error: "Новий пароль: від 4 до 128 символів." }, 400);
+  if (newPassword.length < MIN_PASSWORD || newPassword.length > 128) return json({ error: "Новий пароль: від " + MIN_PASSWORD + " до 128 символів." }, 400);
   const account = await env.DB.prepare("SELECT salt, hash FROM accounts WHERE login = ?").bind(login).first();
   if (!account) return json({ error: "Акаунт не знайдено." }, 404);
   const { hash: oldHash } = await hashPassword(oldPassword, account.salt);
@@ -380,6 +408,7 @@ async function handleSync(request, env) {
         u.row.versions = (old.versions || []).concat(u.row.versions || []).slice(-30);
       }
       if (coll === "state_users" && typeof u.row.photo === "string" && u.row.photo.includes("/api/photo/")) u.row.photo = (old && old.photo) || "";
+      if (coll === "state_users" && String(u.row.photo || "").length > MAX_PHOTO) return json({ error: "Фото завелике. Оберіть менше зображення." }, 413);
       u.data = JSON.stringify(u.row);
       if (u.data.length > MAX_ROW) return json({ error: "Запис завеликий (понад 1.9 МБ). Зменште зображення." }, 413);
     }
@@ -417,7 +446,8 @@ async function checkWrite(env, actor, coll, upserts, removes) {
   if (!upserts.length && !removes.length) return "";
   if (coll === "state_users") return actor.can(USER_ADMIN_PERMS) ? "" : noRights;
   if (["state_offices", "state_positions", "state_approval_routes", "state_doc_types"].includes(coll)) return actor.can(STRUCTURE_PERMS) ? "" : noRights;
-  if (coll === "state_docs" || coll === "state_doc_backgrounds") return actor.staff ? "" : noRights;
+  if (coll === "state_doc_backgrounds") return actor.staff ? "" : noRights;
+  if (coll === "state_docs") return checkDocsWrite(env, actor, upserts, removes);
 
   // Звернення й заявки на зміну профілю: посадовець (або адміністратор профілів) — будь-які, інші — лише свої
   const ownerField = coll === "state_appeals" ? "ownerLogin" : "login";
@@ -429,9 +459,157 @@ async function checkWrite(env, actor, coll, upserts, removes) {
     if (!own(row) || (existing[id] && !own(existing[id]))) return noRights;
     // Сам собі заявку не підтвердиш
     if (coll === "state_profile_requests" && row.status !== "pending") return noRights;
+    const tooBig = sizeProblem(coll, row);
+    if (tooBig) return tooBig;
   }
   for (const id of removes) if (existing[id] && !own(existing[id])) return noRights;
+  // Частота: громадянин не може завалити звернення чи заявки спамом
+  if (upserts.length) {
+    const limit = coll === "state_appeals" ? LIMITS.appeal : LIMITS.profile;
+    if (!(await hit(env, (coll === "state_appeals" ? "appeal:" : "profile:") + actor.login, limit, upserts.length))) {
+      return "Забагато дій за короткий час. Спробуйте пізніше.";
+    }
+  }
   return "";
+}
+
+// Розмір того, що пишуть громадяни: текст звернення, повідомлення, фото
+function sizeProblem(coll, row) {
+  if (coll === "state_appeals") {
+    if (String(row.text || "").length > MAX_APPEAL_TEXT) return "Текст звернення задовгий (до " + MAX_APPEAL_TEXT + " символів).";
+    if ((row.thread || []).some((m) => String((m && m.text) || "").length > MAX_APPEAL_TEXT)) return "Повідомлення задовге (до " + MAX_APPEAL_TEXT + " символів).";
+    if (JSON.stringify(row).length > MAX_APPEAL_ROW) return "Звернення завелике. Почніть нове звернення.";
+  }
+  if (coll === "state_profile_requests" && String(row.photo || "").length > MAX_PHOTO) return "Фото завелике. Оберіть менше зображення.";
+  return "";
+}
+
+/* ---------- Права на документи ----------
+   Сервер дозволяє рівно ті дії, що й кнопки сайту (store.js):
+   - новий документ — з правом createDocs, автор — лише ви; одразу чинний — лише з правом publishDocs;
+   - автор редагує й відправляє свій документ (без підробки голосів і кроків, де погоджував би сам);
+   - той, чий зараз крок (або approveAnyDocs), погоджує, повертає — без зміни тексту;
+   - конгресмен фіксує підсумок голосування, лише якщо голосів справді більшість;
+   - publishDocs — опублікувати свій (або будь-який з approveAnyDocs) поза чергою;
+   - manageDocs / editAllDocs — усе, зокрема видалення. */
+async function checkDocsWrite(env, actor, upserts, removes) {
+  const noRights = "Недостатньо прав для цієї дії з документом.";
+  if (!actor.staff) return noRights;
+  const manage = actor.can(["manageDocs", "editAllDocs"]);
+  if (removes.length && !manage) return noRights;
+  if (manage || !upserts.length) return "";
+  const existing = await readRows(env, "state_docs", upserts.map((u) => u.id));
+  let members = null;
+  for (const { id, row } of upserts) {
+    const old = existing[id];
+    if (!old) {
+      if (SEED_DOC_IDS.includes(id) || !actor.can(["createDocs"]) || row.ownerLogin !== actor.login) return noRights;
+      if (["ok", "dead", "adopted", "trash"].includes(row.status) && !(row.status === "ok" && actor.can(["publishDocs"]))) return noRights;
+      if (["review", "congress"].includes(row.status) && submissionProblem(actor, row)) return noRights;
+      continue;
+    }
+    if (members === null && old.approverOffice === "congress") members = await congressSize(env);
+    if (!docTransitionAllowed(actor, old, row, members)) return noRights;
+  }
+  return "";
+}
+
+function sameFields(a, b, fields) {
+  return fields.every((k) => JSON.stringify(a[k] === undefined ? null : a[k]) === JSON.stringify(b[k] === undefined ? null : b[k]));
+}
+
+// Відправка на погодження: з першого кроку, без голосів наперед і без себе в шляху
+function submissionProblem(actor, row) {
+  const steps = row.approvalSteps || [];
+  const own = ["user:" + actor.login, "position:" + (actor.profile.positionId || "")];
+  if (!steps.length || Number(row.approvalIndex || 0) !== 0) return true;
+  if (steps.some((st) => own.includes(st))) return true;
+  if (row.votes && Object.keys(row.votes).length) return true;
+  return row.status !== (steps[0] === "congress" ? "congress" : "review");
+}
+
+function isCurrentApprover(actor, doc) {
+  const p = actor.profile;
+  return doc.approverOffice === p.office || doc.approverOffice === "position:" + (p.positionId || "") ||
+    doc.approverOffice === "user:" + actor.login || doc.approverLogin === actor.login;
+}
+
+// Крок погодження: або наступний крок того самого шляху, або публікація після останнього кроку
+function isAdvance(old, row) {
+  const steps = old.approvalSteps || [];
+  const i = Number(old.approvalIndex || 0);
+  if (JSON.stringify(row.approvalSteps || []) !== JSON.stringify(steps)) return false;
+  if (row.status === "ok") return i + 1 >= steps.length;
+  return Number(row.approvalIndex) === i + 1 && i + 1 < steps.length && row.status === (steps[i + 1] === "congress" ? "congress" : "review");
+}
+
+function docTransitionAllowed(actor, old, row, members) {
+  if (!sameFields(old, row, DOC_FROZEN_FIELDS)) return false;
+  const owner = old.ownerLogin === actor.login;
+  const contentSame = sameFields(old, row, DOC_CONTENT_FIELDS);
+  const inRoute = old.status === "review" || old.status === "congress";
+
+  // Автор редагує або відправляє свій документ
+  if (owner && actor.can(["createDocs", "editOwnDocs"])) {
+    if (["draft"].includes(row.status)) return true;
+    if (["review", "congress"].includes(row.status)) {
+      // Той самий документ лишився на тому ж кроці (автор лише зберіг) або нове коло погодження
+      if (inRoute && contentSame && JSON.stringify(row.approvalSteps || []) === JSON.stringify(old.approvalSteps || []) &&
+          Number(row.approvalIndex || 0) === Number(old.approvalIndex || 0) && JSON.stringify(row.votes || {}) === JSON.stringify(old.votes || {})) return true;
+      return !submissionProblem(actor, row);
+    }
+    if (row.status === "ok" && actor.can(["publishDocs"])) return true;
+  }
+  // Публікація поза чергою: свій документ з правом publishDocs або будь-який з approveAnyDocs
+  if (row.status === "ok" && contentSame && actor.can(["publishDocs"]) && (owner || actor.can(["approveAnyDocs"])) &&
+      ["draft", "review", "congress", "adopted"].includes(old.status)) return true;
+  if (!inRoute || !contentSame) return false;
+
+  // Конгрес: підсумок фіксує конгресмен, лише якщо більшість справді є; голоси не підробиш
+  if (old.approverOffice === "congress") {
+    if (row.status === "draft" && actor.can(["approveAnyDocs"])) return true;
+    if (actor.profile.congressMember !== true) return false;
+    // Голоси — лише ті, що вже на сервері (або очищені при переході до наступного кроку); рахуємо за серверними
+    const votesSame = JSON.stringify(row.votes || {}) === JSON.stringify(old.votes || {});
+    const votesCleared = !Object.keys(row.votes || {}).length && row.status !== "rejected";
+    if (!votesSame && !votesCleared) return false;
+    const votes = Object.values(old.votes || {}).map((v) => v && v.vote);
+    const needed = Math.floor(Math.max(members || 1, 1) / 2) + 1;
+    if (row.status === "rejected") return votes.filter((v) => v === "against").length >= needed;
+    return votes.filter((v) => v === "for").length >= needed && isAdvance(old, row);
+  }
+  // Звичайний крок: той, чий він, або approveAnyDocs — погодити далі чи повернути автору
+  if (!(isCurrentApprover(actor, old) || actor.can(["approveAnyDocs"]))) return false;
+  return row.status === "draft" || row.status === "rejected" || isAdvance(old, row);
+}
+
+async function congressSize(env) {
+  const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM rows WHERE coll = 'state_users' AND json_extract(data, '$.congressMember') = 1").first();
+  return (r && r.n) || 0;
+}
+
+/* ---------- Обмеження частоти (таблиця limits) ---------- */
+function clientIp(request) {
+  return request.headers.get("CF-Connecting-IP") || "local";
+}
+
+// +n до лічильника ключа у вікні; false — якщо ліміт перевищено
+async function hit(env, key, limit, n = 1) {
+  const now = Math.floor(Date.now() / 1000);
+  const row = await env.DB.prepare(
+    "INSERT INTO limits (key, count, reset_at) VALUES (?1, ?2, ?3 + ?4) ON CONFLICT (key) DO UPDATE SET " +
+    "count = CASE WHEN reset_at <= ?3 THEN ?2 ELSE count + ?2 END, reset_at = CASE WHEN reset_at <= ?3 THEN ?3 + ?4 ELSE reset_at END RETURNING count"
+  ).bind(key, n, now, limit.window).first();
+  return !row || row.count <= limit.max;
+}
+
+async function peek(env, key) {
+  const row = await env.DB.prepare("SELECT count FROM limits WHERE key = ? AND reset_at > ?").bind(key, Math.floor(Date.now() / 1000)).first();
+  return row ? row.count : 0;
+}
+
+function tooMany(message) {
+  return json({ error: message }, 429);
 }
 
 async function readRows(env, coll, ids) {
