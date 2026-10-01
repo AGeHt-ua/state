@@ -60,8 +60,9 @@ whenStateReady(async function () {
     const img = document.getElementById("avatar");
     if (user.photo) img.src = user.photo;
     else img.outerHTML = `<div class="profile-photo large photo-placeholder" id="avatar" aria-label="Фото не завантажено">${esc(String(user.username || "?").charAt(0).toUpperCase())}</div>`;
-    if (!canAdmin(user)) document.getElementById("nav-admin").style.display = "none";
-    if (isCitizen(user)) document.getElementById("nav-admin").style.display = "none";
+    // Пункт «Адміністрування» — лише тим, хто має доступ (меню могло вже прибрати його саме)
+    const navAdmin = document.getElementById("nav-admin");
+    if (navAdmin && (!canAdmin(user) || isCitizen(user))) navAdmin.style.display = "none";
     let pendingPhoto = "";
     const modal = document.getElementById("profile-modal");
     const form = document.getElementById("profile-form");
@@ -106,6 +107,62 @@ whenStateReady(async function () {
       pwMsg.textContent = "";
       document.getElementById("password-details").open = false;
     });
+    // Активні входи: завантажуються, коли розгортають розділ
+    const sessionsBox = document.getElementById("sessions-list");
+    const drawSessions = (res) => {
+      if (!res.ok) { sessionsBox.innerHTML = `<p class="muted">${esc(res.error)}</p>`; return; }
+      sessionsBox.innerHTML = res.items.map((s) => `
+        <article class="admin-list-row">
+          <div class="admin-row-main">
+            <div class="admin-row-title"><b>${esc(s.device)}</b>${s.current ? ' <span class="badge ok">цей пристрій</span>' : ""}</div>
+            <div class="admin-row-meta"><span>увійшли ${esc(s.created ? formatDocWhen({ date: new Date(s.created * 1000).toISOString() }) : "давно")}</span>
+              <span>активність ${esc(s.lastSeen ? formatDocWhen({ date: new Date(s.lastSeen * 1000).toISOString() }) : "—")}</span></div>
+          </div>
+          ${s.current ? "" : `<div class="admin-row-actions"><button class="btn ghost danger" type="button" data-revoke-session="${attr(s.id)}">Завершити</button></div>`}
+        </article>`).join("") || '<p class="muted">Немає активних входів.</p>';
+    };
+    document.getElementById("sessions-details").addEventListener("toggle", (e) => { if (e.target.open) drawSessions(loadSessions()); });
+    sessionsBox.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-revoke-session]");
+      if (b) drawSessions(revokeSessions(b.dataset.revokeSession));
+    });
+    document.getElementById("sessions-revoke-all").addEventListener("click", () => {
+      if (confirm("Завершити всі входи, крім цього пристрою?")) drawSessions(revokeSessions("all"));
+    });
+
+    // Discord: прив'язка для входу без пароля (розділ видно, лише коли вхід через Discord налаштовано на сервері)
+    const dDetails = document.getElementById("discord-details");
+    const dMsg = document.getElementById("discord-msg");
+    const drawDiscord = (st) => {
+      if (!st.ok) { dMsg.textContent = st.error; return; }
+      dDetails.hidden = !st.enabled && !st.linked;
+      document.getElementById("discord-line").textContent = st.linked
+        ? "Прив'язано: " + st.name + ". Можна входити кнопкою «Увійти через Discord»."
+        : "Прив'яжіть Discord, щоб входити без пароля.";
+      document.getElementById("discord-link").hidden = st.linked || !st.enabled;
+      document.getElementById("discord-unlink").hidden = !st.linked;
+    };
+    discordConfig().then((cfg) => { if (cfg.enabled) drawDiscord(discordStatus()); });
+    document.getElementById("discord-link").addEventListener("click", () => {
+      const res = discordLinkCode();
+      if (!res.ok) { dMsg.textContent = res.error; return; }
+      location.href = discordStartUrl("link", res.code);
+    });
+    document.getElementById("discord-unlink").addEventListener("click", () => {
+      if (confirm("Відв'язати Discord? Входити можна буде лише паролем.")) drawDiscord(discordUnlink());
+    });
+    // Повернення з Discord після прив'язки
+    const back = new URLSearchParams(location.hash.slice(1));
+    if (back.has("discord") || back.has("discord_error")) {
+      history.replaceState(null, "", location.pathname + location.search);
+      document.getElementById("btn-edit-profile").click();
+      dDetails.hidden = false;
+      dDetails.open = true;
+      dMsg.style.color = back.has("discord_error") ? "#8a2b2b" : "";
+      dMsg.textContent = back.has("discord_error") ? (DISCORD_ERRORS[back.get("discord_error")] || "Не вдалося прив'язати Discord.") : "Discord прив'язано.";
+      drawDiscord(discordStatus());
+    }
+
     // Прийшли з банера «змініть тимчасовий пароль» — одразу відкриваємо зміну пароля
     if (new URLSearchParams(location.search).get("changePassword") === "1") {
       document.getElementById("btn-edit-profile").click();

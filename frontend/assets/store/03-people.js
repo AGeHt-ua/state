@@ -125,7 +125,47 @@ function registerUser({ login, password, name, post, accountType, statId, contac
 
 function loginWithPassword(login, password) {
   login = String(login || "").trim().toLowerCase();
-  const res = apiRequest("POST", "/api/auth", { login, password: String(password || "") });
+  return finishLogin(apiRequest("POST", "/api/auth", { login, password: String(password || "") }));
+}
+
+// Вхід через Discord: сервер повертає на сайт одноразовий код (#discord_code=…), обмінюємо його на вхід
+function loginWithDiscordCode(code) {
+  return finishLogin(apiRequest("POST", "/api/discord/exchange", { code: String(code || "") }));
+}
+
+// Адреса старту входу / прив'язки Discord (перехід браузера на сервер, звідти — на Discord)
+function discordStartUrl(mode, code) {
+  return REMOTE.url + "/api/discord/start?mode=" + (mode === "link" ? "link" : "login") + (code ? "&code=" + encodeURIComponent(code) : "");
+}
+
+// Чи налаштовано на сервері вхід через Discord (кнопки показуються лише тоді)
+async function discordConfig() {
+  const res = await apiFetch("GET", "/api/health");
+  return { enabled: !!(res.ok && res.data.discord), required: !!(res.ok && res.data.requireDiscord) };
+}
+function discordStatus() {
+  const res = apiRequest("GET", "/api/discord/status");
+  return res.ok ? Object.assign({ ok: true }, res.data) : { ok: false, error: res.data.error || "Не вдалося перевірити Discord." };
+}
+function discordLinkCode() {
+  const res = apiRequest("POST", "/api/discord/link-code", {});
+  return res.ok ? { ok: true, code: res.data.code } : { ok: false, error: res.data.error || "Не вдалося почати прив'язку." };
+}
+function discordUnlink() {
+  const res = apiRequest("POST", "/api/discord/unlink", {});
+  return res.ok ? Object.assign({ ok: true }, res.data) : { ok: false, error: res.data.error || "Не вдалося відв'язати Discord." };
+}
+const DISCORD_ERRORS = {
+  not_configured: "Вхід через Discord ще не налаштовано.",
+  expired: "Час на вхід минув. Спробуйте ще раз.",
+  cancelled: "Вхід через Discord скасовано.",
+  failed: "Discord не підтвердив вхід. Спробуйте ще раз.",
+  not_member: "Вхід дозволено лише учасникам Discord-сервера проєкту.",
+  already_linked: "Цей Discord уже прив'язаний до іншого акаунта.",
+  too_many: "Забагато нових акаунтів з вашої мережі. Спробуйте пізніше."
+};
+
+function finishLogin(res) {
   REMOTE.lastError = res.ok ? "" : (res.data.error || "");
   if (!res.ok) return null;
   setApiToken(res.data.token);
@@ -229,6 +269,35 @@ function changePassword(oldPassword, newPassword) {
   const res = apiRequest("POST", "/api/password", { oldPassword: String(oldPassword || ""), newPassword });
   if (res.ok) { try { localStorage.removeItem("state_must_change"); } catch { /* приватний режим */ } }
   return res.ok ? { ok: true } : { ok: false, error: res.data.error || "Не вдалося змінити пароль." };
+}
+
+/* ---------- Ієрархія (так само перевіряє сервер) ----------
+   Головний адміністратор (100) > повні права — гілка Губернатора чи всі права (80) > керують людьми чи структурою (60) >
+   посадовці (40) > громадяни (0). Змінювати й позбавляти прав можна лише нижчих; підняти до свого рангу — не можна. */
+const SUPER_ADMIN = "admin";
+const MANAGER_PERMS = ["managePeople", "approveProfiles", "manageCongress", "manageStructure", "manageRoutes"];
+function userRank(u) {
+  if (!u) return 0;
+  if (u.login === SUPER_ADMIN) return 100;
+  const perms = userPermissions(u);
+  if (((u.roles || [])[0]) === "governor" || Object.keys(PERMISSION_LABELS).every((p) => perms.includes(p))) return 80;
+  if (perms.some((p) => MANAGER_PERMS.includes(p))) return 60;
+  return isStaff(u) ? 40 : 0;
+}
+function isSuperAdmin(u) { return !!u && u.login === SUPER_ADMIN; }
+function canManageUser(actor, target) {
+  if (!actor || !target || target.login === SUPER_ADMIN) return false;
+  return isSuperAdmin(actor) || userRank(actor) > userRank(target);
+}
+
+// Активні входи: де й коли ви увійшли; завершити окремий вхід або всі, крім поточного
+function loadSessions() {
+  const res = apiRequest("GET", "/api/sessions");
+  return res.ok ? { ok: true, items: res.data.items || [] } : { ok: false, error: res.data.error || "Не вдалося завантажити входи." };
+}
+function revokeSessions(target) {
+  const res = apiRequest("POST", "/api/sessions/revoke", target === "all" ? { all: true } : { id: target });
+  return res.ok ? { ok: true, items: res.data.items || [] } : { ok: false, error: res.data.error || "Не вдалося завершити вхід." };
 }
 
 // Скидання пароля адміністратором (managePeople): повертає тимчасовий пароль, людина змінить його після входу

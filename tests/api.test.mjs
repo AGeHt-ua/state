@@ -4,6 +4,8 @@
 // Кожна група запитів іде з окремої «адреси» (заголовок CF-Connecting-IP — локально його можна задати, у Cloudflare — ні),
 // щоб обмеження частоти з однієї групи не заважали іншим.
 
+import { startMockDiscord } from "./mock-discord.mjs";
+
 const B = process.env.TEST_URL || "http://localhost:8787";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "t-admin";
 const RUN = Date.now().toString(36);
@@ -155,6 +157,7 @@ check("вхід тимчасовим паролем із вимогою змін
 r = await post("/api/password", { oldPassword: temp, newPassword: pwd(people.staff) }, tempLogin.body.token);
 const after = await post("/api/auth", { login: people.staff, password: pwd(people.staff) });
 check("після зміни вимога знята", r.status === 200 && after.body.mustChangePassword === false);
+T.staff = after.body.token; // скидання пароля завершило попередні входи співробітника
 check("співробітник не скидає чужі паролі", (await post("/api/reset-password", { login: people.head }, after.body.token)).status === 403);
 
 // ---------- 9. Журнал ----------
@@ -182,6 +185,102 @@ check("блокування після 10 невдалих входів", blocke
 ip = "10.0.9.2";
 check("інші акаунти входять", !!(await login(people.cm1, pwd(people.cm1))));
 check("фото, якого немає, — 404", (await get("/api/photo/" + cit)).status === 404);
+
+// ---------- 12. Ієрархія: ніхто, крім головного адміністратора, не дає повних прав і не чіпає рівних/вищих ----------
+ip = "10.0.10.1";
+check("зарезервований логін — 409", (await register("root")).status === 409);
+const gov = u("gov"), gov2 = u("govb"), mgr = u("mgr");
+for (const [i, l] of [gov, gov2, mgr].entries()) { ip = "10.0.11." + i; await register(l); }
+let all = (await state(admin)).state_users;
+const pick = (l) => all.find((x) => x.login === l);
+r = await sync(admin, "state_users", [
+  Object.assign({}, pick(gov), { roles: ["governor"], office: "governor", positionId: "governor-chief" }),
+  Object.assign({}, pick(gov2), { roles: ["governor"], office: "governor", positionId: "governor-chief" }),
+  Object.assign({}, pick(mgr), { roles: ["official"], office: "directors", positionId: "director", extraPermissions: ["managePeople"] })
+]);
+check("головний адміністратор призначає губернаторів і менеджера", r.status === 200, r.body.error);
+ip = "10.0.12.1";
+const TG = await login(gov, pwd(gov)), TM = await login(mgr, pwd(mgr));
+all = (await state(TG)).state_users;
+check("губернатор не змінює головного адміністратора", (await sync(TG, "state_users", [Object.assign({}, pick("admin") || { login: "admin" }, { roles: ["citizen"] })])).status === 403);
+check("губернатор не чіпає рівного губернатора", (await sync(TG, "state_users", [Object.assign({}, pick(gov2), { roles: ["citizen"], office: "citizens", positionId: "" })])).status === 403);
+check("губернатор не робить нових губернаторів", (await sync(TG, "state_users", [Object.assign({}, pick(people.staff), { roles: ["governor"], office: "governor", positionId: "governor-chief" })])).status === 403);
+check("губернатор не видає повних прав", (await sync(TG, "state_users", [Object.assign({}, pick(people.staff), { extraPermissions: ["createDocs", "publishDocs", "approveDocs", "approveAnyDocs", "editOwnDocs", "editAllDocs", "manageDocs", "manageAppeals", "managePeople", "manageStructure", "manageRoutes", "approveProfiles", "manageCongress"] })])).status === 403);
+check("губернатор не скидає пароль головному адміністратору", (await post("/api/reset-password", { login: "admin" }, TG)).status === 403);
+check("губернатор не видаляє рівного", (await post("/api/delete-user", { login: gov2 }, TG)).status === 403);
+check("губернатор керує нижчими (співробітник)", (await sync(TG, "state_users", [Object.assign({}, pick(people.staff), { post: "Старший співробітник" })])).status === 200);
+check("менеджер не чіпає губернатора", (await sync(TM, "state_users", [Object.assign({}, pick(gov), { roles: ["citizen"] })])).status === 403);
+all = (await state(TM)).state_users;
+check("менеджер не видає права, яких не має", (await sync(TM, "state_users", [Object.assign({}, pick(people.staff), { extraPermissions: ["manageStructure"] })])).status === 403);
+check("менеджер не підносить до свого рангу", (await sync(TM, "state_users", [Object.assign({}, pick(people.staff), { extraPermissions: ["managePeople"] })])).status === 403);
+check("губернатор не створює посаду рівня «Адміністратор»", (await sync(TG, "state_positions", [{ id: u("pos"), office: "directors", title: "Супер", level: "admin", permissions: [] }])).status === 403);
+
+// ---------- 13. Журнал документа й переписку підписує сервер ----------
+const stampId = u("stamp");
+await sync(T.staff, "state_docs", [Object.assign({}, base, { id: stampId, status: "draft", history: [{ at: "2020-01-01T00:00:00Z", by: "admin", byName: "Губернатор", action: "Підроблено" }] })]);
+const stampedFull = (await get("/api/doc/" + stampId, admin)).body.doc;
+const lastEntry = stampedFull.history.slice(-1)[0];
+check("підпис у журналі — справжній автор і час сервера", lastEntry.by === people.staff && lastEntry.byName !== "Губернатор" && lastEntry.at !== "2020-01-01T00:00:00Z");
+const apId = u("apl");
+await sync(T.cit, "state_appeals", [{ id: apId, ownerLogin: cit, office: "directors", text: "Питання", status: "waiting", thread: [{ by: "admin", byName: "Директор", text: "Підроблена відповідь", at: "2020-01-01T00:00:00Z" }] }]);
+const apRow = (await state(T.cit)).state_appeals.find((x) => x.id === apId);
+check("повідомлення у зверненні підписане справжнім автором", apRow && apRow.thread[0].by === cit && apRow.thread[0].byName !== "Директор");
+
+// ---------- 14. Активні входи ----------
+ip = "10.0.13.1";
+const s1 = await login(people.cm2, pwd(people.cm2)), s2 = await login(people.cm2, pwd(people.cm2));
+const sessionList = (await get("/api/sessions", s1)).body.items || [];
+check("список активних входів", sessionList.length >= 2 && sessionList.some((x) => x.current));
+r = await post("/api/sessions/revoke", { all: true }, s1);
+check("вийти на всіх інших пристроях", r.status === 200 && (r.body.items || []).length === 1);
+check("інший вхід більше не діє", (await get("/api/sessions", s2)).status === 401);
+
+// ---------- 15. Вхід через Discord (підставний Discord на порту 9098; лише якщо Worker запущено з DISCORD_API_BASE) ----------
+if ((await get("/api/health")).body.discord) {
+  const mock = await startMockDiscord();
+  const hop = async (path) => {
+    const r = await fetch(B + path, { redirect: "manual", headers: { "CF-Connecting-IP": ip } });
+    return r.headers.get("location") || "";
+  };
+  // Повний прохід: сайт → /start → «Discord» → /callback → сайт з одноразовим кодом
+  const discordLogin = async (discordId) => {
+    const authUrl = new URL(await hop("/api/discord/start?mode=login"));
+    return hop("/api/discord/callback?code=" + discordId + "&state=" + authUrl.searchParams.get("state"));
+  };
+  const codeFrom = (loc) => new URLSearchParams(loc.split("#")[1] || "").get("discord_code");
+  ip = "10.0.15.1";
+  const dId = "71" + Date.now();
+  let loc = await discordLogin(dId);
+  check("Discord: новий учасник отримує одноразовий код", !!codeFrom(loc) && loc.includes("new=1"), loc);
+  const first = await post("/api/discord/exchange", { code: codeFrom(loc) });
+  check("Discord: код обмінюється на вхід", first.status === 200 && !!first.body.token);
+  const dUser = (first.body.data.state_users || []).find((x) => x.login === first.body.login);
+  check("Discord: створено акаунт громадянина", dUser && dUser.roles.includes("citizen") && dUser.office === "citizens");
+  check("Discord: код одноразовий", (await post("/api/discord/exchange", { code: codeFrom(loc) })).status === 400);
+  loc = await discordLogin(dId);
+  const again = await post("/api/discord/exchange", { code: codeFrom(loc) });
+  check("Discord: повторний вхід — той самий акаунт", again.body.login === first.body.login && !loc.includes("new=1"));
+  check("Discord: підроблений state відхиляється", (await hop("/api/discord/callback?code=1&state=" + "x".repeat(32))).includes("discord_error=expired"));
+  check("Discord: не учасник сервера не входить", (await discordLogin("7404" + Date.now())).includes("discord_error=not_member"));
+
+  // Прив'язка до наявного акаунта
+  const linkId = "72" + Date.now();
+  const linkCode = (await post("/api/discord/link-code", {}, T.cit)).body.code;
+  const linkAuth = new URL(await hop("/api/discord/start?mode=link&code=" + linkCode));
+  loc = await hop("/api/discord/callback?code=" + linkId + "&state=" + linkAuth.searchParams.get("state"));
+  check("Discord: прив'язка до акаунта", loc.includes("discord=linked") && (await get("/api/discord/status", T.cit)).body.linked === true, loc);
+  loc = await discordLogin(linkId);
+  check("Discord: вхід у прив'язаний акаунт", (await post("/api/discord/exchange", { code: codeFrom(loc) })).body.login === cit);
+  const stolen = (await post("/api/discord/link-code", {}, T.staff)).body.code;
+  const stolenAuth = new URL(await hop("/api/discord/start?mode=link&code=" + stolen));
+  loc = await hop("/api/discord/callback?code=" + linkId + "&state=" + stolenAuth.searchParams.get("state"));
+  check("Discord: чужий Discord не прив'язати вдруге", loc.includes("discord_error=already_linked"));
+  check("Discord: код прив'язки без входу не видається", (await post("/api/discord/link-code", {})).status === 401);
+  check("Discord: відв'язка", (await post("/api/discord/unlink", {}, T.cit)).body.linked === false);
+  await mock.close();
+} else {
+  console.log("ℹ️  Вхід через Discord не налаштовано на тестовому Worker — розділ 15 пропущено");
+}
 
 console.log(failures ? "\n" + failures + " перевірок не пройшло" : "\nУсі перевірки пройшли");
 process.exit(failures ? 1 : 0);

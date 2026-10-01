@@ -7,3 +7,5 @@ node_modules/
 seed-passwords.local.json
 worker/backups/
 .claude/
+test-results/
+playwright-report/

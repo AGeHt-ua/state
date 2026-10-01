@@ -7,7 +7,8 @@ whenStateReady(async function () {
     document.querySelectorAll('a[href="../all/"], .create-doc-link').forEach((el) => { el.style.display = "none"; });
     document.getElementById("inbox-lead").textContent = "Відповіді та оновлення за вашими зверненнями.";
   }
-  if (!canAdmin(user)) document.getElementById("nav-admin").style.display = "none";
+  const navAdmin = document.getElementById("nav-admin");
+  if (navAdmin && !canAdmin(user)) navAdmin.style.display = "none";
   // Рішення — тільки кнопками з перевіркою прав у store.js (canApproveDoc), без дій через адресу сторінки
   function decide(id, action) {
     const doc = getDoc(id);
@@ -39,14 +40,23 @@ whenStateReady(async function () {
       canForcePublish(d, user) ? `<button class="btn gold" type="button" data-decide="publish" data-id="${attr(d.id)}">Опублікувати одразу</button>` : ""
     ].join("");
   }
+  // Скільки документ чекає на поточному кроці; понад добу — підсвічуємо
+  function waitBadge(d) {
+    const since = Date.parse(d.lastApprovedAt || d.updatedAt || d.publishedAt || d.date);
+    if (!since) return "";
+    const hours = Math.floor((Date.now() - since) / 3600000);
+    if (hours < 1) return "";
+    const label = hours < 24 ? "чекає " + hours + " год" : "чекає " + Math.floor(hours / 24) + " дн.";
+    return ` <span class="badge ${hours >= 24 ? "warn" : "dead"}" title="Скільки документ чекає рішення на цьому кроці">${label}</span>`;
+  }
   function docCard(d, override) {
     const congress = d.approverOffice === "congress";
     const t = congress ? congressTally(d) : null;
     return `
-    <article class="act-row inbox-row">
+    <article class="act-row inbox-row${waitBadge(d).includes("warn") ? " is-overdue" : ""}">
       <div class="act-num">${esc(d.number || "б/н")}<br>${esc(formatDocWhen(d))}</div>
       <div>
-        <h3><a href="${attr(docHref(d))}">${esc(d.title)}</a></h3>
+        <h3><a href="${attr(docHref(d))}">${esc(d.title)}</a>${waitBadge(d)}</h3>
         <div class="act-meta">${esc(d.type)} · ${esc(officeName(d.office))} · автор: ${esc(d.author || "—")}</div>
         ${approvalPathHtml(d, { compact: true })}
         ${congress ? `<div class="vote-tally"><span class="pro">За: ${t.pro}</span><span class="contra">Проти: ${t.contra}</span><span>Потрібно ${t.needed} з ${t.members || 1}</span></div>` : ""}

@@ -1,5 +1,6 @@
 # Перевірка й викладання сервера (Cloudflare Worker).
-# На кожен push і pull request: піднімається Worker із чистою локальною базою й проганяються автотести (tests/api.test.mjs).
+# На кожен push і pull request: піднімається Worker із чистою локальною базою й проганяються автотести API (tests/api.test.mjs)
+# і UI-тести в браузері (tests/ui, Playwright) — вхід паролем і через підставний Discord, документ через погодження, ієрархія.
 # Якщо тести пройшли і це гілка main — Worker автоматично деплоїться, але лише коли в репозиторії додано секрети
 # CLOUDFLARE_API_TOKEN і CLOUDFLARE_ACCOUNT_ID (Settings → Secrets and variables → Actions). Без них — лише тести.
 name: Worker
@@ -7,9 +8,9 @@ name: Worker
 on:
   push:
     branches: [main]
-    paths: ["worker/**", "tests/**", ".github/workflows/worker.yml", "package.json"]
+    paths: ["worker/**", "frontend/**", "tests/**", ".github/workflows/worker.yml", "package.json", "playwright.config.mjs"]
   pull_request:
-    paths: ["worker/**", "tests/**", ".github/workflows/worker.yml", "package.json"]
+    paths: ["worker/**", "frontend/**", "tests/**", ".github/workflows/worker.yml", "package.json", "playwright.config.mjs"]
   workflow_dispatch:
 
 jobs:
@@ -23,7 +24,9 @@ jobs:
       - name: Тестова база й секрети
         working-directory: worker
         run: |
-          printf 'SEED_ACCOUNTS={"admin":"ci-admin-password-123"}\nFRONTEND_ORIGIN=http://localhost:8080\n' > .dev.vars
+          printf 'SEED_ACCOUNTS={"admin":"ci-admin-password-123"}\nFRONTEND_ORIGIN=http://localhost:8080\nFRONTEND_URL=http://localhost:8080/\n' > .dev.vars
+          # Підставний Discord (tests/mock-discord.mjs) — щоб перевірити вхід через Discord без справжніх ключів
+          printf 'DISCORD_CLIENT_ID=test-client\nDISCORD_CLIENT_SECRET=test-secret\nDISCORD_GUILD_ID=123\nDISCORD_API_BASE=http://127.0.0.1:9098\n' >> .dev.vars
           npx --yes wrangler@4 d1 execute state-db --local --file=schema.sql
       - name: Запуск Worker
         working-directory: worker
@@ -36,6 +39,23 @@ jobs:
           TEST_URL: http://localhost:8787
           ADMIN_PASSWORD: ci-admin-password-123
         run: node tests/api.test.mjs
+      - name: Встановлення Playwright
+        run: npm ci && npx playwright install --with-deps chromium
+      - name: UI-тести
+        env:
+          TEST_URL: http://localhost:8787
+          ADMIN_PASSWORD: ci-admin-password-123
+          CI: "1"
+        run: npm run test:ui
+      - name: Звіт UI-тестів
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
 
   deploy:
     needs: test

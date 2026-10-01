@@ -330,6 +330,12 @@ h2.page-title {
 .btn:active { transform: translateY(1px); }
 .btn.gold { background: var(--gold); color: var(--navy-950) !important; }
 .btn.gold:hover { background: #e2b843; }
+/* Вхід через Discord — фірмовий колір Discord */
+.btn.discord-btn { background: #5865f2; border-color: #5865f2; color: #fff !important; }
+.btn.discord-btn:hover { background: #4752c4; }
+.portal-login-card .discord-btn { margin-top: 8px; }
+.discord-register { display: grid; gap: 6px; justify-items: start; margin: 4px 0 18px; }
+.discord-register .muted { margin: 0; font-size: 13px; }
 .btn.ghost { background: var(--surface); color: var(--navy-800) !important; border-color: var(--line-strong); }
 .btn.ghost:hover { background: var(--surface-2); border-color: var(--navy-600); box-shadow: none; }
 .btn.ghost.light { color: #fff !important; border-color: rgba(255, 255, 255, .5); background: rgba(255, 255, 255, .08); }
@@ -995,3 +1001,7 @@ label > input, label > select, label > textarea { margin-top: 5px; }
 .audit-row small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; overflow-wrap: anywhere; }
 .audit-row > span { text-align: right; overflow-wrap: anywhere; }
 @media (max-width: 720px) { .audit-row { grid-template-columns: 1fr; gap: 2px; } .audit-row > span { text-align: left; } }
+
+/* Повідомлення: документ чекає рішення понад добу */
+.inbox-row.is-overdue { border-left: 3px solid var(--warn); padding-left: 10px; }
+.inbox-row h3 .badge { margin-left: 8px; vertical-align: middle; font-size: 11px; }

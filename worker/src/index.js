@@ -1,28 +1,28 @@
 /**
- * Cloudflare Worker: спільна база порталу (D1, вхід за логіном і паролем) + Discord OAuth.
- * Binding: DB (D1, схема — schema.sql)
- * Secrets: SEED_ACCOUNTS (JSON {"login":"пароль"} для службових акаунтів з accounts.js),
- *          DISCORD_CLIENT_SECRET, DISCORD_BOT_TOKEN, SESSION_SECRET (≥ 32 випадкові символи)
- * Vars: FRONTEND_ORIGIN — один або кілька origin через кому (напр. "https://user.github.io,http://localhost:8080")
+ * Cloudflare Worker: сервер порталу штату — спільна база (D1), вхід за паролем і через Discord, права, журнали.
+ * Bindings: DB (D1, схема — schema.sql, зміни — migrations/), BACKUPS (KV: щоденні копії, обмеження сповіщень)
+ * Secrets:  SEED_ACCOUNTS (JSON {"admin":"пароль"}), DISCORD_CLIENT_SECRET,
+ *           DISCORD_NOTIFY_WEBHOOK (канал документів), DISCORD_ALERT_WEBHOOK (помилки сервера)
+ * Vars:     FRONTEND_ORIGIN (дозволені сайти, через кому), FRONTEND_URL (адреса сайту для посилань і повернення з Discord),
+ *           DISCORD_CLIENT_ID, DISCORD_GUILD_ID (лише учасники цього Discord-сервера), REQUIRE_DISCORD ("1" — реєстрація лише через Discord)
  *
- * Захист:
- * - CORS лише для origin із FRONTEND_ORIGIN (жодного віддзеркалення довільного Origin);
- * - OAuth `state` у HttpOnly-cookie проти CSRF / підміни входу;
- * - сесія — HMAC-SHA256-підписаний токен у HttpOnly Secure cookie, а не параметри в URL;
- * - Discord-токени й деталі помилок не віддаються клієнту.
+ * Захист: CORS лише для FRONTEND_ORIGIN; вхід — випадковий токен (у базі лише його SHA-256); паролі — PBKDF2;
+ * права й ієрархію перевіряє сервер; Discord-токени не зберігаються й не віддаються клієнту.
  */
 
-const DISCORD_AUTH = "https://discord.com/api/oauth2/authorize";
-const DISCORD_TOKEN = "https://discord.com/api/oauth2/token";
-const DISCORD_API = "https://discord.com/api/v10";
-
-const SESSION_COOKIE = "state_session";
-const STATE_COOKIE = "state_oauth";
-const SESSION_TTL = 7 * 24 * 3600; // секунд
-const STATE_TTL = 600;
+// Адреса Discord; DISCORD_API_BASE — лише для автотестів (підставний Discord), у робочому сервері не задається
+const discordBase = (env) => (env.DISCORD_API_BASE || "https://discord.com").replace(/\/+$/, "");
 
 export default {
-  async fetch(request, env) {
+  // Щоденне завдання (cron у wrangler.toml): резервна копія бази й нагадування про документи, що чекають понад добу
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      try { await dailyBackup(env); } catch (err) { await reportError(env, err, "щоденна резервна копія"); }
+      try { await overdueReminder(env); } catch (err) { await reportError(env, err, "нагадування про погодження"); }
+    })());
+  },
+
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const origin = allowedOrigin(request, env);
 
@@ -32,7 +32,7 @@ export default {
 
     try {
       if (url.pathname === "/api/health") {
-        return cors(json({ ok: true, auth: Boolean(env.DISCORD_CLIENT_ID && env.SESSION_SECRET) }), origin);
+        return cors(json({ ok: true, discord: discordReady(env), requireDiscord: env.REQUIRE_DISCORD === "1" }), origin);
       }
       if (url.pathname === "/api/state" && request.method === "GET") {
         return cors(await handleState(request, env), origin);
@@ -51,6 +51,12 @@ export default {
       }
       if (url.pathname === "/api/reset-password" && request.method === "POST") {
         return cors(await handleResetPassword(request, env), origin);
+      }
+      if (url.pathname === "/api/sessions" && request.method === "GET") {
+        return cors(await handleSessions(request, env), origin);
+      }
+      if (url.pathname === "/api/sessions/revoke" && request.method === "POST") {
+        return cors(await handleRevokeSessions(request, env), origin);
       }
       if (url.pathname === "/api/audit" && request.method === "GET") {
         return cors(await handleAudit(request, env, url), origin);
@@ -71,104 +77,23 @@ export default {
         return cors(await handleVote(request, env, url), origin);
       }
       if (url.pathname === "/api/sync" && request.method === "POST") {
-        return cors(await handleSync(request, env), origin);
+        return cors(await handleSync(request, env, ctx), origin);
       }
-      if (url.pathname === "/api/login" && request.method === "GET") {
-        return handleLogin(url, env);
-      }
-      if (url.pathname === "/api/callback" && request.method === "GET") {
-        return handleCallback(request, url, env);
-      }
-      if (url.pathname === "/api/me" && request.method === "GET") {
-        const session = await readSession(request, env);
-        return cors(json(session ? { id: session.id, username: session.username, roles: session.roles } : { id: null }, session ? 200 : 401), origin);
-      }
-      if (url.pathname === "/api/logout" && request.method === "POST") {
-        // POST + перевірка Origin: вийти з чужого сайту примусово не вийде
-        if (!origin) return json({ error: "Forbidden" }, 403);
-        const res = cors(json({ ok: true }), origin);
-        res.headers.append("Set-Cookie", clearCookie(SESSION_COOKIE, "/"));
-        return res;
-      }
+      // Discord: старт і повернення — переходи браузера (без CORS), решта — запити сайту
+      if (url.pathname === "/api/discord/start" && request.method === "GET") return handleDiscordStart(request, env, url);
+      if (url.pathname === "/api/discord/callback" && request.method === "GET") return handleDiscordCallback(request, env, url);
+      if (url.pathname === "/api/discord/exchange" && request.method === "POST") return cors(await handleDiscordExchange(request, env), origin);
+      if (url.pathname === "/api/discord/link-code" && request.method === "POST") return cors(await handleDiscordLinkCode(request, env), origin);
+      if (url.pathname === "/api/discord/status" && request.method === "GET") return cors(await handleDiscordStatus(request, env), origin);
+      if (url.pathname === "/api/discord/unlink" && request.method === "POST") return cors(await handleDiscordUnlink(request, env), origin);
       return cors(json({ error: "Not found" }, 404), origin);
     } catch (err) {
       console.error(err);
+      ctx.waitUntil(reportError(env, err, request.method + " " + url.pathname));
       return cors(json({ error: "Внутрішня помилка" }, 500), origin);
     }
   }
 };
-
-async function handleLogin(url, env) {
-  if (!env.DISCORD_CLIENT_ID || !env.SESSION_SECRET) {
-    return json({ error: "Вхід через Discord ще не налаштовано" }, 501);
-  }
-  const state = randomToken(32);
-  const params = new URLSearchParams({
-    client_id: env.DISCORD_CLIENT_ID,
-    redirect_uri: `${url.origin}/api/callback`,
-    response_type: "code",
-    scope: "identify guilds.members.read",
-    state,
-    prompt: "consent"
-  });
-  const res = redirect(`${DISCORD_AUTH}?${params}`);
-  res.headers.append("Set-Cookie", cookie(STATE_COOKIE, state, { path: "/api/callback", maxAge: STATE_TTL, sameSite: "Lax" }));
-  return res;
-}
-
-async function handleCallback(request, url, env) {
-  if (!env.DISCORD_CLIENT_ID || !env.DISCORD_CLIENT_SECRET || !env.SESSION_SECRET) {
-    return json({ error: "Вхід через Discord ще не налаштовано" }, 501);
-  }
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
-  const expected = getCookie(request, STATE_COOKIE);
-  if (!code || !state || !expected || !timingSafeEqual(state, expected)) {
-    return json({ error: "Недійсний запит входу. Спробуйте ще раз." }, 400);
-  }
-
-  const tokenRes = await fetch(DISCORD_TOKEN, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: env.DISCORD_CLIENT_ID,
-      client_secret: env.DISCORD_CLIENT_SECRET,
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: `${url.origin}/api/callback`
-    })
-  });
-  const token = await tokenRes.json().catch(() => ({}));
-  if (!tokenRes.ok || !token.access_token) {
-    console.warn("discord token exchange failed", tokenRes.status);
-    return json({ error: "Не вдалося увійти через Discord" }, 401);
-  }
-
-  const meRes = await fetch(`${DISCORD_API}/users/@me`, {
-    headers: { Authorization: `Bearer ${token.access_token}` }
-  });
-  if (!meRes.ok) return json({ error: "Не вдалося отримати профіль Discord" }, 502);
-  const me = await meRes.json();
-
-  // Ролі беремо з сервера Discord від імені бота — клієнт не може їх підмінити
-  let roles = [];
-  if (env.DISCORD_BOT_TOKEN && env.DISCORD_GUILD_ID) {
-    const memberRes = await fetch(`${DISCORD_API}/guilds/${env.DISCORD_GUILD_ID}/members/${me.id}`, {
-      headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` }
-    });
-    if (memberRes.ok) roles = (await memberRes.json()).roles || [];
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-  const session = await signSession({ id: String(me.id), username: String(me.username || ""), roles, iat: now, exp: now + SESSION_TTL }, env.SESSION_SECRET);
-
-  const frontend = firstOrigin(env) || "http://localhost:8080";
-  const res = redirect(new URL("cabinet/", frontend.endsWith("/") ? frontend : frontend + "/").toString());
-  // SameSite=None потрібен, бо фронт (GitHub Pages) і Worker на різних сайтах; краще — спільний домен і SameSite=Lax
-  res.headers.append("Set-Cookie", cookie(SESSION_COOKIE, session, { path: "/", maxAge: SESSION_TTL, sameSite: "None" }));
-  res.headers.append("Set-Cookie", clearCookie(STATE_COOKIE, "/api/callback"));
-  return res;
-}
 
 /* ---------- Спільна база порталу (D1): акаунти з паролем і колекції сайту ----------
    Сервер сам перевіряє права кожного запису й фільтрує, що кому віддавати — за тими ж правилами, що й store.js:
@@ -209,6 +134,10 @@ const USER_ADMIN_PERMS = ["managePeople", "approveProfiles", "manageCongress"];
 const STRUCTURE_PERMS = ["manageStructure", "manageRoutes"];
 const LOGIN_RE = /^[a-z0-9_.-]{3,32}$/;
 const MIN_PASSWORD = 8;
+// Логіни, під якими не можна зареєструватися (службові й ті, що видають себе за адміністрацію)
+const RESERVED_LOGINS = ["admin", "administrator", "adm", "root", "system", "support", "moderator", "owner", "governor", "gubernator", "state"];
+// Головний адміністратор порталу: його не може змінити, понизити, скинути пароль чи видалити ніхто інший
+const SUPER_ADMIN = "admin";
 // Обмеження частоти (вікно в секундах): захист від перебору паролів, масової реєстрації та спаму
 const LIMITS = {
   authIp: { max: 30, window: 15 * 60 },       // невдалих спроб входу з однієї адреси
@@ -238,6 +167,7 @@ async function handleState(request, env) {
 async function handleRegister(request, env) {
   const body = await readJson(request);
   if (!body) return json({ error: "Невірний запит." }, 400);
+  if (env.REQUIRE_DISCORD === "1") return json({ error: "Реєстрація на порталі — лише через Discord." }, 403);
   const login = String(body.login || "").trim().toLowerCase();
   const password = String(body.password || "");
   const name = String(body.name || "").trim();
@@ -247,7 +177,7 @@ async function handleRegister(request, env) {
   if (name.length > 64) return json({ error: "Ім'я занадто довге (до 64 символів)." }, 400);
   if (!(await hit(env, "reg:" + clientIp(request), LIMITS.register))) return tooMany("Забагато реєстрацій з вашої мережі. Спробуйте за годину.");
 
-  const taken = login in seedAccounts(env) ||
+  const taken = RESERVED_LOGINS.includes(login) || login in seedAccounts(env) ||
     await env.DB.prepare("SELECT 1 FROM accounts WHERE login = ?").bind(login).first() ||
     await env.DB.prepare("SELECT 1 FROM rows WHERE coll = 'state_users' AND id = ?").bind(login).first();
   if (taken) return json({ error: "Такий логін уже зайнятий." }, 409);
@@ -303,15 +233,170 @@ async function handlePasswordLogin(request, env) {
   }
 
   await env.DB.prepare("DELETE FROM limits WHERE key = ?").bind(failKey).run();
+  return issueSession(request, env, login, !!(account && account.must_change));
+}
+
+// Новий вхід: випадковий токен (у базі — лише SHA-256), дані порталу одразу у відповіді
+async function issueSession(request, env, login, mustChangePassword) {
   const token = randomToken(32);
   const now = Math.floor(Date.now() / 1000);
   await env.DB.batch([
     env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now),
-    env.DB.prepare("INSERT INTO sessions (token_hash, login, expires_at) VALUES (?, ?, ?)").bind(await sha256(token), login, now + TOKEN_TTL)
+    env.DB.prepare("INSERT INTO sessions (token_hash, login, expires_at, created_at, last_seen, ua) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(await sha256(token), login, now + TOKEN_TTL, now, now, deviceOf(request))
   ]);
   const actor = await loadActor(env, login);
-  return json({ ok: true, login, token, scope: scopeOf(actor), mustChangePassword: !!(account && account.must_change),
+  return json({ ok: true, login, token, scope: scopeOf(actor), mustChangePassword,
     data: await readCollections(env, COLLECTIONS, actor, { base: baseOf(request) }) });
+}
+
+/* ---------- Вхід через Discord ----------
+   1) сайт веде на /api/discord/start (mode=login або mode=link з одноразовим кодом прив'язки);
+   2) Discord повертає на /api/discord/callback: перевіряємо state, отримуємо профіль, за DISCORD_GUILD_ID — членство на сервері;
+   3) вхід: знаходимо акаунт за Discord ID (або створюємо громадянина), видаємо одноразовий код і повертаємо на сайт
+      (#discord_code=…) — сайт обмінює його на вхід POST /api/discord/exchange. Токен входу ніколи не потрапляє в адресу. */
+function discordReady(env) {
+  return !!(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET);
+}
+function frontendUrl(env) {
+  return env.FRONTEND_URL || (origins(env)[0] ? origins(env)[0] + "/" : "/");
+}
+function backToSite(env, path, hash) {
+  return redirect(frontendUrl(env) + path + (hash ? "#" + hash : ""));
+}
+async function putState(env, kind, login, data, ttl) {
+  const code = randomToken(24);
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM oauth_states WHERE expires_at < ?").bind(now),
+    env.DB.prepare("INSERT INTO oauth_states (state, kind, login, data, expires_at) VALUES (?, ?, ?, ?, ?)").bind(code, kind, login || "", data || "", now + ttl)
+  ]);
+  return code;
+}
+// Одноразовий код: читається й одразу видаляється
+async function takeState(env, kind, code) {
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(String(code || ""))) return null;
+  const row = await env.DB.prepare("DELETE FROM oauth_states WHERE state = ? AND kind = ? RETURNING login, data, expires_at").bind(code, kind).first();
+  return row && row.expires_at > Math.floor(Date.now() / 1000) ? row : null;
+}
+
+async function handleDiscordStart(request, env, url) {
+  if (!discordReady(env)) return backToSite(env, "cabinet/portal/", "discord_error=not_configured");
+  const mode = url.searchParams.get("mode") === "link" ? "link" : "login";
+  let login = "";
+  if (mode === "link") {
+    const link = await takeState(env, "link", url.searchParams.get("code"));
+    if (!link) return backToSite(env, "cabinet/", "discord_error=expired");
+    login = link.login;
+  }
+  const state = await putState(env, "oauth", login, mode, 600);
+  const params = new URLSearchParams({
+    client_id: env.DISCORD_CLIENT_ID,
+    redirect_uri: url.origin + "/api/discord/callback",
+    response_type: "code",
+    scope: env.DISCORD_GUILD_ID ? "identify guilds.members.read" : "identify",
+    state
+  });
+  return redirect(discordBase(env) + "/api/oauth2/authorize?" + params);
+}
+
+async function handleDiscordCallback(request, env, url) {
+  const st = await takeState(env, "oauth", url.searchParams.get("state"));
+  if (!st) return backToSite(env, "cabinet/portal/", "discord_error=expired");
+  const mode = st.data === "link" ? "link" : "login";
+  const failPath = mode === "link" ? "cabinet/" : "cabinet/portal/";
+  const code = url.searchParams.get("code");
+  if (!code || !discordReady(env)) return backToSite(env, failPath, "discord_error=cancelled");
+
+  const tokenRes = await fetch(discordBase(env) + "/api/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: env.DISCORD_CLIENT_ID, client_secret: env.DISCORD_CLIENT_SECRET, grant_type: "authorization_code", code, redirect_uri: url.origin + "/api/discord/callback" })
+  });
+  const token = await tokenRes.json().catch(() => ({}));
+  if (!tokenRes.ok || !token.access_token) return backToSite(env, failPath, "discord_error=failed");
+  const auth = { headers: { Authorization: "Bearer " + token.access_token } };
+  const meRes = await fetch(discordBase(env) + "/api/v10/users/@me", auth);
+  if (!meRes.ok) return backToSite(env, failPath, "discord_error=failed");
+  const me = await meRes.json();
+  const discordId = String(me.id || "");
+  const discordName = String(me.username || "").slice(0, 64);
+  if (!/^\d{5,25}$/.test(discordId)) return backToSite(env, failPath, "discord_error=failed");
+  // Лише учасники вашого Discord-сервера (якщо задано DISCORD_GUILD_ID)
+  if (env.DISCORD_GUILD_ID) {
+    const member = await fetch(discordBase(env) + "/api/v10/users/@me/guilds/" + encodeURIComponent(env.DISCORD_GUILD_ID) + "/member", auth);
+    if (!member.ok) return backToSite(env, failPath, "discord_error=not_member");
+  }
+  const actorStub = { login: "", profile: { name: "Discord" } };
+
+  if (mode === "link") {
+    const other = await env.DB.prepare("SELECT login FROM accounts WHERE discord_id = ? AND login != ?").bind(discordId, st.login).first();
+    if (other) return backToSite(env, "cabinet/", "discord_error=already_linked");
+    await env.DB.batch([
+      env.DB.prepare("UPDATE accounts SET discord_id = ?, discord_name = ? WHERE login = ?").bind(discordId, discordName, st.login),
+      auditStatement(env, Object.assign(actorStub, { login: st.login }), "Прив'язано Discord", st.login, discordName)
+    ]);
+    return backToSite(env, "cabinet/", "discord=linked");
+  }
+
+  let account = await env.DB.prepare("SELECT login FROM accounts WHERE discord_id = ?").bind(discordId).first();
+  let created = false;
+  if (!account) {
+    if (!(await hit(env, "reg:" + clientIp(request), LIMITS.register))) return backToSite(env, failPath, "discord_error=too_many");
+    // Новий учасник: акаунт громадянина з логіном за Discord-ім'ям; пароль випадковий — вхід лише через Discord (або після скидання адміном)
+    const baseLogin = (discordName.toLowerCase().replace(/[^a-z0-9_.-]/g, "").slice(0, 26) || "user").padEnd(3, "0");
+    let login = baseLogin;
+    for (let i = 0; i < 20; i++) {
+      const busy = RESERVED_LOGINS.includes(login) || login in seedAccounts(env) || await env.DB.prepare("SELECT 1 FROM accounts WHERE login = ? UNION SELECT 1 FROM rows WHERE coll = 'state_users' AND id = ?").bind(login, login).first();
+      if (!busy) break;
+      login = baseLogin.slice(0, 26) + Math.floor(1000 + Math.random() * 9000);
+    }
+    const { salt, hash } = await hashPassword(randomToken(24));
+    const now = Date.now();
+    const profile = { login, name: String(me.global_name || me.username || login).slice(0, 64), statId: "", contact: "Discord: " + discordName, post: "",
+      roles: ["citizen"], office: "citizens", positionId: "", photo: "" };
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO accounts (login, salt, hash, created_at, discord_id, discord_name) VALUES (?, ?, ?, ?, ?, ?)").bind(login, salt, hash, now, discordId, discordName),
+      env.DB.prepare("INSERT INTO rows (coll, id, data, updated_at) VALUES ('state_users', ?, ?, ?)").bind(login, JSON.stringify(profile), now),
+      auditStatement(env, Object.assign(actorStub, { login }), "Реєстрація через Discord", login, discordName)
+    ]);
+    account = { login };
+    created = true;
+  }
+  const once = await putState(env, "login", account.login, "", 120);
+  return backToSite(env, "cabinet/portal/", "discord_code=" + once + (created ? "&new=1" : ""));
+}
+
+async function handleDiscordExchange(request, env) {
+  const body = await readJson(request);
+  const st = await takeState(env, "login", body && body.code);
+  if (!st) return json({ error: "Код входу застарів. Спробуйте увійти через Discord ще раз." }, 400);
+  return issueSession(request, env, st.login, false);
+}
+
+async function handleDiscordLinkCode(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  if (!discordReady(env)) return json({ error: "Вхід через Discord ще не налаштовано." }, 501);
+  return json({ code: await putState(env, "link", login, "", 600) });
+}
+
+async function handleDiscordStatus(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const row = await env.DB.prepare("SELECT discord_name FROM accounts WHERE login = ? AND discord_id IS NOT NULL").bind(login).first();
+  return json({ enabled: discordReady(env), linked: !!row, name: row ? row.discord_name : "" });
+}
+
+async function handleDiscordUnlink(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const actor = await loadActor(env, login);
+  await env.DB.batch([
+    env.DB.prepare("UPDATE accounts SET discord_id = NULL, discord_name = NULL WHERE login = ?").bind(login),
+    auditStatement(env, actor, "Відв'язано Discord", login, "")
+  ]);
+  return handleDiscordStatus(request, env);
 }
 
 async function handleSignout(request, env) {
@@ -353,6 +438,7 @@ async function handleDeleteUser(request, env) {
   if (!target) return json({ error: "Не вказано акаунт." }, 400);
   if (target === login) return json({ error: "Свій акаунт видалити не можна." }, 400);
   if (SEED_PROFILES[target] || target in seedAccounts(env)) return json({ error: "Службовий акаунт видалити не можна." }, 400);
+  if (!outranks(actor, await loadActor(env, target))) return json({ error: "Ця людина має рівний або вищий рівень доступу — видалити її може лише вищий за рангом." }, 403);
   await env.DB.batch([
     env.DB.prepare("DELETE FROM accounts WHERE login = ?").bind(target),
     env.DB.prepare("DELETE FROM sessions WHERE login = ?").bind(target),
@@ -366,7 +452,7 @@ async function handleDeleteUser(request, env) {
 }
 
 // Зміни приходять як різниця: які елементи колекції додано/змінено і які видалено
-async function handleSync(request, env) {
+async function handleSync(request, env, ctx) {
   const login = await tokenLogin(request, env);
   if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
   const body = await readJson(request);
@@ -376,6 +462,7 @@ async function handleSync(request, env) {
   const actor = await loadActor(env, login);
   const base = baseOf(request);
   const prepared = [];
+  const notices = [];
   const touched = new Set();
   let maxRev = 0;
   for (const op of ops) {
@@ -396,9 +483,8 @@ async function handleSync(request, env) {
     }
     const removes = (Array.isArray(op.remove) ? op.remove : []).map((raw) => String(raw || "").slice(0, 128)).filter(Boolean);
 
-    const partialDocs = coll === "state_docs" ? upserts.filter((u) => u.partial) : [];
-    const partialOld = partialDocs.length ? await readRows(env, coll, partialDocs.map((u) => u.id)) : {};
-    partialDocs.forEach((u) => {
+    const partialOld = (coll === "state_docs" || coll === "state_appeals") && upserts.length ? await readRows(env, coll, upserts.map((u) => u.id)) : {};
+    upserts.filter((u) => coll === "state_docs" && u.partial).forEach((u) => {
       const old = partialOld[u.id];
       if (old) DOC_HEAVY_FIELDS.forEach((k) => { if (u.row[k] === undefined && old[k] !== undefined) u.row[k] = old[k]; });
     });
@@ -418,13 +504,14 @@ async function handleSync(request, env) {
     // Скорочений документ (без версій та історії) доповнюємо збереженими в базі; фото профілю, що прийшло посиланням, лишається тим, що в базі
     const needExisting = upserts.filter((u) => coll === "state_users" && typeof u.row.photo === "string" && u.row.photo.includes("/api/photo/"));
     const existing = needExisting.length ? await readRows(env, coll, needExisting.map((u) => u.id)) : {};
+    const nowIso = new Date().toISOString();
     for (const u of upserts) {
       const old = existing[u.id] || partialOld[u.id];
-      if (coll === "state_docs" && u.partial && old) {
-        u.row.history = (old.history || []).concat(u.row.history || []).slice(-80);
-        u.row.versions = (old.versions || []).concat(u.row.versions || []).slice(-30);
+      if (coll === "state_docs") {
+        stampDoc(u.row, partialOld[u.id], actor, nowIso);
+        u.row.versions = compactVersions(u.row.versions);
       }
-      if (coll === "state_docs") u.row.versions = compactVersions(u.row.versions);
+      if (coll === "state_appeals") stampAppeal(u.row, partialOld[u.id], actor, nowIso);
       if (coll === "state_users" && typeof u.row.photo === "string" && u.row.photo.includes("/api/photo/")) u.row.photo = (old && old.photo) || "";
       if (coll === "state_users" && String(u.row.photo || "").length > MAX_PHOTO) return json({ error: "Фото завелике. Оберіть менше зображення." }, 413);
       u.data = JSON.stringify(u.row);
@@ -445,10 +532,11 @@ async function handleSync(request, env) {
       // «Надгробок»: браузери з кешем дізнаються, що запис видалено
       statements.push(env.DB.prepare("INSERT INTO tombstones (coll, id, at) VALUES (?, ?, ?) ON CONFLICT (coll, id) DO UPDATE SET at = excluded.at").bind(coll, id, now));
     });
-    for (const st of await sideEffects(env, actor, coll, upserts, removes, now)) statements.push(st);
+    for (const st of await sideEffects(env, actor, coll, upserts, removes, now, notices)) statements.push(st);
   }
   if (statements.length > 500) return json({ error: "Забагато змін за раз." }, 400);
   if (statements.length) await env.DB.batch(statements);
+  if (notices.length && ctx) ctx.waitUntil(notifyDiscord(env, env.DISCORD_NOTIFY_WEBHOOK, notices));
   return json({ ok: true, data: await readCollections(env, [...touched], actor, { base }) });
 }
 
@@ -467,8 +555,11 @@ async function readRevs(env, coll, ids) {
 async function checkWrite(env, actor, coll, upserts, removes) {
   const noRights = "Недостатньо прав для цієї дії.";
   if (!upserts.length && !removes.length) return "";
-  if (coll === "state_users") return actor.can(USER_ADMIN_PERMS) ? "" : noRights;
-  if (["state_offices", "state_positions", "state_approval_routes", "state_doc_types"].includes(coll)) return actor.can(STRUCTURE_PERMS) ? "" : noRights;
+  if (coll === "state_users") return actor.can(USER_ADMIN_PERMS) ? checkUsersWrite(env, actor, upserts, removes) : noRights;
+  if (["state_offices", "state_positions", "state_approval_routes", "state_doc_types"].includes(coll)) {
+    if (!actor.can(STRUCTURE_PERMS)) return noRights;
+    return checkStructureWrite(env, actor, coll, upserts, removes);
+  }
   if (coll === "state_doc_backgrounds") return actor.staff ? "" : noRights;
   if (coll === "state_docs") return checkDocsWrite(env, actor, upserts, removes);
 
@@ -662,7 +753,130 @@ async function loadActor(env, login) {
     const extra = (Array.isArray(user.extraPermissions) ? user.extraPermissions : []).filter((p) => ALL_PERMISSIONS.includes(p));
     perms = [...new Set(own.concat(extra))];
   }
-  return { login, staff, perms, profile: user, can: (list) => list.some((p) => perms.includes(p)) };
+  const full = ALL_PERMISSIONS.every((p) => perms.includes(p));
+  return { login, staff, perms, profile: user, full, rank: rankOf(login, roles, staff, perms), can: (list) => list.some((p) => perms.includes(p)) };
+}
+
+/* ---------- Ієрархія ----------
+   Ранг: головний адміністратор (100) > повні права — гілка Губернатора чи всі права (80) >
+   керують людьми чи структурою (60) > посадовці (40) > громадяни й ті, хто чекає (0).
+   Змінювати, позбавляти прав, скидати пароль і видаляти можна лише тих, хто нижчий за рангом;
+   підвищити когось до свого рангу чи вище не можна; видати можна лише ті права, які маєш сам. */
+function rankOf(login, roles, staff, perms) {
+  if (login === SUPER_ADMIN) return 100;
+  if ((roles || [])[0] === "governor" || ALL_PERMISSIONS.every((p) => perms.includes(p))) return 80;
+  if (perms.some((p) => USER_ADMIN_PERMS.includes(p) || STRUCTURE_PERMS.includes(p))) return 60;
+  return staff ? 40 : 0;
+}
+
+function outranks(actor, target) {
+  if (!target || target.login === SUPER_ADMIN) return false;
+  return actor.login === SUPER_ADMIN || actor.rank > target.rank;
+}
+
+// Ранг і права, які людина МАЛА Б після зміни (нова посада, роль, особисті права)
+async function projectedActor(env, login, row) {
+  const roles = Array.isArray(row.roles) ? row.roles : [];
+  const staff = STAFF_ROLES.some((r) => roles.includes(r));
+  let perms = [];
+  if (roles[0] === "governor") perms = ALL_PERMISSIONS;
+  else if (staff) {
+    const position = await positionFor(env, row.positionId);
+    const own = position ? (position.level === "admin" ? ALL_PERMISSIONS : (position.permissions || [])) : [];
+    perms = [...new Set(own.concat((Array.isArray(row.extraPermissions) ? row.extraPermissions : []).filter((p) => ALL_PERMISSIONS.includes(p))))];
+  }
+  return { login, staff, perms, rank: rankOf(login, roles, staff, perms) };
+}
+
+const PROFILE_FIELDS = ["name", "post", "statId", "contact", "photo"];
+async function checkUsersWrite(env, actor, upserts, removes) {
+  const noRights = "Недостатньо прав для цієї дії з людиною.";
+  if (removes.length) return noRights; // видалення людей — лише через /api/delete-user
+  if (actor.login === SUPER_ADMIN) return "";
+  const old = await readRows(env, "state_users", upserts.map((u) => u.id));
+  for (const { id, row } of upserts) {
+    if (id === SUPER_ADMIN) return "Головного адміністратора може змінювати лише він сам.";
+    const before = old[id];
+    if (!before) return noRights; // нові люди з'являються лише через реєстрацію
+    const changed = Object.keys(Object.assign({}, before, row)).filter((k) => JSON.stringify(before[k] === undefined ? null : before[k]) !== JSON.stringify(row[k] === undefined ? null : row[k]));
+    if (!changed.length) continue;
+    // Лише профіль (ім'я, посада в підписі, контакти, фото) за підтвердженою заявкою самої людини — дозволено незалежно від рангу
+    if (changed.every((k) => PROFILE_FIELDS.includes(k)) && actor.can(["approveProfiles", "managePeople"]) && await matchesApprovedRequest(env, id, row)) continue;
+    const target = await loadActor(env, id);
+    if (!outranks(actor, target)) return "Ця людина має рівний або вищий рівень доступу — змінити її може лише вищий за рангом.";
+    if (changed.includes("congressMember") && !actor.can(["manageCongress"])) return noRights;
+    if (changed.some((k) => !["congressMember"].concat(PROFILE_FIELDS).includes(k)) && !actor.can(["managePeople"])) return noRights;
+    const after = await projectedActor(env, id, row);
+    if (after.rank >= actor.rank) return "Не можна надати людині рівень доступу, рівний вашому чи вищий. Повні права адміністратора видає лише головний адміністратор.";
+    const granted = after.perms.filter((p) => !target.perms.includes(p));
+    if (granted.some((p) => !actor.perms.includes(p))) return "Видати можна лише ті права, які маєте ви самі.";
+  }
+  return "";
+}
+
+async function matchesApprovedRequest(env, login, row) {
+  const r = await env.DB.prepare(
+    "SELECT data FROM rows WHERE coll = 'state_profile_requests' AND json_extract(data, '$.login') = ? AND json_extract(data, '$.status') = 'approved' ORDER BY updated_at DESC LIMIT 1"
+  ).bind(login).first();
+  if (!r) return false;
+  try {
+    const req = JSON.parse(r.data);
+    return ["name", "post", "statId", "contact"].every((k) => !req[k] || req[k] === row[k]);
+  } catch { return false; }
+}
+
+// Структура: не можна створити посаду/апарат, що дає більше прав, ніж маєте ви; гілку Губернатора й рівень «Адміністратор» — лише головний адміністратор
+async function checkStructureWrite(env, actor, coll, upserts, removes) {
+  if (actor.login === SUPER_ADMIN) return "";
+  const noRights = "Змінювати посади й апарати з правами, яких у вас немає, може лише вищий за рангом.";
+  if (coll === "state_positions") {
+    const old = await readRows(env, coll, upserts.map((u) => u.id).concat(removes));
+    const permsOf = (p) => (!p ? [] : p.level === "admin" ? ALL_PERMISSIONS : (p.permissions || []).concat(LEVEL_PERMISSIONS[DEFAULT_POSITIONS[p.id]] || []));
+    for (const { id, row } of upserts) {
+      if (id === "governor-chief" || row.level === "admin") return noRights;
+      const before = old[id] || (DEFAULT_POSITIONS[id] ? { id, level: DEFAULT_POSITIONS[id] } : null);
+      if (permsOf(row).concat(permsOf(before)).some((p) => !actor.perms.includes(p))) return noRights;
+    }
+    for (const id of removes) if (id === "governor-chief" || permsOf(old[id]).some((p) => !actor.perms.includes(p))) return noRights;
+  }
+  if (coll === "state_offices") {
+    const old = await readRows(env, coll, upserts.map((u) => u.id).concat(removes));
+    for (const { id, row } of upserts) if (row.role === "governor" || (old[id] && old[id].role === "governor") || id === "governor") return noRights;
+    for (const id of removes) if (id === "governor" || (old[id] && old[id].role === "governor")) return noRights;
+  }
+  return "";
+}
+
+/* ---------- Активні входи ---------- */
+function deviceOf(request) {
+  const ua = String(request.headers.get("User-Agent") || "");
+  const os = /Android/i.test(ua) ? "Android" : /iPhone|iPad/i.test(ua) ? "iOS" : /Windows/i.test(ua) ? "Windows" : /Mac OS/i.test(ua) ? "macOS" : /Linux/i.test(ua) ? "Linux" : "";
+  const br = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "";
+  return [br, os].filter(Boolean).join(", ").slice(0, 60) || "Невідомий пристрій";
+}
+
+async function handleSessions(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const current = await sha256(bearer(request));
+  const now = Math.floor(Date.now() / 1000);
+  const { results } = await env.DB.prepare("SELECT token_hash, created_at, last_seen, ua FROM sessions WHERE login = ? AND expires_at > ? ORDER BY last_seen DESC").bind(login, now).all();
+  return json({ items: results.map((r) => ({ id: r.token_hash.slice(0, 16), created: r.created_at, lastSeen: r.last_seen, device: r.ua || "Невідомий пристрій", current: r.token_hash === current })) });
+}
+
+async function handleRevokeSessions(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const current = await sha256(bearer(request));
+  const body = await readJson(request);
+  if (body && body.all) {
+    await env.DB.prepare("DELETE FROM sessions WHERE login = ? AND token_hash != ?").bind(login, current).run();
+  } else {
+    const id = String((body && body.id) || "");
+    if (!/^[A-Za-z0-9_-]{16}$/.test(id)) return json({ error: "Невірний запит." }, 400);
+    await env.DB.prepare("DELETE FROM sessions WHERE login = ? AND substr(token_hash, 1, 16) = ? AND token_hash != ?").bind(login, id, current).run();
+  }
+  return handleSessions(request, env);
 }
 
 async function positionFor(env, id) {
@@ -672,6 +886,113 @@ async function positionFor(env, id) {
   const row = await env.DB.prepare("SELECT data FROM rows WHERE coll = 'state_positions' AND id = ?").bind(String(id)).first();
   if (!row) return base;
   try { return Object.assign({}, base || {}, JSON.parse(row.data)); } catch { return base; }
+}
+
+/* ---------- Discord: сповіщення, нагадування, помилки ----------
+   Вебхуки задаються секретами (без них нічого не надсилається):
+   DISCORD_NOTIFY_WEBHOOK — канал для документів (на погодженні, опубліковано, відхилено, нагадування);
+   DISCORD_ALERT_WEBHOOK — канал для адміністрації: помилки сервера. Згадки (@everyone тощо) вимкнено. */
+async function notifyDiscord(env, webhook, lines) {
+  if (!webhook || !lines.length) return;
+  try {
+    await fetch(webhook, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: lines.join("\n").slice(0, 1900), allowed_mentions: { parse: [] } })
+    });
+  } catch (err) { console.error("discord", err); }
+}
+
+function docLink(env, id) {
+  return env.FRONTEND_URL ? "\n" + env.FRONTEND_URL + "acts/view/?id=" + encodeURIComponent(id) : "";
+}
+
+async function stepTitle(env, step) {
+  const raw = String(step || "");
+  if (raw === "congress") return "голосування Конгресу";
+  if (raw.startsWith("position:")) {
+    const p = await positionFor(env, raw.slice(9));
+    const titles = { "governor-chief": "Губернатор штату", director: "Директор департаменту", "prosecutor-chief": "Генеральний прокурор", "court-chief": "Голова Верховного Суду" };
+    return (p && p.title) || titles[raw.slice(9)] || raw.slice(9);
+  }
+  if (raw.startsWith("user:")) return "особисто " + raw.slice(5);
+  return raw || "погодження";
+}
+
+// Помилка сервера → канал адміністрації; однакова помилка — не частіше разу на 10 хвилин
+async function reportError(env, err, where) {
+  if (!env.DISCORD_ALERT_WEBHOOK) return;
+  const message = String((err && err.message) || err).slice(0, 300);
+  const key = "alert:" + (await sha256(where + "|" + message)).slice(0, 24);
+  try {
+    if (env.BACKUPS) {
+      if (await env.BACKUPS.get(key)) return;
+      await env.BACKUPS.put(key, "1", { expirationTtl: 600 });
+    }
+  } catch { /* без KV — надсилаємо без обмеження */ }
+  await notifyDiscord(env, env.DISCORD_ALERT_WEBHOOK, ["⚠️ Помилка сервера порталу (" + where + "): " + message]);
+}
+
+// Нагадування: документи, що чекають рішення понад добу
+async function overdueReminder(env) {
+  if (!env.DISCORD_NOTIFY_WEBHOOK) return;
+  const dayAgo = Date.now() - 24 * 3600 * 1000;
+  const { results } = await env.DB.prepare(
+    "SELECT id, json_extract(data, '$.title') AS title, json_extract(data, '$.approverOffice') AS step, updated_at FROM rows " +
+    "WHERE coll = 'state_docs' AND json_extract(data, '$.status') IN ('review', 'congress') AND updated_at < ? ORDER BY updated_at LIMIT 20"
+  ).bind(dayAgo).all();
+  if (!results.length) return;
+  const lines = ["⏰ Чекають рішення понад добу:"];
+  for (const r of results) lines.push("• «" + r.title + "» — " + await stepTitle(env, r.step) + " (" + Math.floor((Date.now() - r.updated_at) / 3600000) + " год)");
+  if (env.FRONTEND_URL) lines.push(env.FRONTEND_URL + "cabinet/inbox/");
+  await notifyDiscord(env, env.DISCORD_NOTIFY_WEBHOOK, lines);
+}
+
+/* ---------- Щоденна резервна копія ----------
+   Уся база (записи, акаунти з хешами паролів, журнал дій) → Cloudflare KV, ключ backup:РРРР-ММ-ДД, зберігається 31 день.
+   Відновлення — worker/scripts/restore-from-backup.mjs. Окремо D1 сам дозволяє відкотити базу на будь-який момент (Time Travel). */
+async function dailyBackup(env) {
+  if (!env.BACKUPS) return;
+  const rows = await env.DB.prepare("SELECT coll, id, updated_at, data FROM rows").all();
+  const accounts = await env.DB.prepare("SELECT login, salt, hash, created_at, must_change, discord_id, discord_name FROM accounts").all();
+  const audit = await env.DB.prepare("SELECT id, at, actor, action, target, details FROM audit ORDER BY id DESC LIMIT 5000").all();
+  // data вже JSON-текст: зберігаємо як рядок, без повторного розбору (економія процесорного часу)
+  const text = '{"v":1,"at":' + JSON.stringify(new Date().toISOString()) +
+    ',"rows":[' + rows.results.map((r) => '{"coll":' + JSON.stringify(r.coll) + ',"id":' + JSON.stringify(r.id) + ',"updated_at":' + r.updated_at + ',"data":' + JSON.stringify(r.data) + "}").join(",") +
+    '],"accounts":' + JSON.stringify(accounts.results) + ',"audit":' + JSON.stringify(audit.results) + "}";
+  await env.BACKUPS.put("backup:" + new Date().toISOString().slice(0, 10), text, { expirationTtl: 31 * 24 * 3600 });
+}
+
+/* ---------- Журнали підписує сервер ----------
+   Записи журналу документа, погоджень і версій, а також повідомлення у зверненнях підписуються справжнім
+   користувачем і часом сервера. Наявні записи змінити не можна (нові лише додаються), голоси — лише через /api/vote. */
+function appendStamped(oldList, newList, actor, nowIso, keepName) {
+  const before = Array.isArray(oldList) ? oldList : [];
+  const seen = new Set(before.map((e) => JSON.stringify(e)));
+  const name = actor.profile.name || actor.login;
+  const fresh = (Array.isArray(newList) ? newList : [])
+    .filter((e) => e && typeof e === "object" && !seen.has(JSON.stringify(e)))
+    .map((e) => Object.assign({}, e, { by: actor.login, byName: keepName && keepName(e) ? e.byName : name, at: nowIso }));
+  return before.concat(fresh);
+}
+
+const DOC_BY_FIELDS = ["approvedBy", "lastApprovedBy", "trashedBy", "returnedBy", "rejectedBy", "deletedBy"];
+function stampDoc(row, old, actor, nowIso) {
+  const o = old || {};
+  row.history = appendStamped(o.history, row.history, actor, nowIso).slice(-80);
+  row.versions = appendStamped(o.versions, row.versions, actor, nowIso).slice(-30);
+  // Рішення Конгресу підписане «Конгрес штату» — це колективне рішення, хто його зафіксував, видно в by
+  row.approvals = appendStamped(o.approvals, row.approvals, actor, nowIso, (e) => e.step === "congress");
+  DOC_BY_FIELDS.forEach((k) => { if (row[k] && row[k] !== o[k]) row[k] = actor.login; });
+  // Голоси змінюються лише через /api/vote; тут — або ті самі, або очищені при переході до наступного кроку
+  const votes = row.votes && typeof row.votes === "object" ? row.votes : {};
+  if (Object.keys(votes).length && JSON.stringify(votes) !== JSON.stringify(o.votes || {})) row.votes = o.votes || {};
+}
+
+function stampAppeal(row, old, actor, nowIso) {
+  const o = old || {};
+  row.thread = appendStamped(o.thread, row.thread, actor, nowIso);
+  if (row.closedBy && row.closedBy !== o.closedBy) { row.closedBy = actor.login; row.closedByName = actor.profile.name || actor.login; }
 }
 
 // Поля документа, яких немає в легкому списку: їх доповнює сервер, коли документ приходить скороченим
@@ -774,7 +1095,7 @@ function auditStatement(env, actor, action, target, details) {
 const DOC_STATUS_NAMES = { ok: "Чинний", dead: "Втратив чинність", trash: "У кошику", draft: "Проєкт", review: "На погодженні",
   congress: "На голосуванні Конгресу", rejected: "Відхилено", adopted: "Прийнято", deleted: "Видалено" };
 
-async function sideEffects(env, actor, coll, upserts, removes, now) {
+async function sideEffects(env, actor, coll, upserts, removes, now, notices = []) {
   const out = [];
   const ids = upserts.map((u) => u.id).concat(removes);
   if (!ids.length) return out;
@@ -805,7 +1126,7 @@ async function sideEffects(env, actor, coll, upserts, removes, now) {
   }
 
   if (coll === "state_docs") {
-    const { results } = await env.DB.prepare(`SELECT id, json_extract(data, '$.status') AS status, json_extract(data, '$.ownerLogin') AS owner, json_extract(data, '$.title') AS title, json_extract(data, '$.html') AS html FROM rows WHERE coll = 'state_docs' AND id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all();
+    const { results } = await env.DB.prepare(`SELECT id, json_extract(data, '$.status') AS status, json_extract(data, '$.ownerLogin') AS owner, json_extract(data, '$.title') AS title, json_extract(data, '$.html') AS html, json_extract(data, '$.approvalIndex') AS approvalIndex FROM rows WHERE coll = 'state_docs' AND id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all();
     const old = Object.fromEntries(results.map((r) => [r.id, r]));
     for (const { id, row } of upserts) {
       const o = old[id];
@@ -820,6 +1141,13 @@ async function sideEffects(env, actor, coll, upserts, removes, now) {
       } else if (o && o.owner && o.owner !== actor.login && o.html !== row.html) {
         out.push(auditStatement(env, actor, "Документ: змінено текст чужого документа", title, "автор: " + o.owner));
       }
+      // Сповіщення в Discord: новий крок погодження, публікація, відхилення, повернення
+      const stepChanged = was !== row.status || (o && Number(row.approvalIndex || 0) !== Number((old[id] && old[id].approvalIndex) || 0));
+      const link = docLink(env, id);
+      if (["review", "congress"].includes(row.status) && (stepChanged || !o)) notices.push("📄 На погодженні: «" + title + "» — " + await stepTitle(env, row.approverOffice) + link);
+      else if (row.status === "ok" && was !== "ok") notices.push("✅ Опубліковано: «" + title + "»" + link);
+      else if (row.status === "rejected" && was !== "rejected") notices.push("❌ Відхилено: «" + title + "»" + link);
+      else if (row.status === "draft" && ["review", "congress"].includes(was)) notices.push("↩️ Повернено на доопрацювання: «" + title + "»" + link);
       // Скасування актів: документ щойно став чинним — акти зі списку links.repeals втрачають чинність
       const repeals = row.links && Array.isArray(row.links.repeals) ? row.links.repeals.map(String).filter((x) => x && x !== id).slice(0, 50) : [];
       if (row.status === "ok" && was !== "ok" && repeals.length) {
@@ -847,6 +1175,7 @@ async function handleResetPassword(request, env) {
   const body = await readJson(request);
   const target = String((body && body.login) || "").trim().toLowerCase();
   if (!target || target === login) return json({ error: "Свій пароль змініть у профілі." }, 400);
+  if (!outranks(actor, await loadActor(env, target))) return json({ error: "Ця людина має рівний або вищий рівень доступу — скинути їй пароль може лише вищий за рангом." }, 403);
   const account = await env.DB.prepare("SELECT 1 FROM accounts WHERE login = ?").bind(target).first();
   if (!account) return json({ error: "Акаунт не знайдено або ще жодного разу не входив." }, 404);
   const alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -964,8 +1293,12 @@ class RawJson {
 async function tokenLogin(request, env) {
   const token = bearer(request);
   if (!token) return null;
-  const row = await env.DB.prepare("SELECT login, expires_at FROM sessions WHERE token_hash = ?").bind(await sha256(token)).first();
-  return row && row.expires_at > Math.floor(Date.now() / 1000) ? row.login : null;
+  const hash = await sha256(token);
+  const row = await env.DB.prepare("SELECT login, expires_at, last_seen FROM sessions WHERE token_hash = ?").bind(hash).first();
+  const now = Math.floor(Date.now() / 1000);
+  if (!row || row.expires_at <= now) return null;
+  if ((row.last_seen || 0) < now - 3600) await env.DB.prepare("UPDATE sessions SET last_seen = ? WHERE token_hash = ?").bind(now, hash).run();
+  return row.login;
 }
 
 function bearer(request) {
@@ -1004,44 +1337,9 @@ async function sha256(text) {
   return b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))));
 }
 
-/* ---------- Сесія: base64url(payload).base64url(HMAC-SHA256) ---------- */
-async function hmacKey(secret) {
-  return crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
-}
-
-async function signSession(payload, secret) {
-  const body = b64url(new TextEncoder().encode(JSON.stringify(payload)));
-  const sig = await crypto.subtle.sign("HMAC", await hmacKey(secret), new TextEncoder().encode(body));
-  return body + "." + b64url(new Uint8Array(sig));
-}
-
-async function readSession(request, env) {
-  const raw = getCookie(request, SESSION_COOKIE);
-  if (!raw || !env.SESSION_SECRET) return null;
-  const [body, sig] = raw.split(".");
-  if (!body || !sig) return null;
-  let ok = false;
-  try {
-    ok = await crypto.subtle.verify("HMAC", await hmacKey(env.SESSION_SECRET), fromB64url(sig), new TextEncoder().encode(body));
-  } catch {
-    return null;
-  }
-  if (!ok) return null;
-  try {
-    const payload = JSON.parse(new TextDecoder().decode(fromB64url(body)));
-    return payload.exp > Math.floor(Date.now() / 1000) ? payload : null;
-  } catch {
-    return null;
-  }
-}
-
 /* ---------- Допоміжне ---------- */
 function origins(env) {
   return String(env.FRONTEND_ORIGIN || "").split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean);
-}
-
-function firstOrigin(env) {
-  return origins(env)[0] || "";
 }
 
 function allowedOrigin(request, env) {
@@ -1069,20 +1367,6 @@ function timingSafeEqual(a, b) {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
-}
-
-function getCookie(request, name) {
-  const header = request.headers.get("Cookie") || "";
-  const hit = header.split(/;\s*/).find((c) => c.startsWith(name + "="));
-  return hit ? decodeURIComponent(hit.slice(name.length + 1)) : "";
-}
-
-function cookie(name, value, { path, maxAge, sameSite }) {
-  return `${name}=${encodeURIComponent(value)}; Path=${path}; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=${sameSite}`;
-}
-
-function clearCookie(name, path) {
-  return `${name}=; Path=${path}; Max-Age=0; HttpOnly; Secure; SameSite=None`;
 }
 
 function securityHeaders(headers) {

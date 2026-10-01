@@ -44,9 +44,11 @@ whenStateReady(async function () {
   function showTab(id) { current = id; history.replaceState(null, "", "#" + id); drawTabs(); if (id === "audit") { auditLoaded = false; drawAudit(); } }
 
   /* ---------- Спільні списки ---------- */
+  // Гілку Губернатора (повні права) може призначати лише головний адміністратор
   function officeOptions(selected, withNone) {
     return (withNone ? `<option value="">— Оберіть апарат —</option>` : "") +
-      allOffices().map((o) => `<option value="${attr(o.id)}"${o.id === selected ? " selected" : ""}>${esc(o.name)}</option>`).join("");
+      allOffices().filter((o) => o.role !== "governor" || isSuperAdmin(me) || o.id === selected)
+        .map((o) => `<option value="${attr(o.id)}"${o.id === selected ? " selected" : ""}>${esc(o.name)}</option>`).join("");
   }
   function positionOptions(officeId, selected) {
     const list = positionsOf(officeId);
@@ -151,9 +153,16 @@ whenStateReady(async function () {
     editingExtra = (u.extraPermissions || []).slice();
     drawUserPerms();
     $("user-perm-details").open = editingExtra.length > 0;
-    form.querySelector("[data-act=revoke]").hidden = !isStaff(u) || u.login === me.login;
-    form.querySelector("[data-act=delete-user]").hidden = !can.people || u.seeded || u.login === me.login;
-    form.querySelector("[data-act=reset-password]").hidden = !can.people || u.login === me.login;
+    // Рівний чи вищий за рангом — лише перегляд (так само перевіряє сервер)
+    const manageable = canManageUser(me, u);
+    form.querySelectorAll("select, input, [type=submit]").forEach((el) => { if (el.name !== "login") el.disabled = !manageable; });
+    if (manageable) form.positionId.disabled = !office;
+    $("user-rank-note").hidden = manageable;
+    $("user-rank-note").textContent = isSuperAdmin(u) ? "Це головний адміністратор порталу — змінити його може лише він сам."
+      : "Ця людина має рівний або вищий рівень доступу — змінити, позбавити прав чи видалити її може лише вищий за рангом.";
+    form.querySelector("[data-act=revoke]").hidden = !manageable || !isStaff(u) || u.login === me.login;
+    form.querySelector("[data-act=delete-user]").hidden = !manageable || !can.people || u.seeded || u.login === me.login;
+    form.querySelector("[data-act=reset-password]").hidden = !manageable || !can.people || u.login === me.login;
     syncLevelHelp();
     $("user-modal").hidden = false;
   }
@@ -173,10 +182,12 @@ whenStateReady(async function () {
     }).join("");
     syncFullAdmin();
   }
+  // Повні права адміністратора видає лише головний адміністратор
   function syncFullAdmin() {
     const boxes = Array.from(document.querySelectorAll("#user-perm-list input"));
     $("user-full-admin").checked = boxes.length > 0 && boxes.every((b) => b.checked);
-    $("user-full-admin").disabled = boxes.some((b) => !b.checked && b.disabled);
+    $("user-full-admin").disabled = !isSuperAdmin(me) || boxes.some((b) => !b.checked && b.disabled);
+    $("user-full-admin").closest("label").title = isSuperAdmin(me) ? "" : "Повні права видає лише головний адміністратор";
   }
   $("user-perm-list").addEventListener("change", () => {
     editingExtra = Array.from(document.querySelectorAll("#user-perm-list input:checked:not(:disabled)")).map((b) => b.value);
@@ -252,7 +263,7 @@ whenStateReady(async function () {
     form.title.value = p ? p.title : "";
     $("position-title").textContent = (p ? "Посада · " : "Нова посада · ") + officeName(p ? p.office : officeId);
     const lvl = p ? accessLevelOf(p) : "staff";
-    $("level-list").innerHTML = Object.keys(ACCESS_LEVELS).map((k) => `
+    $("level-list").innerHTML = Object.keys(ACCESS_LEVELS).filter((k) => k !== "admin" || isSuperAdmin(me) || k === lvl).map((k) => `
       <label class="choice"><input type="radio" name="level" value="${k}"${k === lvl ? " checked" : ""}><span><b>${esc(ACCESS_LEVELS[k].label)}</b><small>${esc(ACCESS_LEVELS[k].hint)}</small></span></label>`).join("") +
       (lvl === "custom" ? `<label class="choice"><input type="radio" name="level" value="custom" checked><span><b>Особливі права</b><small>налаштовані вручну нижче</small></span></label>` : "");
     const perms = p ? (p.permissions || []) : ACCESS_LEVELS.staff.permissions;

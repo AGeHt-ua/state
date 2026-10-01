@@ -5,12 +5,30 @@ compatibility_date = "2026-09-09"
 [vars]
 # Додайте адресу GitHub Pages через кому, напр. "https://<нік>.github.io,http://localhost:8080"
 FRONTEND_ORIGIN = "https://ageht-ua.github.io,http://localhost:8080"
+# Адреса сайту для посилань у сповіщеннях Discord
+FRONTEND_URL = "https://ageht-ua.github.io/state/frontend/"
+# Вхід через Discord (див. README): Client ID застосунку; секрет — npx wrangler secret put DISCORD_CLIENT_SECRET
 DISCORD_CLIENT_ID = ""
+# ID Discord-сервера: входити через Discord можуть лише його учасники (порожньо — будь-хто з Discord)
 DISCORD_GUILD_ID = ""
-ROLE_MAP_JSON = "{\"admin_stub\":[\"cabinet\",\"acts\",\"court\"]}"
+# "1" — нові акаунти лише через Discord (реєстрація з паролем вимикається)
+REQUIRE_DISCORD = ""
 
 # Створити базу: npx wrangler d1 create state-db  → вставити сюди отриманий database_id
 [[d1_databases]]
 binding = "DB"
 database_name = "state-db"
 database_id = "0fe2b205-f6a8-4227-907b-089dbd9958c3"
+
+# Щоденні резервні копії бази й обмеження частоти сповіщень про помилки
+[[kv_namespaces]]
+binding = "BACKUPS"
+id = "f31ddd89d99d48849a01f9a4928b6719"
+
+# Щодня о 06:00 UTC: резервна копія бази й нагадування про документи, що чекають понад добу
+[triggers]
+crons = ["0 6 * * *"]
+
+# Журнали Cloudflare (Workers → Observability): помилки й запити зберігаються для перегляду
+[observability]
+enabled = true

@@ -6,6 +6,10 @@
     "test": "node tests/api.test.mjs",
     "dev:worker": "cd worker && npx wrangler dev --port 8787",
     "db:local": "cd worker && npx wrangler d1 execute state-db --local --file=schema.sql",
-    "deploy:worker": "cd worker && npx wrangler deploy"
+    "deploy:worker": "cd worker && npx wrangler deploy",
+    "test:ui": "playwright test --config playwright.config.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
   }
 }

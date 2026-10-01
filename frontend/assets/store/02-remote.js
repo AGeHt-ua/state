@@ -188,10 +188,20 @@ function applyRemoved(list) {
 /* Завантаження даних при відкритті сторінки — асинхронне. Скрипти сторінок запускаються через whenStateReady(fn),
    коли дані вже в пам'яті, а сторінка готова; до того браузер нічого не блокує. */
 let STATE_READY = null;
+let STATE_DONE = false;
 function startState() {
-  if (!STATE_READY) STATE_READY = remoteBoot().catch((e) => console.error("state:", e));
+  if (!STATE_READY) STATE_READY = remoteBoot().catch((e) => console.error("state:", e)).then(() => { STATE_DONE = true; });
   return STATE_READY;
 }
+// Форма, надіслана до завантаження даних (обробники сторінки ще не підключені), не йде «як є» —
+// інакше браузер відправив би її звичайним переходом і пароль опинився б в адресі. Повторюємо, коли сторінка готова.
+document.addEventListener("submit", (e) => {
+  if (STATE_DONE) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  const form = e.target;
+  startState().then(() => setTimeout(() => { if (form.isConnected && form.requestSubmit) form.requestSubmit(); }, 0));
+}, true);
 function whenStateReady(fn) {
   startState().then(() => {
     const run = () => { try { const r = fn(); if (r && r.catch) r.catch((e) => console.error(e)); } catch (e) { console.error(e); } };

@@ -7,14 +7,29 @@ CREATE TABLE IF NOT EXISTS accounts (
   salt TEXT NOT NULL,
   hash TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  must_change INTEGER NOT NULL DEFAULT 0 -- 1 — адмін скинув пароль, людина має змінити тимчасовий
+  must_change INTEGER NOT NULL DEFAULT 0, -- 1 — адмін скинув пароль, людина має змінити тимчасовий
+  discord_id TEXT,                       -- прив'язаний Discord (вхід через Discord)
+  discord_name TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS accounts_discord ON accounts(discord_id) WHERE discord_id IS NOT NULL;
+
+-- Одноразові коди входу через Discord (state OAuth, коди прив'язки й обміну)
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  login TEXT NOT NULL DEFAULT '',
+  data TEXT NOT NULL DEFAULT '',
+  expires_at INTEGER NOT NULL
 );
 
 -- Сесії входу: у базі лише SHA-256 від токена
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   login TEXT NOT NULL,
-  expires_at INTEGER NOT NULL
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT 0, -- коли увійшли
+  last_seen INTEGER NOT NULL DEFAULT 0,  -- коли востаннє користувались (з точністю до години)
+  ua TEXT NOT NULL DEFAULT ''            -- браузер і система, напр. «Chrome, Windows»
 );
 
 -- Записи колекцій сайту (state_docs, state_appeals, …): один рядок = один елемент із його id

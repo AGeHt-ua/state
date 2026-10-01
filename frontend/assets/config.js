@@ -1,3 +1,5 @@
-/* Адреса Cloudflare Worker зі спільною базою, напр. "https://state-ukraine-gta5.<акаунт>.workers.dev".
-   Порожньо — дані зберігаються лише в браузері (кожен бачить тільки своє). */
-window.STATE_WORKER_URL = "https://state-ukraine-gta5.d-f-12339.workers.dev";
+/* Адреса Cloudflare Worker зі спільною базою.
+   Сайт, відкритий локально (localhost / 127.0.0.1), працює з локальним Worker (worker/dev.cmd, порт 8787) — для розробки й UI-тестів. */
+window.STATE_WORKER_URL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+  ? "http://localhost:8787"
+  : "https://state-ukraine-gta5.d-f-12339.workers.dev";

@@ -8,7 +8,8 @@ whenStateReady(async function () {
   const form = document.getElementById("registry-filter");
   const params = new URLSearchParams(location.search);
   document.getElementById("top-office").textContent = officeTitle(user);
-  if (!canAdmin(user)) document.getElementById("nav-admin").style.display = "none";
+  const navAdmin = document.getElementById("nav-admin");
+  if (navAdmin && !canAdmin(user)) navAdmin.style.display = "none";
   // Дії з документами — лише кнопками з підтвердженням (раніше спрацьовували від самого відкриття адреси)
   document.getElementById("registry-list").addEventListener("click", (e) => {
     const b = e.target.closest("[data-doc-action]");
