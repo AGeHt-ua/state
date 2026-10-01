@@ -74,7 +74,7 @@ whenStateReady(async function () {
   const KIND_ICON = { returned: "↩", rejected: "✕", published: "✓", progress: "…", appeal: "✉", answer: "✉", profile: "👤", people: "👥" };
   function noteRow(n) {
     const href = n.doc ? (n.kind === "returned" ? "../create/?id=" + encodeURIComponent(n.doc.id) : docHref(n.doc))
-      : n.appeal ? "../appeals/" : "../admin/";
+      : n.appeal ? "../appeals/#" + encodeURIComponent(n.appeal.id) : "../admin/";
     const label = n.kind === "returned" ? "Доопрацювати" : n.doc ? "Відкрити" : "Перейти";
     return `
       <article class="admin-list-row${n.attention ? " is-attention" : ""}">

@@ -107,7 +107,8 @@ const DOC_STATUSES = {
   adopted: "Прийнято Конгресом",
   rejected: "Відхилено",
   dead: "Втратив чинність",
-  trash: "У кошику"
+  trash: "У кошику",
+  deleted: "Видалено"
 };
 
 const VERSION_LABELS = {
@@ -197,6 +198,7 @@ const SEED_DOCS = [
     title: "Конституція штату Сан-Андреас",
     text: "Ми, народ штату San Andreas (Ukraine GTA 5), розуміючи цінність свободи, порядку та справедливості, ухвалюємо цю Конституцію.",
     publishHome: true,
+    fundamental: true,
     seeded: true
   },
   {

@@ -4,21 +4,21 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://localhost:8787; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <script src="../assets/boot.js?v=20261001h"></script>
+  <script src="../assets/boot.js?v=20261001i"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Реєстрація — State</title>
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20261001h" />
-  <link rel="stylesheet" href="../assets/styles.css?v=20261001h" />
+  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20261001i" />
+  <link rel="stylesheet" href="../assets/styles.css?v=20261001i" />
 </head>
 <body>
   <div class="topbar">Офіційний портал Уряду штату Сан-Андреас</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../">
-        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20261001h" alt="STATE">
+        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20261001i" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
-          <p id="hdr-kind">Реєстрація в кабінеті</p>
+          <p>Реєстрація в кабінеті</p>
         </div>
       </a>
     </div>
@@ -30,9 +30,9 @@
     </div>
   </nav>
   <main class="wrap">
-    <h2 class="page-title" id="page-title">Реєстрація учасника</h2>
+    <h2 class="page-title">Реєстрація</h2>
     <section class="card">
-      <p class="lead" id="reg-lead">Після реєстрації Губернатор призначає апарат управління. Посаду вказуєте самі; змінити її може адміністратор.</p>
+      <p class="lead">Після реєстрації одразу відкривається кабінет громадянина: звернення, позови й переписка з апаратами. Посадовцям апарат і посаду призначає адміністратор.</p>
       <div class="notice" role="note"><b>Бета-тест.</b> Паролі зберігаються лише у зашифрованому вигляді, але не використовуйте пароль від інших сервісів.</div>
       <div class="discord-register" id="reg-discord" hidden>
         <a class="btn discord-btn" id="reg-discord-btn" href="#">Зареєструватися через Discord</a>
@@ -41,26 +41,25 @@
       <form id="reg-form">
         <table class="meta-table">
           <tr><th>Ігрове ім’я</th><td><input name="name" required placeholder="Dominic Castro"></td></tr>
-          <tr id="stat-row"><th>Stat ID</th><td><input name="statId" placeholder="SA-000001"></td></tr>
-          <tr id="contact-row"><th>Електронна адреса</th><td><input name="contact" placeholder="Discord або Telegram"></td></tr>
-          <tr id="post-row"><th>Посада</th><td><input name="post" placeholder="Голова Верховного Суду"></td></tr>
+          <tr><th>Stat ID</th><td><input name="statId" required placeholder="SA-000001"></td></tr>
+          <tr><th>Електронна адреса</th><td><input name="contact" required placeholder="Discord або Telegram"></td></tr>
           <tr><th>Логін</th><td><input name="login" required placeholder="castro" pattern="[A-Za-z0-9_.\-]{3,32}" maxlength="32" autocomplete="username" title="3–32 символи: латиниця, цифри, крапка, дефіс, підкреслення"></td></tr>
           <tr><th>Пароль</th><td><input name="password" type="password" required minlength="8" maxlength="128" autocomplete="new-password" title="Щонайменше 8 символів"></td></tr>
         </table>
         <p class="lead" id="reg-msg"></p>
-        <button class="btn gold" type="submit">Подати заявку</button>
+        <button class="btn gold" type="submit">Зареєструватися</button>
       </form>
     </section>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../assets/config.js?v=20261001h"></script>
-  <script src="../assets/accounts.js?v=20261001h"></script>
-  <script src="../assets/app.js?v=20261001h"></script>
-  <script src="../assets/store/01-base.js?v=20261001h"></script>
-  <script src="../assets/store/02-remote.js?v=20261001h"></script>
-  <script src="../assets/store/03-people.js?v=20261001h"></script>
-  <script src="../assets/store/04-docs.js?v=20261001h"></script>
-  <script src="../assets/store/05-ui.js?v=20261001h"></script>
-  <script src="page.js?v=20261001h"></script>
+  <script src="../assets/config.js?v=20261001i"></script>
+  <script src="../assets/accounts.js?v=20261001i"></script>
+  <script src="../assets/app.js?v=20261001i"></script>
+  <script src="../assets/store/01-base.js?v=20261001i"></script>
+  <script src="../assets/store/02-remote.js?v=20261001i"></script>
+  <script src="../assets/store/03-people.js?v=20261001i"></script>
+  <script src="../assets/store/04-docs.js?v=20261001i"></script>
+  <script src="../assets/store/05-ui.js?v=20261001i"></script>
+  <script src="page.js?v=20261001i"></script>
 </body>
 </html>

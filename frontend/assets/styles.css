@@ -1008,3 +1008,94 @@ label > input, label > select, label > textarea { margin-top: 5px; }
 /* Повідомлення: документ чекає рішення понад добу */
 .inbox-row.is-overdue { border-left: 3px solid var(--warn); padding-left: 10px; }
 .inbox-row h3 .badge { margin-left: 8px; vertical-align: middle; font-size: 11px; }
+
+/* Лічильники статусів у реєстрі — клікабельні фільтри */
+.pill-btn { cursor: pointer; font: inherit; }
+.pill-btn:hover { border-color: var(--navy-600); }
+
+/* Фото у вікні профілю: попередній перегляд і кнопки «Завантажити» / «З Discord» */
+.profile-photo-edit { display: grid; gap: 8px; margin: 4px 0 14px; }
+.profile-photo-label { font-weight: 600; }
+.profile-photo-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.profile-photo-preview { width: 72px; height: 72px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--line); font: 700 26px var(--serif); color: var(--navy-800); flex: none; }
+.profile-photo-preview img { width: 100%; height: 100%; object-fit: cover; }
+.profile-photo-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Життєвий цикл: згортання довгих журналів, порівняння редакцій */
+.fold-btn { margin-top: 4px; font-size: 13px; padding: 6px 12px; }
+.timeline-actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--navy-600); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.link-btn:hover { color: var(--gold-600); }
+.version-modal { width: min(960px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; }
+.version-modal .published-paper { margin: 0; }
+.diff-text { white-space: normal; line-height: 1.7; font-size: 15px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-wrap: anywhere; }
+.diff-text ins, .diff-meta ins, .diff-legend ins { background: #dcf5e3; color: #14532d; text-decoration: none; border-radius: 3px; padding: 0 2px; }
+.diff-text del, .diff-meta del, .diff-legend del { background: #fde2e1; color: #7f1d1d; border-radius: 3px; padding: 0 2px; }
+:root[data-theme="dark"] .diff-text ins, :root[data-theme="dark"] .diff-meta ins, :root[data-theme="dark"] .diff-legend ins { background: #14532d; color: #dcf5e3; }
+:root[data-theme="dark"] .diff-text del, :root[data-theme="dark"] .diff-meta del, :root[data-theme="dark"] .diff-legend del { background: #7f1d1d; color: #fde2e1; }
+.diff-meta { margin: 0 0 12px; padding-left: 18px; }
+.diff-legend { display: flex; gap: 10px; font-size: 12.5px; }
+.fund-anchor { scroll-margin-top: 72px; }
+.fund-anchor:target { background: rgba(212, 166, 47, .18); border-radius: 4px; }
+@media (max-width: 720px) { .lifecycle-grid { grid-template-columns: 1fr; } }
+
+/* Головна: блок «Основний закон штату» */
+.fundamental-card { margin-bottom: 18px; border-top: 3px solid var(--gold); }
+.fundamental-card h3 { margin-top: 2px; }
+.fund-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.fund-item { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); color: inherit; text-decoration: none; }
+.fund-item b { color: var(--navy-900); font-family: var(--serif); font-size: 16px; }
+.fund-item span { color: var(--muted); font-size: 12.5px; }
+.fund-item:hover { border-color: var(--gold); box-shadow: var(--shadow-soft); }
+:root[data-theme="dark"] .fund-item b { color: var(--ink); }
+.btn.ghost.is-on { border-color: var(--gold); background: rgba(212, 166, 47, .14); }
+
+/* Звернення: список + переписка (як месенджер) */
+.appeals-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.appeals-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.appeals-toolbar input[type=search] { flex: 1 1 220px; min-width: 0; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.seg button, .seg label span { border: 0; background: none; padding: 6px 12px; border-radius: 8px; font: 600 13px var(--sans); color: var(--ink-2); cursor: pointer; display: inline-block; }
+.seg button.active, .seg input:checked + span { background: var(--navy-800); color: #fff; }
+.seg label { margin: 0; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.kind-seg { margin-bottom: 12px; }
+.appeals-layout { display: grid; grid-template-columns: minmax(260px, 360px) 1fr; gap: 14px; align-items: start; min-width: 0; }
+.appeals-list { display: grid; gap: 6px; max-height: 70vh; overflow: auto; padding-right: 2px; }
+.appeal-item { display: grid; gap: 3px; text-align: left; width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: inherit; font: inherit; cursor: pointer; position: relative; }
+.appeal-item:hover { border-color: var(--navy-600); }
+.appeal-item.is-active { border-color: var(--navy-800); box-shadow: inset 3px 0 0 var(--navy-800); background: var(--sky); }
+.appeal-item.is-unread::after { content: ""; position: absolute; top: 12px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: #d64545; }
+.appeal-item-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding-right: 12px; }
+.appeal-item-top b { font-size: 14px; color: var(--navy-900); }
+.appeal-item-meta { font-size: 12px; color: var(--muted); }
+.appeal-item-last { font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appeal-detail { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-soft); min-height: 320px; display: flex; flex-direction: column; min-width: 0; }
+.appeal-empty { margin: auto; display: grid; gap: 4px; text-align: center; color: var(--muted); padding: 40px 16px; }
+.appeal-empty b { color: var(--ink-2); }
+.appeal-detail-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.appeal-detail-head h3 { margin: 0 0 4px; }
+.appeal-back { display: none; }
+.appeal-chat { display: flex; flex-direction: column; gap: 10px; padding: 16px; max-height: 52vh; overflow: auto; }
+.chat-msg { max-width: 82%; padding: 9px 12px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line); align-self: flex-start; }
+.chat-msg.from-office { background: var(--sky); border-color: #cfdcf0; }
+.chat-msg.is-own { align-self: flex-end; }
+.chat-who { display: block; font-weight: 700; font-size: 13px; color: var(--navy-900); }
+.chat-who small { font-weight: 400; color: var(--muted); }
+.chat-msg p { margin: 4px 0; white-space: normal; overflow-wrap: anywhere; }
+.chat-msg time { display: block; font-size: 11.5px; color: var(--muted); text-align: right; }
+.appeal-reply { padding: 12px 16px 16px; border-top: 1px solid var(--line); }
+.appeal-reply textarea { width: 100%; min-height: 76px; }
+.appeal-reply .form-actions { margin-top: 8px; }
+.appeal-closed { padding: 12px 16px; margin: 0; border-top: 1px solid var(--line); }
+.appeal-modal { width: min(620px, calc(100vw - 32px)); }
+:root[data-theme="dark"] .appeal-item.is-active, :root[data-theme="dark"] .chat-msg.from-office { background: #1b2a44; border-color: #2c4064; }
+:root[data-theme="dark"] .appeal-item-top b, :root[data-theme="dark"] .chat-who { color: var(--ink); }
+@media (max-width: 900px) {
+  .appeals-layout { grid-template-columns: 1fr; }
+  .appeals-layout.has-selection .appeals-list { display: none; }
+  .appeals-layout:not(.has-selection) .appeal-detail { display: none; }
+  .appeal-back { display: inline-flex; }
+  .appeal-detail-head { flex-wrap: wrap; }
+  .chat-msg { max-width: 92%; }
+}

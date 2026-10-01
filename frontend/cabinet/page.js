@@ -73,16 +73,42 @@ whenStateReady(async function () {
       form.contact.value = user.contact || "";
       document.getElementById("profile-post-wrap").style.display = isCitizen(user) ? "none" : "block";
       pendingPhoto = "";
+      showPhotoPreview(user.photo || "");
+      photoMsg.textContent = "Фото теж піде на підтвердження разом із заявкою.";
+      photoMsg.style.color = "";
+      // Кнопка «Взяти аватар з Discord» — лише коли Discord прив'язано
+      const dBtn = document.getElementById("profile-photo-discord");
+      dBtn.hidden = true;
+      discordConfig().then((cfg) => { if (cfg.enabled) dBtn.hidden = !discordStatus().linked; });
       modal.hidden = false;
+    });
+    const photoMsg = document.getElementById("profile-photo-msg");
+    function showPhotoPreview(src) {
+      const box = document.getElementById("profile-photo-preview");
+      box.innerHTML = src ? `<img src="${attr(src)}" alt="">` : esc(String(user.username || "?").charAt(0).toUpperCase());
+    }
+    function photoChosen(url, note) {
+      if (!url) { photoMsg.style.color = "#8a2b2b"; photoMsg.textContent = "Не вдалося прочитати зображення. Оберіть інший файл (JPG або PNG)."; return; }
+      pendingPhoto = url;
+      showPhotoPreview(url);
+      photoMsg.style.color = "";
+      photoMsg.textContent = note + " Натисніть «Подати на підтвердження», щоб зберегти.";
+    }
+    document.getElementById("profile-photo-discord").addEventListener("click", async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      photoMsg.style.color = "";
+      photoMsg.textContent = "Отримуємо аватар з Discord…";
+      const res = await fetchDiscordAvatar();
+      btn.disabled = false;
+      if (!res.ok) { photoMsg.style.color = "#8a2b2b"; photoMsg.textContent = res.error; return; }
+      shrinkImage(res.blob, 256, (url) => photoChosen(url, "Аватар з Discord підставлено."));
     });
     document.querySelectorAll("[data-close-modal]").forEach((btn) => btn.addEventListener("click", () => { modal.hidden = true; }));
     document.getElementById("profile-photo-input").addEventListener("change", (ev) => {
       const file = ev.target.files && ev.target.files[0];
       if (!file) return;
-      shrinkImage(file, 256, (url) => {
-        pendingPhoto = url;
-        if (!url) alert("Не вдалося прочитати зображення. Оберіть інший файл (JPG або PNG).");
-      });
+      shrinkImage(file, 256, (url) => photoChosen(url, "Фото обрано."));
     });
     form.addEventListener("submit", (ev) => {
       ev.preventDefault();

@@ -9,7 +9,18 @@ whenStateReady(async function () {
       </div>
       <span class="badge ${attr(badgeClass(a.status))}">${esc(DOC_STATUSES[a.status] || a.status)}</span>
     </article>`;
-  const home = homeDocs().slice(0, 6);
+  // Основний закон штату: документи з позначкою «Основний закон штату» (редактор → «Файл»); поки їх немає — вбудована Конституція
+  const fundamental = fundamentalDocs();
+  const constitution = fundamental.find((d) => /конституц/i.test(d.type + " " + d.title));
+  if (constitution) document.getElementById("quick-constitution").href = docHref(constitution);
+  const fundBox = document.getElementById("fundamental-list");
+  const fundItems = fundamental.length ? fundamental : [{ title: "Конституція штату San Andreas", type: "Конституція штату", number: "КС-01", href: "acts/const-sa-01/" }];
+  fundBox.innerHTML = fundItems.map((d) => `
+    <a class="fund-item" href="${attr(d.href || docHref(d))}">
+      <b>${esc(d.title)}</b>
+      <span>${esc(d.type)}${d.number ? " · " + esc(d.number) : ""}${d.publishedAt || d.date ? " · " + esc(formatDocWhen(d)) : ""}</span>
+    </a>`).join("");
+  const home = homeDocs().filter((d) => !d.fundamental).slice(0, 6);
   document.getElementById("stat-published").textContent = publishedDocs().length;
   document.getElementById("stat-home").textContent = homeDocs().length;
   document.getElementById("stat-cabinet").textContent = cabinetCreatedDocs().length;

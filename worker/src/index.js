@@ -86,6 +86,7 @@ export default {
       if (url.pathname === "/api/discord/link-code" && request.method === "POST") return cors(await handleDiscordLinkCode(request, env), origin);
       if (url.pathname === "/api/discord/status" && request.method === "GET") return cors(await handleDiscordStatus(request, env), origin);
       if (url.pathname === "/api/discord/unlink" && request.method === "POST") return cors(await handleDiscordUnlink(request, env), origin);
+      if (url.pathname === "/api/discord/avatar" && request.method === "GET") return cors(await handleDiscordAvatar(request, env), origin);
       if (url.pathname === "/api/discord/links" && request.method === "GET") return cors(await handleDiscordLinks(request, env), origin);
       if (url.pathname === "/api/templates") return cors(await handleTemplates(request, env), origin);
       if (url.pathname.startsWith("/api/templates/")) return cors(await handleTemplate(request, env, decodeURIComponent(url.pathname.slice(15))), origin);
@@ -352,6 +353,7 @@ async function handleDiscordCallback(request, env, url) {
     }
     await env.DB.batch([
       env.DB.prepare("UPDATE accounts SET discord_id = ?, discord_name = ? WHERE login = ?").bind(discordId, discordName, st.login),
+      rememberDiscordAvatar(env, st.login, me.avatar),
       auditStatement(env, linker, "Прив'язано Discord", st.login, discordName)
     ]);
     return backToSite(env, "cabinet/", merged ? "discord=merged" : "discord=linked");
@@ -381,8 +383,35 @@ async function handleDiscordCallback(request, env, url) {
     account = { login };
     created = true;
   }
+  await rememberDiscordAvatar(env, account.login, me.avatar).run();
   const once = await putState(env, "login", account.login, "", 120);
   return backToSite(env, "cabinet/portal/", "discord_code=" + once + (created ? "&new=1" : ""));
+}
+
+// Хеш аватара Discord (оновлюється при кожному вході чи прив'язці) — окремий службовий запис, у дані порталу не потрапляє
+function rememberDiscordAvatar(env, login, avatar) {
+  const hash = /^(a_)?[0-9a-f]{16,64}$/.test(String(avatar || "")) ? String(avatar) : "";
+  return env.DB.prepare("INSERT INTO rows (coll, id, data, updated_at) VALUES ('user_discord', ?1, ?2, ?3) ON CONFLICT (coll, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at")
+    .bind(login, JSON.stringify({ avatar: hash }), Date.now());
+}
+
+// Аватар прив'язаного Discord: сервер бере зображення з CDN Discord і віддає сайту (щоб зменшити й подати як фото профілю)
+async function handleDiscordAvatar(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const acc = await env.DB.prepare("SELECT discord_id FROM accounts WHERE login = ? AND discord_id IS NOT NULL").bind(login).first();
+  if (!acc) return json({ error: "Discord не прив'язано. Прив'яжіть його в розділі «Discord» нижче." }, 404);
+  const row = await env.DB.prepare("SELECT data FROM rows WHERE coll = 'user_discord' AND id = ?").bind(login).first();
+  const hash = row ? JSON.parse(row.data).avatar : "";
+  if (!row) return json({ error: "Аватар ще не отримано: увійдіть через Discord один раз (або прив'яжіть Discord заново)." }, 404);
+  // DISCORD_CDN_BASE — лише для автотестів (підставний Discord)
+  const cdn = (env.DISCORD_CDN_BASE || "https://cdn.discordapp.com").replace(/\/+$/, "");
+  const url = hash
+    ? cdn + "/avatars/" + acc.discord_id + "/" + hash + ".png?size=256"
+    : cdn + "/embed/avatars/" + Number((BigInt(acc.discord_id) >> 22n) % 6n) + ".png";
+  const img = await fetch(url);
+  if (!img.ok) return json({ error: "Discord не віддав аватар. Спробуйте пізніше." }, 502);
+  return new Response(img.body, { headers: securityHeaders(new Headers({ "Content-Type": img.headers.get("Content-Type") || "image/png", "Cache-Control": "no-store" })) });
 }
 
 async function handleDiscordExchange(request, env) {
@@ -434,6 +463,7 @@ async function handleDiscordAdminUnlink(request, env) {
   if (!row) return json({ error: "У цього акаунта Discord не прив'язано." }, 400);
   await env.DB.batch([
     env.DB.prepare("UPDATE accounts SET discord_id = NULL, discord_name = NULL WHERE login = ?").bind(target),
+    env.DB.prepare("DELETE FROM rows WHERE coll = 'user_discord' AND id = ?").bind(target),
     auditStatement(env, actor, "Відв'язано Discord (адміністратор)", target, row.discord_name || "")
   ]);
   return handleDiscordLinks(request, env);
@@ -445,6 +475,7 @@ async function handleDiscordUnlink(request, env) {
   const actor = await loadActor(env, login);
   await env.DB.batch([
     env.DB.prepare("UPDATE accounts SET discord_id = NULL, discord_name = NULL WHERE login = ?").bind(login),
+    env.DB.prepare("DELETE FROM rows WHERE coll = 'user_discord' AND id = ?").bind(login),
     auditStatement(env, actor, "Відв'язано Discord", login, "")
   ]);
   return handleDiscordStatus(request, env);
@@ -546,7 +577,7 @@ function deleteAccountStatements(env, target) {
       "ON CONFLICT (coll, id) DO UPDATE SET at = excluded.at").bind(target, Date.now()),
     env.DB.prepare("DELETE FROM rows WHERE coll = 'state_users' AND id = ?").bind(target),
     env.DB.prepare("DELETE FROM rows WHERE coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?").bind(target),
-    env.DB.prepare("DELETE FROM rows WHERE (coll = 'user_tpl' AND substr(id, 1, length(?1) + 1) = ?1 || '/') OR (coll = 'user_tpl_meta' AND id = ?1)").bind(target)
+    env.DB.prepare("DELETE FROM rows WHERE (coll = 'user_tpl' AND substr(id, 1, length(?1) + 1) = ?1 || '/') OR (coll IN ('user_tpl_meta', 'user_discord') AND id = ?1)").bind(target)
   ];
 }
 

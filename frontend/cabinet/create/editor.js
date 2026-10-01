@@ -977,6 +977,50 @@ whenStateReady(function () {
     placeCaretIn(t.querySelector('td'), true);
     afterEdit();
   }
+  /* ---------- Вставка розмітки (markup.js) ---------- */
+  function markupHtml(src) {
+    return window.markupToHtml(src, {
+      field: (t) => TOKEN_TO_KEY[t] ? fieldSpan(TOKEN_TO_KEY[t]) : null,
+      signBlock: sigTableHtml
+    });
+  }
+  function renderMarkupPreview() {
+    $('mkPreview').innerHTML = markupHtml($('mkSrc').value);
+  }
+  function openMarkup() {
+    captureSel();
+    if (!$('mkHelp').firstChild) {
+      $('mkHelp').innerHTML = window.MARKUP_HELP.map((r) => '<tr><td><code>' + esc(r[0]) + '</code></td><td>' + esc(r[1]) + '</td></tr>').join('');
+    }
+    renderMarkupPreview();
+    $('mkModal').hidden = false;
+    $('mkSrc').focus();
+  }
+  function applyMarkup(replace) {
+    const src = $('mkSrc').value;
+    if (!src.trim()) { toast('Вставте текст у розмітці'); return; }
+    if (replace && !state.pristine && !confirm('Замінити весь поточний текст документа вставленим?')) return;
+    // Конвертер сам екранує весь текст і створює лише безпечні теги — очищення вставки (воно знімає класи полів) не потрібне
+    const html = markupHtml(src);
+    if (replace) {
+      editor.innerHTML = html;
+    } else {
+      const holder = document.createElement('div');
+      holder.innerHTML = html;
+      let after = null;
+      Array.from(holder.childNodes).forEach((node) => {
+        if (after) { after.after(node); after = node; } else after = insertBlockAfterCaret(node);
+      });
+    }
+    state.pristine = false;
+    ensureNotEmpty();
+    normalizeLists();
+    refreshFields();
+    savedRange = null;
+    $('mkModal').hidden = true;
+    afterEdit();
+    toast(replace ? 'Документ замінено вставленою розміткою' : 'Розмітку вставлено');
+  }
   function insertPageBreak() {
     const pb = document.createElement('div');
     pb.className = 'page-break';
@@ -2226,6 +2270,7 @@ whenStateReady(function () {
       body: officeTitle(user),
       status: finalStatus,
       publishHome: $('chkHome').checked,
+      fundamental: $('chkFundamental').checked,
       links: currentLinks(),
       text: plainText(),
       docHtml: sheetHtml(),
@@ -2450,6 +2495,7 @@ whenStateReady(function () {
     loadSlot(existing || addSlot(st));
     persist(false);
     $('chkHome').checked = !!d.publishHome;
+    $('chkFundamental').checked = !!d.fundamental;
     updateDocStatus(d);
     toast('«' + d.title + '» відкрито для редагування');
   }
@@ -2708,6 +2754,16 @@ whenStateReady(function () {
     link: insertLink,
     help: () => { $('helpModal').hidden = false; },
     modalClose: (b) => { const m = b.closest('.modal'); if (m) m.hidden = true; },
+    markup: openMarkup,
+    mkExample: () => { $('mkSrc').value = window.MARKUP_EXAMPLE; renderMarkupPreview(); },
+    mkPrompt: () => {
+      const text = window.MARKUP_AI_PROMPT;
+      const done = () => toast('Інструкцію скопійовано — вставте її в чат із ШІ й допишіть, який документ потрібен');
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => prompt('Скопіюйте інструкцію:', text));
+      else prompt('Скопіюйте інструкцію:', text);
+    },
+    mkReplace: () => applyMarkup(true),
+    mkInsert: () => applyMarkup(false),
     rowAbove: () => tableOp('rowAbove'),
     rowBelow: () => tableOp('rowBelow'),
     colLeft: () => tableOp('colLeft'),
@@ -2905,6 +2961,7 @@ whenStateReady(function () {
       history.replaceState(null, '', '?id=' + encodeURIComponent(b.dataset.openDoc));
       loadFromDoc(b.dataset.openDoc);
     });
+    $('mkSrc').addEventListener('input', () => { clearTimeout(renderMarkupPreview.t); renderMarkupPreview.t = setTimeout(renderMarkupPreview, 150); });
     ['openModal', 'previewModal', 'helpModal'].forEach((id) => $(id).addEventListener('mousedown', (e) => { if (e.target === $(id)) $(id).hidden = true; }));
     $('fldType').addEventListener('change', () => {
       state.type = $('fldType').value;
@@ -3023,7 +3080,7 @@ whenStateReady(function () {
     // Глобальні комбінації
     document.addEventListener('keydown', (e) => {
       const mod = e.ctrlKey || e.metaKey;
-      if (e.key === 'Escape') { closeMenu(); ['tplModal', 'apModal', 'openModal', 'previewModal', 'helpModal'].forEach((id) => { $(id).hidden = true; }); if (!$('fldPop').hidden) closeFieldPop(); if (!$('findBox').hidden) closeFind(); }
+      if (e.key === 'Escape') { closeMenu(); ['tplModal', 'apModal', 'openModal', 'previewModal', 'helpModal', 'mkModal'].forEach((id) => { $(id).hidden = true; }); if (!$('fldPop').hidden) closeFieldPop(); if (!$('findBox').hidden) closeFind(); }
       if (e.key === 'F1') { e.preventDefault(); $('helpModal').hidden = false; return; }
       if (!mod) return;
       const k = e.key.toLowerCase();

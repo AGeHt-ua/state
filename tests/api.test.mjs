@@ -275,6 +275,9 @@ if ((await get("/api/health")).body.discord) {
   check("Discord: код одноразовий", (await post("/api/discord/exchange", { code: codeFrom(loc) })).status === 400);
   loc = await discordLogin(dId);
   const again = await post("/api/discord/exchange", { code: codeFrom(loc) });
+  const av = await fetch(B + "/api/discord/avatar", { headers: { Authorization: "Bearer " + first.body.token } });
+  check("Discord: аватар віддається власнику", av.status === 200 && (av.headers.get("content-type") || "").startsWith("image/"));
+  check("Discord: без прив'язки аватара немає", (await get("/api/discord/avatar", T.staff)).status === 404);
   check("Discord: повторний вхід — той самий акаунт", again.body.login === first.body.login && !loc.includes("new=1"));
   check("Discord: підроблений state відхиляється", (await hop("/api/discord/callback?code=1&state=" + "x".repeat(32))).includes("discord_error=expired"));
   check("Discord: не учасник сервера не входить", (await discordLogin("7404" + Date.now())).includes("discord_error=not_member"));

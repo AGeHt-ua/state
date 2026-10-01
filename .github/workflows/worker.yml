@@ -26,7 +26,7 @@ jobs:
         run: |
           printf 'SEED_ACCOUNTS={"admin":"ci-admin-password-123"}\nFRONTEND_ORIGIN=http://localhost:8080\nFRONTEND_URL=http://localhost:8080/\n' > .dev.vars
           # Підставний Discord (tests/mock-discord.mjs) — щоб перевірити вхід через Discord без справжніх ключів
-          printf 'DISCORD_CLIENT_ID=test-client\nDISCORD_CLIENT_SECRET=test-secret\nDISCORD_GUILD_ID=123\nDISCORD_API_BASE=http://127.0.0.1:9098\n' >> .dev.vars
+          printf 'DISCORD_CLIENT_ID=test-client\nDISCORD_CLIENT_SECRET=test-secret\nDISCORD_GUILD_ID=123\nDISCORD_API_BASE=http://127.0.0.1:9098\nDISCORD_CDN_BASE=http://127.0.0.1:9098\n' >> .dev.vars
           npx --yes wrangler@4 d1 execute state-db --local --file=schema.sql
       - name: Запуск Worker
         working-directory: worker

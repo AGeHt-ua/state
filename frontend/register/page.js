@@ -1,16 +1,8 @@
 /* Скрипт сторінки «register». Запускається, коли дані порталу завантажені й сторінка готова. */
 whenStateReady(async function () {
-  const type = new URLSearchParams(location.search).get("type") === "official" ? "official" : "citizen";
-  const citizen = type === "citizen";
-  document.getElementById("page-title").textContent = citizen ? "Реєстрація громадянина штату" : "Реєстрація посадовця";
-  document.getElementById("hdr-kind").textContent = citizen ? "Кабінет громадянина" : "Заявка посадовця";
-  document.getElementById("reg-lead").textContent = citizen
-    ? "Громадянин отримує кабінет одразу: звернення, позови, статуси і переписка з апаратами."
-    : "Посадовець після реєстрації очікує, доки адміністратор призначить апарат, роль і посаду.";
-  document.getElementById("post-row").style.display = citizen ? "none" : "table-row";
-  document.querySelector("input[name='post']").required = !citizen;
-  document.querySelector("input[name='statId']").required = citizen;
-  document.querySelector("input[name='contact']").required = citizen;
+  // Усі реєструються громадянами; посадовцям апарат і посаду призначає адміністратор
+  const type = "citizen";
+  const citizen = true;
   discordConfig().then((cfg) => {
     if (!cfg.enabled) return;
     document.getElementById("reg-discord-btn").href = discordStartUrl("login");
@@ -26,7 +18,6 @@ whenStateReady(async function () {
     const data = new FormData(e.target);
     const res = registerUser({
       name: data.get("name"),
-      post: data.get("post"),
       statId: data.get("statId"),
       contact: data.get("contact"),
       login: data.get("login"),

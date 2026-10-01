@@ -4,18 +4,18 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://localhost:8787; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <script src="../../assets/boot.js?v=20261001h"></script>
+  <script src="../../assets/boot.js?v=20261001i"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Звернення — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001h" />
-  <link rel="stylesheet" href="../../assets/styles.css?v=20261001h" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001i" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20261001i" />
 </head>
 <body>
   <div class="topbar" id="top-office">Кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001h" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001i" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Звернення та позови</p>
@@ -42,53 +42,68 @@
         <a class="create-doc-link" href="../create/" data-staff-nav>Створити документ</a>
       </aside>
       <section class="appeals-page">
-        <section class="card" id="appeal-create-card">
-          <h2 class="page-title" style="margin-top:0">Подати звернення</h2>
-          <p class="lead">Оберіть апарат, коротко опишіть суть і система присвоїть зверненню номер автоматично.</p>
-          <form id="appeal-form">
-            <div class="form-grid">
-              <label>Ім’я прізвище<input name="name" required></label>
-              <label>Stat ID<input name="statId" required></label>
-              <label>Електронна адреса<input name="contact" required placeholder="Discord або Telegram"></label>
-              <label>Тип<select name="kind"><option value="Звернення">Звернення</option><option value="Позов">Позов</option></select></label>
-              <label>Куди звертаєтесь<select name="office" required></select></label>
-            </div>
-            <label>Суть звернення<textarea name="text" required placeholder="Опишіть ситуацію, вимогу або позов..."></textarea></label>
-            <button class="btn gold" type="submit">Відправити звернення</button>
-          </form>
-        </section>
-
-        <section class="card">
-          <div class="section-head">
-            <div>
-              <h2 class="page-title" style="margin-top:0" id="appeals-title">Мої звернення</h2>
-              <p class="muted" id="appeals-lead">Тут видно статус і всю переписку.</p>
-            </div>
+        <div class="appeals-head">
+          <div>
+            <h2 class="page-title" style="margin:0">Звернення</h2>
+            <p class="muted" id="appeals-lead">Звернення й позови до апаратів штату. Кожне має номер, статус і всю переписку в одному місці.</p>
           </div>
-          <div id="my-appeals-list" class="admin-list"></div>
-        </section>
-
-        <section class="card" id="office-appeals-card">
-          <div class="section-head">
-            <div>
-              <h2 class="page-title" style="margin-top:0">Звернення до мого апарату</h2>
-              <p class="muted">Це вже службова черга: тут посадовець відповідає громадянам.</p>
-            </div>
+          <button class="btn gold" type="button" id="appeal-new-btn">+ Нове звернення</button>
+        </div>
+        <nav class="admin-tabs appeals-tabs" role="tablist" id="appeals-tabs"></nav>
+        <div class="appeals-toolbar">
+          <div class="seg" role="group" aria-label="Статус" id="appeals-status">
+            <button type="button" data-st="all" class="active">Усі</button>
+            <button type="button" data-st="waiting">Очікують відповіді</button>
+            <button type="button" data-st="answered">Є відповідь</button>
+            <button type="button" data-st="closed">Закриті</button>
           </div>
-          <div id="office-appeals-list" class="admin-list"></div>
-        </section>
+          <input type="search" id="appeals-q" placeholder="Пошук: номер, текст, ім'я" aria-label="Пошук звернень">
+        </div>
+        <div class="appeals-layout" id="appeals-layout">
+          <div class="appeals-list" id="appeals-list" role="listbox" aria-label="Звернення"></div>
+          <div class="appeal-detail" id="appeal-detail"></div>
+        </div>
       </section>
     </div>
   </main>
+
+  <!-- Нове звернення -->
+  <div class="modal-backdrop" id="appeal-modal" hidden>
+    <section class="modal-card appeal-modal" role="dialog" aria-modal="true" aria-labelledby="appeal-modal-title">
+      <button class="modal-close" type="button" data-close-appeal aria-label="Закрити">×</button>
+      <h3 id="appeal-modal-title">Нове звернення</h3>
+      <form id="appeal-form">
+        <div class="seg kind-seg" role="radiogroup" aria-label="Тип">
+          <label><input type="radio" name="kind" value="Звернення" checked><span>Звернення</span></label>
+          <label><input type="radio" name="kind" value="Позов"><span>Позов</span></label>
+        </div>
+        <label>Куди звертаєтесь<select name="office" required></select></label>
+        <label>Суть<textarea name="text" required rows="6" placeholder="Опишіть ситуацію, вимогу або позов: що сталося, коли, хто причетний, чого ви просите."></textarea></label>
+        <details class="advanced" id="appeal-me">
+          <summary>Ваші дані: <span id="appeal-me-line"></span></summary>
+          <div class="form-grid">
+            <label>Ім’я прізвище<input name="name" required></label>
+            <label>Stat ID<input name="statId" required></label>
+            <label>Зв’язок<input name="contact" required placeholder="Discord або Telegram"></label>
+          </div>
+        </details>
+        <p class="lead" id="appeal-form-msg" style="color:#8a2b2b;margin:0"></p>
+        <div class="modal-actions">
+          <button class="btn gold" type="submit">Надіслати</button>
+          <button class="btn ghost" type="button" data-close-appeal>Скасувати</button>
+        </div>
+      </form>
+    </section>
+  </div>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/config.js?v=20261001h"></script>
-  <script src="../../assets/accounts.js?v=20261001h"></script>
-  <script src="../../assets/app.js?v=20261001h"></script>
-  <script src="../../assets/store/01-base.js?v=20261001h"></script>
-  <script src="../../assets/store/02-remote.js?v=20261001h"></script>
-  <script src="../../assets/store/03-people.js?v=20261001h"></script>
-  <script src="../../assets/store/04-docs.js?v=20261001h"></script>
-  <script src="../../assets/store/05-ui.js?v=20261001h"></script>
-  <script src="page.js?v=20261001h"></script>
+  <script src="../../assets/config.js?v=20261001i"></script>
+  <script src="../../assets/accounts.js?v=20261001i"></script>
+  <script src="../../assets/app.js?v=20261001i"></script>
+  <script src="../../assets/store/01-base.js?v=20261001i"></script>
+  <script src="../../assets/store/02-remote.js?v=20261001i"></script>
+  <script src="../../assets/store/03-people.js?v=20261001i"></script>
+  <script src="../../assets/store/04-docs.js?v=20261001i"></script>
+  <script src="../../assets/store/05-ui.js?v=20261001i"></script>
+  <script src="page.js?v=20261001i"></script>
 </body>
 </html>

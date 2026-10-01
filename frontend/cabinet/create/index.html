@@ -4,31 +4,31 @@
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://localhost:8787; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <script src="../../assets/boot.js?v=20261001h"></script>
+  <script src="../../assets/boot.js?v=20261001i"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Канцелярія — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001h" />
-  <link rel="stylesheet" href="../../assets/styles.css?v=20261001h">
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001i" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20261001i">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Great+Vibes&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;0,800;1,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../../assets/doc.css?v=20261001h">
-  <link rel="stylesheet" href="editor.css?v=20261001h">
+  <link rel="stylesheet" href="../../assets/doc.css?v=20261001i">
+  <link rel="stylesheet" href="editor.css?v=20261001i">
   <style id="printPage">@page { size: A4 portrait; margin: 0; }</style>
-  <script src="../../assets/config.js?v=20261001h"></script>
-  <script src="../../assets/accounts.js?v=20261001h"></script>
-  <script src="../../assets/app.js?v=20261001h"></script>
-  <script src="../../assets/store/01-base.js?v=20261001h"></script>
-  <script src="../../assets/store/02-remote.js?v=20261001h"></script>
-  <script src="../../assets/store/03-people.js?v=20261001h"></script>
-  <script src="../../assets/store/04-docs.js?v=20261001h"></script>
-  <script src="../../assets/store/05-ui.js?v=20261001h"></script>
+  <script src="../../assets/config.js?v=20261001i"></script>
+  <script src="../../assets/accounts.js?v=20261001i"></script>
+  <script src="../../assets/app.js?v=20261001i"></script>
+  <script src="../../assets/store/01-base.js?v=20261001i"></script>
+  <script src="../../assets/store/02-remote.js?v=20261001i"></script>
+  <script src="../../assets/store/03-people.js?v=20261001i"></script>
+  <script src="../../assets/store/04-docs.js?v=20261001i"></script>
+  <script src="../../assets/store/05-ui.js?v=20261001i"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body class="wd-body">
   <nav class="nav wd-nav">
     <div class="nav-inner">
-      <a class="wd-brand" href="../../"><img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001h" alt=""><span>STATE</span></a>
+      <a class="wd-brand" href="../../"><img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001i" alt=""><span>STATE</span></a>
       <a href="../../">Головна</a>
       <a href="../../acts/">Законодавча база</a>
       <a href="../">Кабінет</a>
@@ -109,6 +109,7 @@
             <button type="button" class="rb-btn big accent" data-menu="menu-send" data-send-btn><i data-icon="send"></i><span>Надіслати<br>документ ▾</span></button>
             <div class="rb-col">
               <label class="rb-check"><input type="checkbox" id="chkHome"> На головну сайту</label>
+              <label class="rb-check" title="Конституція, кодекси й інші основоположні акти: окремий блок на головній, зміст зі статтями на сторінці документа"><input type="checkbox" id="chkFundamental"> Основний закон штату</label>
               <a class="rb-link" href="../all/">Реєстр документів →</a>
               <a class="rb-link" href="../../acts/">Законодавча база →</a>
             </div>
@@ -295,6 +296,7 @@
         <div class="rb-group">
           <div class="rb-row">
             <button type="button" class="rb-btn big" data-menu="menu-tpl"><i data-icon="template"></i><span>Заготовка<br>пункту ▾</span></button>
+            <button type="button" class="rb-btn big" data-act="markup" title="Вставити готовий текст у розмітці — він одразу стане оформленим документом"><i data-icon="field"></i><span>Вставити<br>розмітку</span></button>
           </div>
           <div class="rb-label">Заготовки</div>
         </div>
@@ -582,6 +584,8 @@
         <li><b>Вкладка «Документ»</b> — оберіть тип і заповніть поля (номер, дата, ПІБ…). Вони самі оновлюються в тексті. У полях ПІБ можна вибрати людину зі списку учасників.</li>
         <li><b>Номер</b> — кнопка «Авто» підставить наступний вільний номер для цього типу документа.</li>
         <li><b>Текст</b> редагується як у Word: вкладки «Головна» (шрифт, абзац), «Вставлення» (пункти, таблиці, печатка, посилання), «Макет» (поля сторінки, фон).</li>
+        <li><b>Готовий текст</b> — «Вставлення» → «Вставити розмітку»: вставте документ у розмітці (# заголовок, [center]…[/center], 1. пункти, {ПІБ}, [sign]) — він одразу стане оформленим. «Інструкція для ШІ» копіює правила, щоб попросити ШІ скласти документ.</li>
+        <li><b>Основний закон</b> — позначка «Основний закон штату» (вкладка «Файл»): документ з'явиться в окремому блоці на головній, а на його сторінці — зміст із розділами й статтями.</li>
         <li><b>Перевірте</b> документ кнопкою «Попередній перегляд».</li>
         <li><b>Надішліть</b>: «Проєкт» — зберегти в реєстр; «На погодження» — відправити за маршрутом (щоб винести на голосування Конгресу, оберіть у вікні «Конгрес штату»; закони йдуть через Конгрес автоматично); «Опублікувати» — одразу (якщо є право) або через погодження.</li>
       </ol>
@@ -603,6 +607,30 @@
     </div>
   </div>
   <datalist id="peopleList"></datalist>
+
+  <!-- Вставка розмітки: готовий текст (BB-коди / простий Markdown) → оформлений документ -->
+  <div class="modal" id="mkModal" hidden>
+    <div class="modal-box mk-box">
+      <h3>Вставити розмітку</h3>
+      <p class="ap-lead">Вставте текст у розмітці (як BB-коди на форумі) — праворуч одразу видно, яким буде документ. Готовий текст можна попросити в ШІ: кнопка «Інструкція для ШІ» копіює правила.</p>
+      <div class="mk-grid">
+        <textarea id="mkSrc" spellcheck="false" placeholder="# НАКАЗ №{НОМЕР}&#10;[center]**Про призначення**[/center]&#10;1. Призначити {ПІБ} на посаду {ПОСАДА}.&#10;[sign]"></textarea>
+        <div class="mk-preview"><div class="doc-content" id="mkPreview"></div></div>
+      </div>
+      <details class="mk-help">
+        <summary>Довідка з розмітки</summary>
+        <table class="mk-help-table" id="mkHelp"></table>
+      </details>
+      <div class="modal-actions">
+        <button type="button" data-act="mkExample">Приклад</button>
+        <button type="button" data-act="mkPrompt">Інструкція для ШІ</button>
+        <span class="mk-spacer"></span>
+        <button type="button" data-act="modalClose">Скасувати</button>
+        <button type="button" data-act="mkInsert">Вставити біля курсора</button>
+        <button type="button" class="primary" data-act="mkReplace">Замінити весь текст</button>
+      </div>
+    </div>
+  </div>
 
   <div class="modal" id="lnModal" hidden>
     <div class="modal-box ap-box">
@@ -646,6 +674,7 @@
 
   <div id="toast" class="wd-toast"></div>
 
-  <script src="editor.js?v=20261001h"></script>
+  <script src="markup.js?v=20261001i"></script>
+  <script src="editor.js?v=20261001i"></script>
 </body>
 </html>

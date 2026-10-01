@@ -161,7 +161,25 @@ test("документ: співробітник → директор → губ
   await expect(hit).toBeVisible();
   await hit.click();
   await expect(anon.locator("main")).toContainText("Тест Тестович");
+  // 5. Проєкт підготував співробітник, а підписав той, хто остаточно погодив (губернатор)
+  await expect(anon.locator(".meta-table")).toContainText("Проєкт підготував");
+  await expect(anon.locator(".meta-table")).toContainText("Підписав");
+  const docUrl = anon.url();
   await anon.close();
+
+  // 6. Журнал змін: редакції з «Що змінилось» і перегляд редакції
+  const auditCtx = await browser.newContext();
+  const auditor = await auditCtx.newPage();
+  await uiLogin(auditor, "admin", ADMIN_PASSWORD);
+  await auditor.goto(docUrl);
+  await expect(auditor.locator(".lifecycle-card").last()).toContainText("Редакції");
+  await auditor.locator("[data-diff]").first().click();
+  await expect(auditor.locator("#version-modal")).toBeVisible();
+  await expect(auditor.locator("#version-title")).toContainText("Що змінилось");
+  await auditor.locator("[data-close-version]").click();
+  await auditor.locator("[data-version]").first().click();
+  await expect(auditor.locator("#version-body")).toContainText("Тест Тестович");
+  await auditCtx.close();
 });
 
 test("ієрархія: менеджер не може редагувати адміністратора", async ({ page }) => {
@@ -255,4 +273,55 @@ test("шаблони редактора зберігаються на серве
   await p2.goto("/cabinet/create/");
   await expect(p2.locator("#slotSel")).toContainText(name);
   await ctx2.close();
+});
+
+test("редактор: вставка розмітки стає оформленим документом", async ({ page }) => {
+  page.on("dialog", (d) => d.accept());
+  await uiLogin(page, people.head, pwd(people.head));
+  await page.goto("/cabinet/create/");
+  await page.locator('.wd-tab[data-tab="insert"]').click();
+  await page.locator('.rb-btn[data-act="markup"]').click();
+  await expect(page.locator("#mkModal")).toBeVisible();
+  await page.locator("#mkSrc").fill(["# РОЗПОРЯДЖЕННЯ ТЕСТ", "[center]**Про перевірку розмітки**[/center]", "1. Перший пункт для {ПІБ}.", "2. Другий пункт.", "[sign]"].join(String.fromCharCode(10)));
+  await expect(page.locator("#mkPreview h1")).toHaveText("РОЗПОРЯДЖЕННЯ ТЕСТ");
+  await page.locator('[data-act="mkReplace"]').click();
+  await expect(page.locator("#editor h1")).toHaveText("РОЗПОРЯДЖЕННЯ ТЕСТ");
+  await expect(page.locator("#editor ol li")).toHaveCount(2);
+  await expect(page.locator('#editor .fld[data-f="name"]')).toHaveCount(1);
+  await expect(page.locator("#editor table.sig")).toHaveCount(1);
+});
+
+test("звернення: громадянин подає, апарат відповідає в переписці", async ({ browser }) => {
+  const text = "Прошу перевірити UI " + RUN + " — тестове звернення.";
+  const citCtx = await browser.newContext();
+  const cit = await citCtx.newPage();
+  cit.on("dialog", (d) => d.accept());
+  await uiLogin(cit, people.cit, pwd(people.cit));
+  await cit.goto("/cabinet/appeals/");
+  await cit.locator("#appeal-new-btn").click();
+  await cit.locator("#appeal-form select[name=office]").selectOption("directors");
+  await cit.locator("#appeal-form textarea[name=text]").fill(text);
+  // Дані людини підставлені з профілю — розділ «Ваші дані» згорнутий
+  await expect(cit.locator("#appeal-me-line")).toContainText("UI cit");
+  await cit.locator("#appeal-form button[type=submit]").click();
+  await expect(cit.locator("#appeal-chat")).toContainText(text);
+  await expect(cit.locator("#appeal-detail .badge")).toContainText("Очікує відповіді");
+
+  const headCtx = await browser.newContext();
+  const head = await headCtx.newPage();
+  await uiLogin(head, people.head, pwd(people.head));
+  await head.goto("/cabinet/appeals/");
+  await head.locator('#appeals-tabs [data-tab="office"]').click();
+  await head.locator(".appeal-item", { hasText: "UI " + RUN }).click();
+  await head.locator("#appeal-reply textarea").fill("Відповідь апарату " + RUN);
+  await head.locator("#appeal-reply button[type=submit]").click();
+  await expect(head.locator("#appeal-chat")).toContainText("Відповідь апарату " + RUN);
+  await headCtx.close();
+
+  // Після оновлення сторінки відкрите звернення лишається відкритим (адреса …/appeals/#id), у списку — остання репліка
+  await cit.reload();
+  await expect(cit.locator(".appeal-item.is-active")).toContainText("Відповідь апарату " + RUN);
+  await expect(cit.locator("#appeal-chat")).toContainText("Відповідь апарату " + RUN);
+  await expect(cit.locator("#appeal-detail .badge")).toContainText("Відповідь надана");
+  await citCtx.close();
 });

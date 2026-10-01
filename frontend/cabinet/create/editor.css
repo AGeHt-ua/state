@@ -633,3 +633,27 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .ln-row b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ln-row small { color: var(--wd-muted); font-size: 11.5px; }
 .ln-row select { width: 110px; flex: 0 0 auto; height: 26px; }
+
+/* Вставка розмітки */
+.mk-box { width: min(1100px, calc(100% - 32px)); max-height: calc(100vh - 40px); overflow: auto; }
+.mk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0; }
+#mkSrc { width: 100%; min-height: 360px; resize: vertical; font: 13px/1.5 Consolas, "Courier New", monospace; padding: 10px; border: 1px solid #c8ced8; border-radius: 4px; box-sizing: border-box; }
+.mk-preview { border: 1px solid #c8ced8; border-radius: 4px; background: #fff; color: #000; padding: 16px 22px; max-height: 420px; overflow: auto; font: 14pt "Times New Roman", serif; }
+.mk-preview h1 { text-align: center; font-size: 16pt; margin: 6px 0; }
+.mk-preview h2, .mk-preview h3 { font-size: 14pt; margin: 6px 0; }
+.mk-preview p { margin: 0 0 4px; }
+.mk-preview table { border-collapse: collapse; width: 100%; }
+.mk-preview td, .mk-preview th { border: 1px solid #999; padding: 2px 6px; }
+.mk-preview table.sig td { border: 0; }
+.mk-preview .page-break { border-top: 2px dashed #9aa3b2; margin: 10px 0; }
+.mk-preview .fld { background: #e8eefb; border-radius: 2px; padding: 0 2px; }
+.mk-help summary { cursor: pointer; font-weight: 600; margin: 4px 0; }
+.mk-help-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.mk-help-table td { border-top: 1px solid #e3e7ee; padding: 5px 8px; vertical-align: top; }
+.mk-help-table code { white-space: pre-wrap; font-size: 12px; }
+.mk-spacer { flex: 1; }
+.mk-box .modal-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+:root[data-theme="dark"] #mkSrc { background: #0f1622; color: #e7ecf3; border-color: #2e3a4f; }
+:root[data-theme="dark"] .mk-help-table td { border-color: #2e3a4f; }
+@media (max-width: 760px) { .mk-grid { grid-template-columns: 1fr; } #mkSrc { min-height: 220px; } }
+.mk-preview .fld.empty { display: inline; color: #7a869a; font-style: italic; }

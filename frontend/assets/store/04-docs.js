@@ -265,6 +265,71 @@ function homeDocs() {
     .sort((a, b) => String(b.publishedAt || b.date).localeCompare(String(a.publishedAt || a.date)));
 }
 
+// «Основний закон штату»: Конституція та інші основоположні акти (позначка в редакторі) — окремий блок на головній
+function fundamentalDocs() {
+  return allDocs()
+    .filter((d) => d.fundamental === true && (d.status === "ok" || d.status === "adopted"))
+    .sort((a, b) => String(a.publishedAt || a.date).localeCompare(String(b.publishedAt || b.date)));
+}
+
+// Позначки документа, які адміністратор перемикає прямо в реєстрі (без нової редакції тексту)
+function setDocFlag(id, user, flag, value) {
+  const doc = getDoc(id);
+  if (!doc || !canManageDocs(user) || !["fundamental", "publishHome"].includes(flag)) return null;
+  const labels = { fundamental: "«Основний закон штату»", publishHome: "«На головній»" };
+  return saveDoc(Object.assign({}, doc, { [flag]: !!value, seeded: false }), {
+    user,
+    action: value ? "Додано до розділу " + labels[flag] : "Прибрано з розділу " + labels[flag],
+    summary: (value ? "Документ додано до розділу " : "Документ прибрано з розділу ") + labels[flag] + "."
+  });
+}
+
+// Хто підписує документ: проєкт готує автор, а підписує той, хто його остаточно погодив
+// (останнє особисте рішення маршруту; голосування Конгресу — колегіальне, підписом не є).
+// Якщо документ автор опублікував сам — підписує автор (null).
+function docSigner(doc) {
+  if (!doc || !["ok", "dead", "adopted"].includes(doc.status)) return null;
+  const done = (doc.approvals || []).filter((a) => a && a.decision === "approved" && a.step !== "congress" && a.by);
+  const last = done[done.length - 1];
+  if (!last || last.by === doc.ownerLogin) return null;
+  const person = allUsers().find((u) => u.login === last.by);
+  return { login: last.by, name: (person && person.name) || last.byName || last.by, post: last.post || (person && person.post) || "" };
+}
+
+// Вигляд документа з підписом того, хто погодив: поля «ПІБ підписанта», «Розчерк», «Посада підписанта»
+function signedDocHtml(doc) {
+  const html = (doc && doc.docHtml) || "";
+  const signer = docSigner(doc);
+  if (!signer || !html) return html;
+  const box = new DOMParser().parseFromString("<div>" + html + "</div>", "text/html").body.firstChild;
+  box.querySelectorAll('.fld[data-f="signer"], .fld[data-f="signText"]').forEach((el) => { el.textContent = signer.name; el.classList.remove("empty"); });
+  if (signer.post) box.querySelectorAll('.fld[data-f="officer"]').forEach((el) => { el.textContent = signer.post; el.classList.remove("empty"); });
+  return box.innerHTML;
+}
+
+// Порівняння редакцій по словах: [{ t: "same"|"add"|"del", s: "текст" }]. Для дуже великих текстів — по абзацах.
+function diffWords(a, b) {
+  const split = (x, byLine) => byLine ? String(x || "").split(/(\n)/) : String(x || "").split(/(\s+)/);
+  let byLine = false;
+  let A = split(a), B = split(b);
+  if (A.length * B.length > 4000000) { byLine = true; A = split(a, true); B = split(b, true); }
+  if (A.length * B.length > 4000000) return [{ t: "del", s: String(a || "") }, { t: "add", s: String(b || "") }];
+  const n = A.length, m = B.length;
+  const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = [];
+  const push = (t, s) => { if (out.length && out[out.length - 1].t === t) out[out.length - 1].s += s; else out.push({ t, s }); };
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { push("same", A[i]); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) push("del", A[i++]);
+    else push("add", B[j++]);
+  }
+  while (i < n) push("del", A[i++]);
+  while (j < m) push("add", B[j++]);
+  return out;
+}
+
 function cabinetCreatedDocs() {
   return allDocs()
     .filter((d) => !d.seeded && d.status !== "trash")

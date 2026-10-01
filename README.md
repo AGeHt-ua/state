@@ -41,9 +41,10 @@ DISCORD_CLIENT_ID=test-client
 DISCORD_CLIENT_SECRET=test-secret
 DISCORD_GUILD_ID=123
 DISCORD_API_BASE=http://127.0.0.1:9098
+DISCORD_CDN_BASE=http://127.0.0.1:9098
 ```
 
-(останні чотири рядки — підставний Discord з автотестів, `tests/mock-discord.mjs`).
+(останні п'ять рядків — підставний Discord з автотестів, `tests/mock-discord.mjs`).
 
 ## Cloudflare Worker (живий сервер)
 

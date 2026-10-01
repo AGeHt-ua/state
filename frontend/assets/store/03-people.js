@@ -166,6 +166,19 @@ function adminDiscordUnlink(login) {
   for (const it of res.data.items || []) map[it.login] = it;
   return { ok: true, map };
 }
+// Аватар прив'язаного Discord як файл-зображення (сервер бере його з CDN Discord); null + помилка — якщо не вдалося
+async function fetchDiscordAvatar() {
+  try {
+    const r = await fetch(REMOTE.url + "/api/discord/avatar", { headers: { Authorization: "Bearer " + apiToken() } });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      return { ok: false, error: data.error || "Не вдалося отримати аватар з Discord." };
+    }
+    return { ok: true, blob: await r.blob() };
+  } catch (err) {
+    return { ok: false, error: "Немає зв'язку з сервером." };
+  }
+}
 function discordUnlink() {
   const res = apiRequest("POST", "/api/discord/unlink", {});
   return res.ok ? Object.assign({ ok: true }, res.data) : { ok: false, error: res.data.error || "Не вдалося відв'язати Discord." };

@@ -23,8 +23,13 @@ export async function startMockDiscord(port = MOCK_DISCORD_PORT) {
         return res.end();
       }
       if (url.pathname === "/api/oauth2/token") return send(200, { access_token: "tok-" + new URLSearchParams(body).get("code") });
-      if (url.pathname === "/api/v10/users/@me") return send(200, { id, username: "dc_" + id.slice(-6), global_name: "Discord " + id.slice(-4) });
+      if (url.pathname === "/api/v10/users/@me") return send(200, { id, username: "dc_" + id.slice(-6), global_name: "Discord " + id.slice(-4), avatar: "0123456789abcdef0123456789abcdef" });
       if (url.pathname.startsWith("/api/v10/users/@me/guilds/")) return id.startsWith("7404") ? send(404, {}) : send(200, { roles: [] });
+      // CDN аватарів: крихітний PNG 1×1
+      if (url.pathname.startsWith("/avatars/") || url.pathname.startsWith("/embed/avatars/")) {
+        res.writeHead(200, { "Content-Type": "image/png" });
+        return res.end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
+      }
       send(404, {});
     });
   });
