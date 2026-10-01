@@ -277,6 +277,28 @@ if ((await get("/api/health")).body.discord) {
   check("Discord: чужий Discord не прив'язати вдруге", loc.includes("discord_error=already_linked"));
   check("Discord: код прив'язки без входу не видається", (await post("/api/discord/link-code", {})).status === 401);
   check("Discord: відв'язка", (await post("/api/discord/unlink", {}, T.cit)).body.linked === false);
+
+  // Дубль: людина спершу увійшла через Discord (створився порожній акаунт), потім прив'язала той самий Discord до свого основного
+  const dupId = "73" + Date.now();
+  ip = "10.0.15.2";
+  loc = await discordLogin(dupId);
+  const dupLogin = (await post("/api/discord/exchange", { code: codeFrom(loc) })).body.login;
+  const mergeCode = (await post("/api/discord/link-code", {}, T.cm1)).body.code;
+  const mergeAuth = new URL(await hop("/api/discord/start?mode=link&code=" + mergeCode));
+  loc = await hop("/api/discord/callback?code=" + dupId + "&state=" + mergeAuth.searchParams.get("state"));
+  check("Discord: порожній дубль об'єднується з основним акаунтом", loc.includes("discord=merged"), loc);
+  check("Discord: дубль видалено", !(await state(admin)).state_users.some((x) => x.login === dupLogin));
+  loc = await discordLogin(dupId);
+  check("Discord: після об'єднання вхід веде в основний акаунт", (await post("/api/discord/exchange", { code: codeFrom(loc) })).body.login === people.cm1);
+
+  // Адміністратор бачить прив'язки й може відв'язати
+  const links = await get("/api/discord/links", admin);
+  check("Discord: адмін бачить прив'язки", links.status === 200 && links.body.items.some((x) => x.login === people.cm1 && x.name));
+  check("Discord: без права керувати людьми прив'язок не видно", (await get("/api/discord/links", T.staff)).status === 403);
+  check("Discord: співробітник не відв'язує чужий Discord", (await post("/api/discord/admin-unlink", { login: people.cm1 }, T.staff)).status === 403);
+  r = await post("/api/discord/admin-unlink", { login: people.cm1 }, admin);
+  check("Discord: адмін відв'язує", r.status === 200 && !r.body.items.some((x) => x.login === people.cm1));
+  check("Discord: після відв'язки людина бачить «не прив'язано»", (await get("/api/discord/status", T.cm1)).body.linked === false);
   await mock.close();
 } else {
   console.log("ℹ️  Вхід через Discord не налаштовано на тестовому Worker — розділ 15 пропущено");

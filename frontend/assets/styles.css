@@ -336,6 +336,9 @@ h2.page-title {
 .portal-login-card .discord-btn { margin-top: 8px; }
 .discord-register { display: grid; gap: 6px; justify-items: start; margin: 4px 0 18px; }
 .discord-register .muted { margin: 0; font-size: 13px; }
+.badge.discord { background: #eef0ff; color: #3b45c4; border-color: #c9cdfb; }
+:root[data-theme="dark"] .badge.discord { background: #2a2f63; color: #c9cdfb; border-color: #3b45c4; }
+.user-discord { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .btn.ghost { background: var(--surface); color: var(--navy-800) !important; border-color: var(--line-strong); }
 .btn.ghost:hover { background: var(--surface-2); border-color: var(--navy-600); box-shadow: none; }
 .btn.ghost.light { color: #fff !important; border-color: rgba(255, 255, 255, .5); background: rgba(255, 255, 255, .08); }

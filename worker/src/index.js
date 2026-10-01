@@ -86,6 +86,8 @@ export default {
       if (url.pathname === "/api/discord/link-code" && request.method === "POST") return cors(await handleDiscordLinkCode(request, env), origin);
       if (url.pathname === "/api/discord/status" && request.method === "GET") return cors(await handleDiscordStatus(request, env), origin);
       if (url.pathname === "/api/discord/unlink" && request.method === "POST") return cors(await handleDiscordUnlink(request, env), origin);
+      if (url.pathname === "/api/discord/links" && request.method === "GET") return cors(await handleDiscordLinks(request, env), origin);
+      if (url.pathname === "/api/discord/admin-unlink" && request.method === "POST") return cors(await handleDiscordAdminUnlink(request, env), origin);
       return cors(json({ error: "Not found" }, 404), origin);
     } catch (err) {
       console.error(err);
@@ -335,12 +337,22 @@ async function handleDiscordCallback(request, env, url) {
 
   if (mode === "link") {
     const other = await env.DB.prepare("SELECT login FROM accounts WHERE discord_id = ? AND login != ?").bind(discordId, st.login).first();
-    if (other) return backToSite(env, "cabinet/", "discord_error=already_linked");
+    const linker = Object.assign(actorStub, { login: st.login });
+    let merged = false;
+    if (other) {
+      // Discord уже має акаунт. Якщо це порожній акаунт, створений входом через Discord, — він зайвий (дубль):
+      // видаляємо його й переносимо Discord. Акаунт, яким уже користувались, автоматично не чіпаємо — вирішує адміністратор.
+      if (!(await isDisposableDiscordAccount(env, other.login))) return backToSite(env, "cabinet/", "discord_error=already_linked");
+      await env.DB.batch(deleteAccountStatements(env, other.login).concat([
+        auditStatement(env, linker, "Об'єднано акаунти", st.login, "порожній Discord-акаунт " + other.login + " видалено, Discord " + discordName + " перенесено")
+      ]));
+      merged = true;
+    }
     await env.DB.batch([
       env.DB.prepare("UPDATE accounts SET discord_id = ?, discord_name = ? WHERE login = ?").bind(discordId, discordName, st.login),
-      auditStatement(env, Object.assign(actorStub, { login: st.login }), "Прив'язано Discord", st.login, discordName)
+      auditStatement(env, linker, "Прив'язано Discord", st.login, discordName)
     ]);
-    return backToSite(env, "cabinet/", "discord=linked");
+    return backToSite(env, "cabinet/", merged ? "discord=merged" : "discord=linked");
   }
 
   let account = await env.DB.prepare("SELECT login FROM accounts WHERE discord_id = ?").bind(discordId).first();
@@ -392,6 +404,39 @@ async function handleDiscordStatus(request, env) {
   return json({ enabled: discordReady(env), linked: !!row, name: row ? row.discord_name : "" });
 }
 
+// Хто з людей прив'язав Discord — лише для тих, хто керує людьми
+async function handleDiscordLinks(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const actor = await loadActor(env, login);
+  if (!actor.can(["managePeople"])) return json({ error: "Недостатньо прав для цієї дії." }, 403);
+  const { results } = await env.DB.prepare(
+    "SELECT a.login, a.discord_name AS name, EXISTS (SELECT 1 FROM audit WHERE action = 'Реєстрація через Discord' AND target = a.login) AS viaDiscord " +
+    "FROM accounts a WHERE a.discord_id IS NOT NULL"
+  ).all();
+  return json({ items: results.map((r) => ({ login: r.login, name: r.name || "", viaDiscord: !!r.viaDiscord })) });
+}
+
+async function handleDiscordAdminUnlink(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const actor = await loadActor(env, login);
+  if (!actor.can(["managePeople"])) return json({ error: "Недостатньо прав для цієї дії." }, 403);
+  const body = await readJson(request);
+  const target = String((body && body.login) || "").trim().toLowerCase();
+  if (!target) return json({ error: "Не вказано акаунт." }, 400);
+  if (target !== login && !outranks(actor, await loadActor(env, target))) {
+    return json({ error: "Ця людина має рівний або вищий рівень доступу — відв'язати її Discord може лише вищий за рангом." }, 403);
+  }
+  const row = await env.DB.prepare("SELECT discord_name FROM accounts WHERE login = ? AND discord_id IS NOT NULL").bind(target).first();
+  if (!row) return json({ error: "У цього акаунта Discord не прив'язано." }, 400);
+  await env.DB.batch([
+    env.DB.prepare("UPDATE accounts SET discord_id = NULL, discord_name = NULL WHERE login = ?").bind(target),
+    auditStatement(env, actor, "Відв'язано Discord (адміністратор)", target, row.discord_name || "")
+  ]);
+  return handleDiscordLinks(request, env);
+}
+
 async function handleDiscordUnlink(request, env) {
   const login = await tokenLogin(request, env);
   if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
@@ -432,6 +477,33 @@ async function handlePasswordChange(request, env) {
 
 // Видалення акаунта адміністратором (managePeople): вхід, сесії, профіль і заявки на зміну профілю.
 // Документи й звернення людини лишаються в реєстрі як історія. Себе й службові акаунти видалити не можна.
+// Повне видалення акаунта: вхід, сесії, профіль і заявки (документи й звернення лишаються в реєстрі)
+function deleteAccountStatements(env, target) {
+  return [
+    env.DB.prepare("DELETE FROM accounts WHERE login = ?").bind(target),
+    env.DB.prepare("DELETE FROM sessions WHERE login = ?").bind(target),
+    env.DB.prepare("INSERT INTO tombstones (coll, id, at) SELECT coll, id, ?2 FROM rows WHERE (coll = 'state_users' AND id = ?1) OR (coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?1) " +
+      "ON CONFLICT (coll, id) DO UPDATE SET at = excluded.at").bind(target, Date.now()),
+    env.DB.prepare("DELETE FROM rows WHERE coll = 'state_users' AND id = ?").bind(target),
+    env.DB.prepare("DELETE FROM rows WHERE coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?").bind(target)
+  ];
+}
+
+// «Порожній» акаунт: створений входом через Discord, звичайний громадянин без посади, прав, документів і звернень
+async function isDisposableDiscordAccount(env, login) {
+  if (SEED_PROFILES[login] || login in seedAccounts(env)) return false;
+  const born = await env.DB.prepare("SELECT 1 FROM audit WHERE action = 'Реєстрація через Discord' AND target = ?").bind(login).first();
+  if (!born) return false;
+  const row = await env.DB.prepare("SELECT data FROM rows WHERE coll = 'state_users' AND id = ?").bind(login).first();
+  const p = row ? JSON.parse(row.data) : {};
+  const roles = p.roles || [];
+  if (roles.some((r) => r !== "citizen") || (p.office && p.office !== "citizens") || p.positionId || (p.extraPermissions || []).length || p.congressMember) return false;
+  const used = await env.DB.prepare(
+    "SELECT 1 FROM rows WHERE coll IN ('state_docs', 'state_appeals') AND json_extract(data, '$.ownerLogin') = ? LIMIT 1"
+  ).bind(login).first();
+  return !used;
+}
+
 async function handleDeleteUser(request, env) {
   const login = await tokenLogin(request, env);
   if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
@@ -443,15 +515,7 @@ async function handleDeleteUser(request, env) {
   if (target === login) return json({ error: "Свій акаунт видалити не можна." }, 400);
   if (SEED_PROFILES[target] || target in seedAccounts(env)) return json({ error: "Службовий акаунт видалити не можна." }, 400);
   if (!outranks(actor, await loadActor(env, target))) return json({ error: "Ця людина має рівний або вищий рівень доступу — видалити її може лише вищий за рангом." }, 403);
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM accounts WHERE login = ?").bind(target),
-    env.DB.prepare("DELETE FROM sessions WHERE login = ?").bind(target),
-    env.DB.prepare("INSERT INTO tombstones (coll, id, at) SELECT coll, id, ?2 FROM rows WHERE (coll = 'state_users' AND id = ?1) OR (coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?1) " +
-      "ON CONFLICT (coll, id) DO UPDATE SET at = excluded.at").bind(target, Date.now()),
-    env.DB.prepare("DELETE FROM rows WHERE coll = 'state_users' AND id = ?").bind(target),
-    env.DB.prepare("DELETE FROM rows WHERE coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?").bind(target),
-    auditStatement(env, actor, "Видалено акаунт", target, "")
-  ]);
+  await env.DB.batch(deleteAccountStatements(env, target).concat([auditStatement(env, actor, "Видалено акаунт", target, "")]));
   return json({ ok: true, data: await readCollections(env, ["state_users", "state_profile_requests"], actor, { base: baseOf(request) }) });
 }
 

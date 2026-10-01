@@ -189,3 +189,47 @@ test("вхід, натиснутий до завантаження даних, �
   await page.waitForURL(/\/cabinet\/$/);
   expect(page.url()).not.toContain("password");
 });
+
+test("Discord без дублів: новий акаунт → прив'язка до основного → адмін бачить і відв'язує", async ({ browser }) => {
+  const mock = await startMockDiscord();
+  try {
+    mock.state.nextId = "76" + Date.now();
+    // 1. Людина спершу натиснула «Увійти через Discord» — створився новий акаунт, кабінет пояснює, як уникнути дубля
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    page.on("dialog", (d) => d.accept());
+    await page.goto("/cabinet/portal/");
+    await page.getByRole("link", { name: "Увійти через Discord" }).click();
+    await page.waitForURL(/\/cabinet\/$/);
+    await expect(page.locator("main .notice").first()).toContainText("створено новий акаунт через Discord");
+    const dupLogin = await page.locator("#f-login").textContent();
+    // 2. Входить своїм акаунтом з паролем і прив'язує той самий Discord — дубль зникає
+    await page.evaluate(() => logout());
+    await uiLogin(page, people.cit, pwd(people.cit));
+    await page.locator("#btn-edit-profile").click();
+    await page.locator("#discord-details summary").click();
+    await page.locator("#discord-link").click();
+    await page.waitForURL(/\/cabinet\/$/);
+    await expect(page.locator("#discord-msg")).toContainText("Порожній акаунт");
+    await expect(page.locator("#discord-line")).toContainText("Прив'язано");
+    await ctx.close();
+
+    // 3. Адміністратор: позначка Discord у списку, дубля немає, відв'язка в «Змінити»
+    const adminCtx = await browser.newContext();
+    const admin = await adminCtx.newPage();
+    admin.on("dialog", (d) => d.accept());
+    await uiLogin(admin, "admin", ADMIN_PASSWORD);
+    await admin.goto("/cabinet/admin/");
+    await admin.getByRole("tab", { name: /^Люди/ }).click();
+    await admin.locator("#people-f").selectOption("discord");
+    await expect(admin.locator("#people-box")).toContainText("Discord ·");
+    await expect(admin.locator(`[data-edit-user="${dupLogin}"]`)).toHaveCount(0);
+    await admin.locator(`[data-edit-user="${people.cit}"]`).click();
+    await expect(admin.locator("#user-discord-line")).toContainText("прив'язано до акаунта з паролем");
+    await admin.locator("#user-discord-unlink").click();
+    await expect(admin.locator("#user-discord-line")).toContainText("не прив'язано");
+    await adminCtx.close();
+  } finally {
+    await mock.close();
+  }
+});

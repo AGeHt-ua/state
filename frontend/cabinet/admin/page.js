@@ -58,9 +58,18 @@ whenStateReady(async function () {
     return list.map((p) => `<option value="${attr(p.id)}"${p.id === pick ? " selected" : ""}>${esc(p.title)} — ${esc(levelLabel(p))}</option>`).join("");
   }
   function pendingUsers() { return allUsers().filter((u) => role(u) === "pending"); }
+  // Прив'язки Discord знає лише сервер (у профілі не зберігаються): завантажуються разом зі сторінкою
+  let discordLinks = {};
+  function loadLinks() {
+    if (!can.people) return;
+    const res = loadDiscordLinks();
+    if (res.ok) discordLinks = res.map;
+  }
   function userBadges(u) {
     const r = role(u);
     let b = r === "pending" ? `<span class="badge warn">Без призначення</span>` : r === "citizen" ? `<span class="badge dead">Громадянин</span>` : "";
+    const d = discordLinks[u.login];
+    if (d) b += `<span class="badge discord" title="${attr(d.viaDiscord ? "Акаунт створено входом через Discord" : "Discord прив'язано до акаунта з паролем")}">Discord · ${esc(d.name)}</span>`;
     if (isCongressMember(u)) b += `<span class="badge draft">Конгресмен</span>`;
     if (isStaff(u) && isFullAdmin(u)) b += `<span class="badge ok">Адміністратор</span>`;
     else if ((u.extraPermissions || []).length && isStaff(u)) b += `<span class="badge draft">+${u.extraPermissions.length} прав</span>`;
@@ -123,8 +132,11 @@ whenStateReady(async function () {
       if (f === "citizen" && r !== "citizen") return false;
       if (f === "pending" && r !== "pending") return false;
       if (f === "congress" && !isCongressMember(u)) return false;
+      if (f === "discord" && !discordLinks[u.login]) return false;
+      if (f === "nodiscord" && discordLinks[u.login]) return false;
       const p = positionById(u.positionId);
-      return !q || `${u.name || ""} ${u.login} ${u.post || ""} ${p ? p.title : ""}`.toLowerCase().includes(q);
+      const d = discordLinks[u.login];
+      return !q || `${u.name || ""} ${u.login} ${u.post || ""} ${p ? p.title : ""} ${d ? d.name : ""}`.toLowerCase().includes(q);
     }).sort((a, b) => String(a.name || a.login).localeCompare(String(b.name || b.login), "uk"));
     $("people-box").innerHTML = list.length ? list.map((u) => `
       <article class="admin-list-row">
@@ -163,6 +175,14 @@ whenStateReady(async function () {
     form.querySelector("[data-act=revoke]").hidden = !manageable || !isStaff(u) || u.login === me.login;
     form.querySelector("[data-act=delete-user]").hidden = !manageable || !can.people || u.seeded || u.login === me.login;
     form.querySelector("[data-act=reset-password]").hidden = !manageable || !can.people || u.login === me.login;
+    // Discord: хто прив'язаний і чи створено акаунт через Discord; відв'язати — за тими ж правилами рангу
+    const d = discordLinks[u.login];
+    $("user-discord").hidden = !can.people;
+    $("user-discord-line").innerHTML = d
+      ? `<b>Discord:</b> ${esc(d.name)} <small class="muted">· ${d.viaDiscord ? "акаунт створено входом через Discord" : "прив'язано до акаунта з паролем"}</small>`
+      : `<b>Discord:</b> <span class="muted">не прив'язано</span>`;
+    $("user-discord-unlink").hidden = !d || !(manageable || u.login === me.login);
+    $("user-discord-unlink").disabled = false;
     syncLevelHelp();
     $("user-modal").hidden = false;
   }
@@ -374,6 +394,7 @@ whenStateReady(async function () {
 
   /* ---------- Малювання всього ---------- */
   function refresh() {
+    loadLinks();
     drawTabs();
     if (can.people || can.profiles) drawTodo();
     if (can.people) drawPeople();
@@ -426,6 +447,22 @@ whenStateReady(async function () {
       prompt("Тимчасовий пароль для " + login + " (скопіюйте й передайте людині; після входу система попросить його змінити):", res.password);
       toast("Пароль " + login + " скинуто");
       return;
+    }
+    if (a === "discord-unlink") {
+      const login = $("user-form").login.value;
+      const u = allUsers().find((x) => x.login === login);
+      const d = discordLinks[login];
+      if (!u || !d) return;
+      const hint = d.viaDiscord
+        ? "\n\nАкаунт створено через Discord, пароля людина не знає: після відв'язки вона зможе увійти лише з тимчасовим паролем («Скинути пароль»)."
+        : "\n\nЛюдина зможе входити паролем і прив'язати Discord знову у своєму профілі.";
+      if (!confirm("Відв'язати Discord «" + d.name + "» від акаунта «" + (u.name || u.login) + "» (" + u.login + ")?" + hint)) return;
+      const res = adminDiscordUnlink(login);
+      if (!res.ok) { alert(res.error); return; }
+      discordLinks = res.map;
+      openUser(login);
+      toast("Discord відв'язано");
+      return drawPeople();
     }
     if (a === "audit-more") return drawAudit(true);
     if (a === "delete-user") {

@@ -6,6 +6,9 @@ whenStateReady(async function () {
     history.replaceState(null, "", location.pathname + location.search);
     if (hash.has("discord_code")) {
       const user = loginWithDiscordCode(hash.get("discord_code"));
+      if (user && hash.get("new") === "1") {
+        try { localStorage.setItem("state_discord_new", "1"); } catch { /* приватний режим */ }
+      }
       if (user) {
         location.href = isCabinetUser(user) ? pathTo("cabinet/") : pathTo("cabinet/pending/");
         return;

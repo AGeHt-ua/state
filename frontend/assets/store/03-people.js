@@ -151,6 +151,21 @@ function discordLinkCode() {
   const res = apiRequest("POST", "/api/discord/link-code", {});
   return res.ok ? { ok: true, code: res.data.code } : { ok: false, error: res.data.error || "Не вдалося почати прив'язку." };
 }
+// Адміністратор: хто прив'язав Discord (login → { name, viaDiscord }) і відв'язка чужого Discord
+function loadDiscordLinks() {
+  const res = apiRequest("GET", "/api/discord/links");
+  if (!res.ok) return { ok: false, error: res.data.error || "Не вдалося завантажити прив'язки Discord.", map: {} };
+  const map = {};
+  for (const it of res.data.items || []) map[it.login] = it;
+  return { ok: true, map };
+}
+function adminDiscordUnlink(login) {
+  const res = apiRequest("POST", "/api/discord/admin-unlink", { login });
+  if (!res.ok) return { ok: false, error: res.data.error || "Не вдалося відв'язати Discord." };
+  const map = {};
+  for (const it of res.data.items || []) map[it.login] = it;
+  return { ok: true, map };
+}
 function discordUnlink() {
   const res = apiRequest("POST", "/api/discord/unlink", {});
   return res.ok ? Object.assign({ ok: true }, res.data) : { ok: false, error: res.data.error || "Не вдалося відв'язати Discord." };
@@ -162,7 +177,7 @@ const DISCORD_ERRORS = {
   failed: "Discord не підтвердив вхід. Спробуйте ще раз.",
   bad_secret: "Сервер неправильно налаштований для Discord (невірний Client Secret). Повідомте адміністратора.",
   not_member: "Вхід дозволено лише учасникам Discord-сервера проєкту.",
-  already_linked: "Цей Discord уже прив'язаний до іншого акаунта.",
+  already_linked: "Цей Discord уже прив'язаний до іншого акаунта, яким користувались (є документи, звернення чи посада). Попросіть адміністратора відв'язати його: «Адмін-панель» → «Люди» → «Змінити».",
   too_many: "Забагато нових акаунтів з вашої мережі. Спробуйте пізніше."
 };
 

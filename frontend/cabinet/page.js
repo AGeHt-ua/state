@@ -151,6 +151,17 @@ whenStateReady(async function () {
     document.getElementById("discord-unlink").addEventListener("click", () => {
       if (confirm("Відв'язати Discord? Входити можна буде лише паролем.")) drawDiscord(discordUnlink());
     });
+    // Щойно створений входом через Discord акаунт: пояснюємо, як не мати двох акаунтів
+    let fresh = false;
+    try { fresh = localStorage.getItem("state_discord_new") === "1"; localStorage.removeItem("state_discord_new"); } catch { /* приватний режим */ }
+    if (fresh) {
+      const note = document.createElement("div");
+      note.className = "notice";
+      note.setAttribute("role", "note");
+      note.innerHTML = "<b>Для вас створено новий акаунт через Discord.</b> Якщо у вас уже є акаунт на порталі з паролем — вийдіть, увійдіть ним " +
+        "і в «Редагувати профіль» → «Discord» натисніть «Прив'язати Discord». Цей новий акаунт тоді об'єднається автоматично, і дубля не буде.";
+      document.querySelector("main").prepend(note);
+    }
     // Повернення з Discord після прив'язки
     const back = new URLSearchParams(location.hash.slice(1));
     if (back.has("discord") || back.has("discord_error")) {
@@ -159,7 +170,9 @@ whenStateReady(async function () {
       dDetails.hidden = false;
       dDetails.open = true;
       dMsg.style.color = back.has("discord_error") ? "#8a2b2b" : "";
-      dMsg.textContent = back.has("discord_error") ? (DISCORD_ERRORS[back.get("discord_error")] || "Не вдалося прив'язати Discord.") : "Discord прив'язано.";
+      dMsg.textContent = back.has("discord_error") ? (DISCORD_ERRORS[back.get("discord_error")] || "Не вдалося прив'язати Discord.")
+        : back.get("discord") === "merged" ? "Discord прив'язано. Порожній акаунт, який раніше створив вхід через Discord, видалено — тепер Discord веде сюди."
+        : "Discord прив'язано.";
       drawDiscord(discordStatus());
     }
 
