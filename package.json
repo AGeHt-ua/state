@@ -1,0 +1,11 @@
+{
+  "name": "state-ukraine-gta5",
+  "private": true,
+  "description": "Портал штату Сан-Андреас (Ukraine GTA 5 RP): сайт (frontend) і сервер на Cloudflare Workers (worker)",
+  "scripts": {
+    "test": "node tests/api.test.mjs",
+    "dev:worker": "cd worker && npx wrangler dev --port 8787",
+    "db:local": "cd worker && npx wrangler d1 execute state-db --local --file=schema.sql",
+    "deploy:worker": "cd worker && npx wrangler deploy"
+  }
+}

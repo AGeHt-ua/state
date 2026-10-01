@@ -7,25 +7,25 @@
   <script>if(window.top!==window.self){try{window.top.location=window.self.location}catch(e){document.documentElement.style.display="none"}}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Канцелярія — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001a" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001b" />
   <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20261001a">
+  <link rel="stylesheet" href="../../assets/styles.css?v=20261001b">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600;1,700&family=Great+Vibes&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;0,800;1,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../../assets/doc.css?v=20261001a">
-  <link rel="stylesheet" href="editor.css?v=20261001a">
+  <link rel="stylesheet" href="../../assets/doc.css?v=20261001b">
+  <link rel="stylesheet" href="editor.css?v=20261001b">
   <style id="printPage">@page { size: A4 portrait; margin: 0; }</style>
-  <script src="../../assets/config.js?v=20261001a"></script>
-  <script src="../../assets/accounts.js?v=20261001a"></script>
-  <script src="../../assets/app.js?v=20261001a"></script>
-  <script src="../../assets/store.js?v=20261001a"></script>
+  <script src="../../assets/config.js?v=20261001b"></script>
+  <script src="../../assets/accounts.js?v=20261001b"></script>
+  <script src="../../assets/app.js?v=20261001b"></script>
+  <script src="../../assets/store.js?v=20261001b"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body class="wd-body">
   <nav class="nav wd-nav">
     <div class="nav-inner">
-      <a class="wd-brand" href="../../"><img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001a" alt=""><span>STATE</span></a>
+      <a class="wd-brand" href="../../"><img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001b" alt=""><span>STATE</span></a>
       <a href="../../">Головна</a>
       <a href="../../acts/">Законодавча база</a>
       <a href="../">Кабінет</a>
@@ -107,7 +107,7 @@
             <div class="rb-col">
               <label class="rb-check"><input type="checkbox" id="chkHome"> На головну сайту</label>
               <a class="rb-link" href="../all/">Реєстр документів →</a>
-              <a class="rb-link" href="../docs/">Опубліковані →</a>
+              <a class="rb-link" href="../../acts/">Законодавча база →</a>
             </div>
           </div>
           <div class="rb-label">Сайт</div>
@@ -133,6 +133,13 @@
             <span class="rb-note">Подвійний клік по полю<br>в тексті — змінити на місці</span>
           </div>
           <div class="rb-label">Поля</div>
+        </div>
+        <div class="rb-group">
+          <div class="rb-col">
+            <button type="button" class="rb-btn wide" data-act="openLinks" title="Які чинні акти цей документ змінює або скасовує"><i data-icon="newdoc"></i><span>Змінює / скасовує…</span></button>
+            <span class="rb-note" id="linksNote">Не пов'язано з іншими актами</span>
+          </div>
+          <div class="rb-label">Зв'язки</div>
         </div>
       </div>
 
@@ -594,6 +601,19 @@
   </div>
   <datalist id="peopleList"></datalist>
 
+  <div class="modal" id="lnModal" hidden>
+    <div class="modal-box ap-box">
+      <h3>Зв'язок з іншими актами</h3>
+      <p class="ap-lead">Позначте чинні документи, які цей документ змінює або скасовує. Після публікації скасовані акти автоматично втратять чинність, а на сторінках змінених з'явиться посилання на цей документ.</p>
+      <input id="lnSearch" type="search" placeholder="Пошук за назвою або номером" autocomplete="off">
+      <div id="lnList" class="ln-list"></div>
+      <div class="modal-actions">
+        <button type="button" data-act="lnCancel">Скасувати</button>
+        <button type="button" class="primary" data-act="lnSave">Зберегти</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal" id="apModal" hidden>
     <div class="modal-box ap-box">
       <h3>Надіслати на погодження</h3>
@@ -623,6 +643,6 @@
 
   <div id="toast" class="wd-toast"></div>
 
-  <script src="editor.js?v=20261001a"></script>
+  <script src="editor.js?v=20261001b"></script>
 </body>
 </html>

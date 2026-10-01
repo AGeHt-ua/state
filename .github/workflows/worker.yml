@@ -1,0 +1,60 @@
+# Перевірка й викладання сервера (Cloudflare Worker).
+# На кожен push і pull request: піднімається Worker із чистою локальною базою й проганяються автотести (tests/api.test.mjs).
+# Якщо тести пройшли і це гілка main — Worker автоматично деплоїться, але лише коли в репозиторії додано секрети
+# CLOUDFLARE_API_TOKEN і CLOUDFLARE_ACCOUNT_ID (Settings → Secrets and variables → Actions). Без них — лише тести.
+name: Worker
+
+on:
+  push:
+    branches: [main]
+    paths: ["worker/**", "tests/**", ".github/workflows/worker.yml", "package.json"]
+  pull_request:
+    paths: ["worker/**", "tests/**", ".github/workflows/worker.yml", "package.json"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Тестова база й секрети
+        working-directory: worker
+        run: |
+          printf 'SEED_ACCOUNTS={"admin":"ci-admin-password-123"}\nFRONTEND_ORIGIN=http://localhost:8080\n' > .dev.vars
+          npx --yes wrangler@4 d1 execute state-db --local --file=schema.sql
+      - name: Запуск Worker
+        working-directory: worker
+        run: |
+          npx --yes wrangler@4 dev --port 8787 > ../wrangler.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:8787/api/health && exit 0; sleep 2; done
+          cat ../wrangler.log; exit 1
+      - name: Автотести
+        env:
+          TEST_URL: http://localhost:8787
+          ADMIN_PASSWORD: ci-admin-password-123
+        run: node tests/api.test.mjs
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+      - uses: actions/setup-node@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          node-version: 22
+      - name: Деплой Worker
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        working-directory: worker
+        run: npx --yes wrangler@4 deploy
+      - name: Пропущено (немає секретів Cloudflare)
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "Додайте CLOUDFLARE_API_TOKEN і CLOUDFLARE_ACCOUNT_ID у секрети репозиторію, щоб Worker деплоївся автоматично."

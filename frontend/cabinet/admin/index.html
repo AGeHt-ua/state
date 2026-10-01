@@ -7,16 +7,16 @@
   <script>if(window.top!==window.self){try{window.top.location=window.self.location}catch(e){document.documentElement.style.display="none"}}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Адмін-панель — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001a" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001b" />
   <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20261001a" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20261001b" />
 </head>
 <body>
   <div class="topbar">Адмін-панель</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001a" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001b" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Люди, апарати і доступи</p>
@@ -111,6 +111,21 @@
           </section>
         </section>
 
+        <!-- ЖУРНАЛ -->
+        <section class="admin-tab" data-tab="audit" hidden>
+          <section class="card">
+            <div class="admin-section-head">
+              <div>
+                <h3>Журнал дій</h3>
+                <p class="muted">Хто й коли призначав людей і видавав права, видаляв акаунти, скидав паролі, змінював структуру, публікував, скасовував і видаляв документи. Записи не можна змінити чи видалити.</p>
+              </div>
+              <label class="audit-filter">Пошук<input id="audit-q" type="search" placeholder="Логін, дія, назва"></label>
+            </div>
+            <div id="audit-box" class="audit-list"></div>
+            <div class="form-actions"><button class="btn ghost" type="button" data-act="audit-more" id="audit-more" hidden>Показати давніші</button></div>
+          </section>
+        </section>
+
         <!-- КОНГРЕС -->
         <section class="admin-tab" data-tab="congress" hidden>
           <section class="card">
@@ -156,6 +171,7 @@
           <button class="btn gold" type="submit">Зберегти</button>
           <button class="btn ghost" type="button" data-close>Скасувати</button>
           <button class="btn ghost danger" type="button" data-act="revoke" style="margin-left:auto">Забрати доступ</button>
+          <button class="btn ghost" type="button" data-act="reset-password">Скинути пароль</button>
           <button class="btn ghost danger" type="button" data-act="delete-user">Видалити акаунт</button>
         </div>
       </form>
@@ -244,10 +260,10 @@
   </div>
 
   <footer class="footer"></footer>
-  <script src="../../assets/config.js?v=20261001a"></script>
-  <script src="../../assets/accounts.js?v=20261001a"></script>
-  <script src="../../assets/app.js?v=20261001a"></script>
-  <script src="../../assets/store.js?v=20261001a"></script>
+  <script src="../../assets/config.js?v=20261001b"></script>
+  <script src="../../assets/accounts.js?v=20261001b"></script>
+  <script src="../../assets/app.js?v=20261001b"></script>
+  <script src="../../assets/store.js?v=20261001b"></script>
   <script>
     const me = requireAuth();
     if (!me) throw new Error("auth");
@@ -256,7 +272,8 @@
       structure: hasPermission(me, "manageStructure"),
       routes: hasPermission(me, "manageRoutes") || hasPermission(me, "manageStructure"),
       profiles: hasPermission(me, "approveProfiles") || hasPermission(me, "managePeople"),
-      congress: hasPermission(me, "manageCongress")
+      congress: hasPermission(me, "manageCongress"),
+      audit: ["managePeople", "manageStructure", "manageDocs", "manageRoutes"].some((p) => hasPermission(me, p))
     };
     if (!Object.values(can).some(Boolean)) location.href = "../../denied/";
 
@@ -277,7 +294,8 @@
       { id: "todo", label: "Потребує уваги", show: can.people || can.profiles, count: () => (can.people ? pendingUsers().length : 0) + (can.profiles ? pendingProfileRequests().length : 0) },
       { id: "people", label: "Люди", show: can.people },
       { id: "structure", label: "Структура", show: can.structure || can.routes },
-      { id: "congress", label: "Конгрес", show: can.congress, count: () => congressMembers().length, neutral: true }
+      { id: "congress", label: "Конгрес", show: can.congress, count: () => congressMembers().length, neutral: true },
+      { id: "audit", label: "Журнал", show: can.audit }
     ].filter((t) => t.show);
     let current = (location.hash || "").slice(1);
     if (!TABS.some((t) => t.id === current)) current = TABS[0].id;
@@ -288,7 +306,7 @@
       }).join("");
       document.querySelectorAll(".admin-tab").forEach((s) => { s.hidden = s.dataset.tab !== current; });
     }
-    function showTab(id) { current = id; history.replaceState(null, "", "#" + id); drawTabs(); }
+    function showTab(id) { current = id; history.replaceState(null, "", "#" + id); drawTabs(); if (id === "audit") { auditLoaded = false; drawAudit(); } }
 
     /* ---------- Спільні списки ---------- */
     function officeOptions(selected, withNone) {
@@ -400,6 +418,7 @@
       $("user-perm-details").open = editingExtra.length > 0;
       form.querySelector("[data-act=revoke]").hidden = !isStaff(u) || u.login === me.login;
       form.querySelector("[data-act=delete-user]").hidden = !can.people || u.seeded || u.login === me.login;
+      form.querySelector("[data-act=reset-password]").hidden = !can.people || u.login === me.login;
       syncLevelHelp();
       $("user-modal").hidden = false;
     }
@@ -584,6 +603,29 @@
       $("doctype-modal").hidden = false;
     }
 
+    /* ---------- Журнал ---------- */
+    let auditItems = [];
+    let auditLoaded = false;
+    function drawAudit(more) {
+      if (!can.audit) return;
+      if (!auditLoaded || more) {
+        const res = loadAudit(more && auditItems.length ? auditItems[auditItems.length - 1].id : 0);
+        if (!res.ok) { $("audit-box").innerHTML = `<div class="admin-empty">${esc(res.error)}</div>`; return; }
+        auditItems = more ? auditItems.concat(res.items) : res.items;
+        auditLoaded = true;
+        $("audit-more").hidden = res.items.length < 100;
+      }
+      const q = $("audit-q").value.trim().toLowerCase();
+      const list = auditItems.filter((it) => !q || `${it.actor} ${it.action} ${it.target} ${it.details}`.toLowerCase().includes(q));
+      const who = (login) => { const u = allUsers().find((x) => x.login === login); return u ? (u.name || login) + " (" + login + ")" : login || "—"; };
+      $("audit-box").innerHTML = list.length ? list.map((it) => `
+        <article class="audit-row">
+          <time>${esc(formatDocWhen({ date: new Date(it.at).toISOString() }))}</time>
+          <div><b>${esc(it.action)}</b> · ${esc(it.target)}${it.details ? `<small>${esc(it.details)}</small>` : ""}</div>
+          <span class="muted">${esc(who(it.actor))}</span>
+        </article>`).join("") : `<div class="admin-empty">Записів немає.</div>`;
+    }
+
     /* ---------- Малювання всього ---------- */
     function refresh() {
       drawTabs();
@@ -592,6 +634,7 @@
       if (can.structure || can.routes) drawStructure();
       if (can.structure || can.routes) drawDocTypes();
       if (can.congress) drawCongress();
+      if (current === "audit") drawAudit();
       if (typeof enhanceCabinetNavigation === "function" && document.querySelector(".side-me")) enhanceCabinetNavigation();
     }
     const closeAll = () => document.querySelectorAll(".modal-backdrop").forEach((m) => { m.hidden = true; });
@@ -628,6 +671,17 @@
         closeAll(); toast("Доступ забрано");
         return refresh();
       }
+      if (a === "reset-password") {
+        const login = $("user-form").login.value;
+        const u = allUsers().find((x) => x.login === login);
+        if (!u || !confirm("Скинути пароль «" + (u.name || u.login) + "» (" + u.login + ")?\n\nСтарий пароль перестане діяти, людину буде виведено з усіх пристроїв. Ви отримаєте тимчасовий пароль — передайте його людині особисто.")) return;
+        const res = resetUserPassword(login);
+        if (!res.ok) { alert(res.error); return; }
+        prompt("Тимчасовий пароль для " + login + " (скопіюйте й передайте людині; після входу система попросить його змінити):", res.password);
+        toast("Пароль " + login + " скинуто");
+        return;
+      }
+      if (a === "audit-more") return drawAudit(true);
       if (a === "delete-user") {
         const login = $("user-form").login.value;
         const u = allUsers().find((x) => x.login === login);
@@ -773,6 +827,7 @@
     });
 
     refresh();
+    $("audit-q").addEventListener("input", () => drawAudit());
   </script>
 </body>
 </html>

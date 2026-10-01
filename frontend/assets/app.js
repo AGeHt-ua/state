@@ -248,8 +248,18 @@ function bindLogout() {
   });
 }
 
+// Адмін скинув пароль: доки людина не змінить тимчасовий, на кожній сторінці — нагадування з посиланням
+function showMustChangeBanner() {
+  let flag = "";
+  try { flag = localStorage.getItem("state_must_change"); } catch (e) { /* приватний режим */ }
+  if (flag !== "1" || !siteUser() || document.getElementById("must-change-banner")) return;
+  document.body.insertAdjacentHTML("afterbegin", `<div id="must-change-banner" role="alert" style="background:#8a6300;color:#fff;padding:9px 16px;text-align:center;font-size:14px">
+    Вам видано тимчасовий пароль. <a href="${pathTo("cabinet/?changePassword=1")}" style="color:#fff;font-weight:700;text-decoration:underline">Змініть його зараз</a> — інакше він може потрапити до сторонніх.</div>`);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   bindLogout();
+  showMustChangeBanner();
   // Редактор документів має власний інтерфейс
   if (document.body.classList.contains("wd-body")) return;
   ensureHeader();

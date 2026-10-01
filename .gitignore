@@ -6,3 +6,4 @@ node_modules/
 *.log
 seed-passwords.local.json
 worker/backups/
+.claude/

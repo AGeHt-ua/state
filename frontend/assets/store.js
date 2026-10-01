@@ -242,8 +242,8 @@ const SEED_DOCS = [
 ];
 
 /* ---------- Спільна база (Cloudflare Worker + D1) ----------
-   Якщо в config.js задано STATE_WORKER_URL, колекції з SHARED_KEYS читаються й пишуться на сервері,
-   тож усі користувачі бачать одні й ті самі дані. Без адреси — як раніше, лише в браузері.
+   Колекції з SHARED_KEYS читаються й пишуться лише на сервері (адреса — STATE_WORKER_URL у config.js),
+   тож усі користувачі бачять одні й ті самі дані. У браузері лишаються тільки вхід (токен, сесія) і налаштування.
    Сторінки читають сховище синхронно, тому запити теж синхронні: дані завантажуються до запуску скриптів сторінки,
    а запис завершується до переходу на іншу сторінку. */
 const SHARED_KEYS = [
@@ -315,6 +315,7 @@ function mergeRemoteRows(data) {
     noteRevs(rows);
     changed = true;
   });
+  if (changed) saveSnapshot();
   return changed;
 }
 
@@ -323,7 +324,6 @@ function mergeRemoteRows(data) {
 const STATE_WATCHERS = [];
 let stateWatchTimer = null;
 function watchState(cb) {
-  if (!REMOTE.cache) return;
   STATE_WATCHERS.push(cb);
   if (stateWatchTimer) return;
   const tick = async () => {
@@ -333,7 +333,11 @@ function watchState(cb) {
       const r = await fetch(REMOTE.url + "/api/changes?since=" + REMOTE.since, { headers: token ? { Authorization: "Bearer " + token } : {} });
       if (!r.ok) return;
       const body = await r.json();
-      if (mergeRemoteRows(body.data)) STATE_WATCHERS.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
+      if (body.scope && REMOTE.scope && body.scope !== REMOTE.scope) { dropSnapshot(); location.reload(); return; }
+      const removed = applyRemoved(body.removed);
+      const merged = mergeRemoteRows(body.data);
+      if (body.now > REMOTE.since) REMOTE.since = body.now;
+      if (removed || merged) { saveSnapshot(); STATE_WATCHERS.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } }); }
     } catch (e) { /* мережа — спробуємо наступного разу */ }
   };
   stateWatchTimer = setInterval(tick, 8000);
@@ -342,7 +346,6 @@ function watchState(cb) {
 
 // Повний документ (з версіями й історією) — список приходить скороченим, повний потрібен лише на сторінці документа
 function loadFullDoc(id) {
-  if (!REMOTE.cache) return getDoc(id);
   const cached = JSON.parse(REMOTE.cache.state_docs || "[]").find((d) => d.id === id);
   if (cached && !cached._partial) return getDoc(id);
   const res = apiRequest("GET", "/api/doc/" + encodeURIComponent(id));
@@ -350,8 +353,75 @@ function loadFullDoc(id) {
   return getDoc(id);
 }
 
+/* Кеш між візитами: дані з минулого відкриття лежать у браузері, а з сервера беремо лише зміни після них (/api/changes).
+   Так кожна сторінка не перечитує всю базу — це головна економія лімітів Cloudflare. Кеш прив'язаний до входу й «області
+   видимості» (права): змінились права чи вхід — завантажуємо все заново. Старший за добу — теж заново. */
+const SNAPSHOT_KEY = "state_snapshot";
+const SNAPSHOT_TTL = 24 * 3600 * 1000;
+function snapshotOwner() { return (apiToken() || "anon").slice(-16); }
+
+function loadSnapshot() {
+  try {
+    const snap = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || "null");
+    if (!snap || snap.v !== 1 || snap.owner !== snapshotOwner() || !snap.since || Date.now() - snap.savedAt > SNAPSHOT_TTL) return null;
+    return snap;
+  } catch { return null; }
+}
+
+let snapshotTimer = null;
+function saveSnapshot() {
+  if (!REMOTE.ok || !REMOTE.since || !REMOTE.scope) return;
+  clearTimeout(snapshotTimer);
+  snapshotTimer = setTimeout(() => {
+    try {
+      // Повні документи (з версіями) у кеш не кладемо — лише скорочені, як у списку
+      const docs = JSON.parse(REMOTE.cache.state_docs || "[]").map((d) => {
+        if (!Array.isArray(d.versions) && !Array.isArray(d.history)) return d;
+        const x = Object.assign({}, d, { _partial: true, _versions: (d.versions || []).length, _history: (d.history || []).length });
+        delete x.versions; delete x.history;
+        return x;
+      });
+      const cache = Object.assign({}, REMOTE.cache, { state_docs: JSON.stringify(docs) });
+      localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ v: 1, owner: snapshotOwner(), scope: REMOTE.scope, since: REMOTE.since, savedAt: Date.now(), cache }));
+    } catch (e) { try { localStorage.removeItem(SNAPSHOT_KEY); } catch { /* немає місця */ } }
+  }, 0);
+}
+
+function dropSnapshot() {
+  try { localStorage.removeItem(SNAPSHOT_KEY); } catch { /* приватний режим */ }
+}
+
+// Видалені (або тепер невидимі) записи прибираємо з кешу
+function applyRemoved(list) {
+  let changed = false;
+  (list || []).forEach(({ coll, id }) => {
+    if (!SHARED_KEYS.includes(coll) || !REMOTE.cache[coll]) return;
+    const items = JSON.parse(REMOTE.cache[coll]);
+    const left = items.filter((it) => remoteRowId(coll, it) !== id);
+    if (left.length !== items.length) { REMOTE.cache[coll] = JSON.stringify(left); changed = true; }
+  });
+  return changed;
+}
+
 function remoteBoot() {
   REMOTE.cache = {};
+  if (!REMOTE.url) { console.error("state: у config.js не вказано STATE_WORKER_URL"); return; }
+  const snap = loadSnapshot();
+  if (snap) {
+    const diff = apiRequest("GET", "/api/changes?since=" + snap.since);
+    if (diff.ok && diff.data.scope === snap.scope && (diff.data.user || snap.scope === "anon")) {
+      REMOTE.ok = true;
+      REMOTE.cache = snap.cache;
+      REMOTE.scope = snap.scope;
+      REMOTE.since = snap.since;
+      applyRemoved(diff.data.removed);
+      mergeRemoteRows(diff.data.data);
+      if (diff.data.now > REMOTE.since) REMOTE.since = diff.data.now;
+      saveSnapshot();
+      return;
+    }
+    dropSnapshot();
+  }
   const res = apiRequest("GET", "/api/state");
   if (!res.ok) {
     console.warn("state: сервер недоступний", res.status, res.data);
@@ -368,7 +438,9 @@ function remoteBoot() {
     setApiToken("");
     try { localStorage.removeItem("state_session"); } catch { /* ignore */ }
   }
+  REMOTE.scope = res.data.scope || (res.data.user ? "" : "anon");
   applyRemoteData(res.data.data);
+  saveSnapshot();
 }
 
 function remoteRowId(key, item) {
@@ -407,18 +479,20 @@ function remoteSave(key, value) {
       setApiToken("");
       try { localStorage.removeItem("state_session"); } catch { /* ignore */ }
     }
-    if (res.status === 409 && res.data.data) applyRemoteData(res.data.data);
+    if (res.status === 409 && res.data.data) { applyRemoteData(res.data.data); saveSnapshot(); }
     alert(res.data.error || "Не вдалося зберегти зміни на сервері.");
     return false;
   }
   applyRemoteData(res.data.data);
+  saveSnapshot();
   return true;
 }
 
-if (REMOTE.url) remoteBoot();
+remoteBoot();
 
+// Спільні колекції — з пам'яті сторінки (завантажені з сервера), решта ключів (сесія, налаштування) — з браузера
 function loadLS(key, fallback) {
-  if (REMOTE.cache && SHARED_KEYS.includes(key)) {
+  if (SHARED_KEYS.includes(key)) {
     const raw = REMOTE.cache[key];
     return raw ? JSON.parse(raw) : fallback;
   }
@@ -430,31 +504,14 @@ function loadLS(key, fallback) {
   }
 }
 
-// Сховище браузера ~5 МБ; фото профілю й зображення в документах швидко його заповнюють.
-// Запис ніколи не кидає помилку: при переповненні пробуємо зберегти без фото, інакше повертаємо false.
+// Спільні колекції пишуться на сервер; решта — у браузер. Запис ніколи не кидає помилку: при невдачі повертає false.
 function saveLS(key, value) {
-  if (REMOTE.cache && SHARED_KEYS.includes(key)) return remoteSave(key, value);
+  if (SHARED_KEYS.includes(key)) return remoteSave(key, value);
   try {
     localStorage.setItem(key, JSON.stringify(value));
     return true;
   } catch (err) {
-    try {
-      if (key === "state_session" && value && typeof value === "object") {
-        const slim = Object.assign({}, value);
-        delete slim.photo;
-        localStorage.setItem(key, JSON.stringify(slim));
-        return true;
-      }
-      if (key === "state_users" && Array.isArray(value)) {
-        localStorage.setItem(key, JSON.stringify(value.map((u) => {
-          const row = Object.assign({}, u);
-          delete row.photo;
-          return row;
-        })));
-        return true;
-      }
-    } catch (e2) { /* місця немає навіть без фото */ }
-    console.warn("localStorage full", key, err);
+    console.warn("localStorage", key, err);
     return false;
   }
 }
@@ -463,7 +520,6 @@ function allUsers() {
   const extra = loadLS("state_users", []);
   const seed = (window.STATE_ACCOUNTS || []).map((a) => ({
     login: a.login,
-    password: a.password,
     name: a.name || a.login,
     roles: a.roles && a.roles.includes("governor") ? a.roles : remapSeedRoles(a),
     office: a.office || OFFICE_BY_ROLE[(a.roles || [])[0]] || "",
@@ -551,7 +607,6 @@ function saveUser(user) {
   const i = extra.findIndex((u) => u.login === user.login);
   const row = {
     login: user.login,
-    password: user.password,
     name: user.name,
     roles: user.roles || ["pending"],
     office: user.office || userOffice(user),
@@ -569,8 +624,7 @@ function saveUser(user) {
   saveLS("state_users", extra);
 }
 
-/* Без STATE_WORKER_URL (локальний режим) паролі зберігаються відкрито в localStorage, вхід перевіряється лише в браузері.
-   Перед запуском авторизація має переїхати на сервер (Worker). */
+// Реєстрація й вхід — лише на сервері; паролі в браузері не зберігаються
 const LOGIN_RE = /^[a-z0-9_.-]{3,32}$/;
 
 function registerUser({ login, password, name, post, accountType, statId, contact }) {
@@ -580,41 +634,30 @@ function registerUser({ login, password, name, post, accountType, statId, contac
   if (!LOGIN_RE.test(login)) return { ok: false, error: "Логін: 3–32 символи, лише латиниця, цифри, крапка, дефіс і підкреслення." };
   if (name.length > 64) return { ok: false, error: "Ім'я занадто довге (до 64 символів)." };
   if (allUsers().some((u) => u.login === login)) return { ok: false, error: "Такий логін уже зайнятий." };
-  if (REMOTE.cache) {
-    const res = apiRequest("POST", "/api/register", { login, password, name, post, accountType, statId, contact });
-    return res.ok ? { ok: true } : { ok: false, error: res.data.error || "Не вдалося зареєструватися." };
-  }
-  const isCitizenAccount = accountType === "citizen";
-  saveUser({
-    login,
-    password,
-    name,
-    statId: String(statId || "").trim().slice(0, 64),
-    contact: String(contact || "").trim().slice(0, 128),
-    post: String(post || "").trim().slice(0, 128),
-    roles: isCitizenAccount ? ["citizen"] : ["pending"],
-    office: isCitizenAccount ? "citizens" : ""
-  });
-  return { ok: true };
+  const res = apiRequest("POST", "/api/register", { login, password, name, post, accountType, statId, contact });
+  return res.ok ? { ok: true } : { ok: false, error: res.data.error || "Не вдалося зареєструватися." };
 }
 
 function loginWithPassword(login, password) {
   login = String(login || "").trim().toLowerCase();
-  let found;
-  if (REMOTE.cache) {
-    const res = apiRequest("POST", "/api/auth", { login, password: String(password || "") });
-    REMOTE.lastError = res.ok ? "" : (res.data.error || "");
-    if (!res.ok) return null;
-    setApiToken(res.data.token);
-    // Вхід віддає всі дані — навіть якщо під час завантаження сторінки сервер не відповідав, тепер зв'язок є
-    applyRemoteData(res.data.data);
-    REMOTE.ok = true;
-    const banner = document.getElementById("state-offline");
-    if (banner) banner.remove();
-    found = allUsers().find((a) => a.login === res.data.login);
-  } else {
-    found = allUsers().find((a) => a.login === login && a.password === String(password));
-  }
+  const res = apiRequest("POST", "/api/auth", { login, password: String(password || "") });
+  REMOTE.lastError = res.ok ? "" : (res.data.error || "");
+  if (!res.ok) return null;
+  setApiToken(res.data.token);
+  // Вхід віддає всі дані — навіть якщо під час завантаження сторінки сервер не відповідав, тепер зв'язок є
+  dropSnapshot();
+  applyRemoteData(res.data.data);
+  REMOTE.ok = true;
+  REMOTE.scope = res.data.scope || "";
+  saveSnapshot();
+  // Адмін скинув пароль — людина має змінити тимчасовий (банер на всіх сторінках, доки не змінить)
+  try {
+    if (res.data.mustChangePassword) localStorage.setItem("state_must_change", "1");
+    else localStorage.removeItem("state_must_change");
+  } catch { /* приватний режим */ }
+  const banner = document.getElementById("state-offline");
+  if (banner) banner.remove();
+  const found = allUsers().find((a) => a.login === res.data.login);
   if (!found) return null;
   const session = {
     id: found.login,
@@ -659,11 +702,13 @@ function currentUser() {
 }
 
 function logout() {
-  if (REMOTE.cache && apiToken()) apiRequest("POST", "/api/signout", {});
+  if (apiToken()) apiRequest("POST", "/api/signout", {});
   setApiToken("");
-  localStorage.removeItem("state_session");
+  dropSnapshot();
+  try { localStorage.removeItem("state_must_change"); } catch { /* приватний режим */ }
+  try { localStorage.removeItem("state_session"); } catch { /* приватний режим */ }
   // Приватні дані попереднього користувача не лишаються в пам'яті сторінки
-  if (REMOTE.cache) remoteBoot();
+  remoteBoot();
 }
 
 // Фото профілю зберігаємо зменшеним (до 256 px, JPEG): воно їде кожному відвідувачу разом зі списком людей,
@@ -695,14 +740,34 @@ function changePassword(oldPassword, newPassword) {
   if (!user) return { ok: false, error: "Спершу увійдіть." };
   newPassword = String(newPassword || "");
   if (newPassword.length < 8 || newPassword.length > 128) return { ok: false, error: "Новий пароль: від 8 до 128 символів." };
-  if (REMOTE.cache) {
-    const res = apiRequest("POST", "/api/password", { oldPassword: String(oldPassword || ""), newPassword });
-    return res.ok ? { ok: true } : { ok: false, error: res.data.error || "Не вдалося змінити пароль." };
-  }
-  const full = allUsers().find((u) => u.login === user.login);
-  if (!full || full.password !== String(oldPassword || "")) return { ok: false, error: "Поточний пароль невірний." };
-  saveUser(Object.assign({}, full, { password: newPassword }));
-  return { ok: true };
+  const res = apiRequest("POST", "/api/password", { oldPassword: String(oldPassword || ""), newPassword });
+  if (res.ok) { try { localStorage.removeItem("state_must_change"); } catch { /* приватний режим */ } }
+  return res.ok ? { ok: true } : { ok: false, error: res.data.error || "Не вдалося змінити пароль." };
+}
+
+// Скидання пароля адміністратором (managePeople): повертає тимчасовий пароль, людина змінить його після входу
+function resetUserPassword(login) {
+  const res = apiRequest("POST", "/api/reset-password", { login });
+  return res.ok ? { ok: true, password: res.data.password } : { ok: false, error: res.data.error || "Не вдалося скинути пароль." };
+}
+
+// Журнал дій адміністрації: найновіші 100 записів, далі — сторінками (before = id останнього показаного)
+function loadAudit(before) {
+  const res = apiRequest("GET", "/api/audit" + (before ? "?before=" + encodeURIComponent(before) : ""));
+  return res.ok ? { ok: true, items: res.data.items || [] } : { ok: false, error: res.data.error || "Не вдалося завантажити журнал." };
+}
+
+// Зв'язки між документами: що змінює / скасовує цей документ і хто змінив / скасував його
+function docLinks(doc) {
+  const l = (doc && doc.links) || {};
+  return { amends: Array.isArray(l.amends) ? l.amends : [], repeals: Array.isArray(l.repeals) ? l.repeals : [] };
+}
+function docBacklinks(id) {
+  const all = allDocs();
+  return {
+    amendedBy: all.filter((d) => d.id !== id && d.status === "ok" && docLinks(d).amends.includes(id)),
+    repealedBy: all.filter((d) => d.id !== id && ["ok", "review", "congress"].includes(d.status) && docLinks(d).repeals.includes(id))
+  };
 }
 
 // Видалення акаунта: лише з правом managePeople; себе й службові акаунти (accounts.js) — не можна
@@ -712,14 +777,9 @@ function deleteUserAccount(login, byUser) {
   if (!user) return { ok: false, error: "Акаунт не знайдено." };
   if (user.login === byUser.login) return { ok: false, error: "Свій акаунт видалити не можна." };
   if (user.seeded) return { ok: false, error: "Службовий акаунт видалити не можна." };
-  if (REMOTE.cache) {
-    const res = apiRequest("POST", "/api/delete-user", { login });
-    if (!res.ok) return { ok: false, error: res.data.error || "Не вдалося видалити акаунт." };
-    applyRemoteData(res.data.data);
-    return { ok: true };
-  }
-  saveLS("state_users", loadLS("state_users", []).filter((u) => u.login !== login));
-  saveLS("state_profile_requests", loadLS("state_profile_requests", []).filter((r) => r.login !== login));
+  const res = apiRequest("POST", "/api/delete-user", { login });
+  if (!res.ok) return { ok: false, error: res.data.error || "Не вдалося видалити акаунт." };
+  applyRemoteData(res.data.data);
   return { ok: true };
 }
 
@@ -1620,22 +1680,11 @@ function approveDoc(id, user) {
 function voteDoc(id, user, vote) {
   const doc = getDoc(id);
   if (!doc || !canApproveDoc(doc, user) || doc.approverOffice !== "congress") return null;
-  if (REMOTE.cache) {
-    // На сервері голос дописується до документа атомарно — одночасні голоси не затирають один одного
-    const res = apiRequest("POST", "/api/vote", { id, vote: vote === "against" ? "against" : "for" });
-    if (res.data && res.data.doc) mergeRemoteRows({ state_docs: [res.data.doc] });
-    if (!res.ok) { alert(res.data.error || "Не вдалося зарахувати голос."); return null; }
-    return congressOutcome(getDoc(id), user) || getDoc(id);
-  }
-  const votes = Object.assign({}, doc.votes || {});
-  votes[user.login] = { vote: vote === "against" ? "against" : "for", name: actorName(user), at: new Date().toISOString() };
-  const next = Object.assign({}, doc, { votes, status: "congress" });
-  return congressOutcome(next, user) || saveDoc(next, {
-    user,
-    action: "Голос у Конгресі",
-    summary: actorName(user) + " проголосував(ла) «" + (vote === "against" ? "проти" : "за") + "».",
-    versionLabel: "Голосування Конгресу"
-  });
+  // На сервері голос дописується до документа атомарно — одночасні голоси не затирають один одного
+  const res = apiRequest("POST", "/api/vote", { id, vote: vote === "against" ? "against" : "for" });
+  if (res.data && res.data.doc) mergeRemoteRows({ state_docs: [res.data.doc] });
+  if (!res.ok) { alert(res.data.error || "Не вдалося зарахувати голос."); return null; }
+  return congressOutcome(getDoc(id), user) || getDoc(id);
 }
 
 // Підсумок голосування: більшість «за» — документ іде далі шляхом, більшість «проти» — відхилено; інакше null
@@ -1741,6 +1790,41 @@ function officeName(code) {
   return (custom && custom.name) || OFFICE_NAMES[code] || code || "—";
 }
 
+/* ---------- Пошук ----------
+   Шукаємо за назвою, номером, видом, органом, автором і повним текстом документа.
+   Кілька слів — документ має містити всі; у результатах показуємо уривок тексту з виділеним збігом. */
+function docSearchText(d) {
+  return [d.title, d.number, d.type, d.body, d.author, d.text].map((x) => String(x || "")).join(" ").toLowerCase();
+}
+function searchWords(q) {
+  return String(q || "").toLowerCase().split(/\s+/).filter(Boolean);
+}
+function docMatches(d, q) {
+  const words = searchWords(q);
+  if (!words.length) return true;
+  const hay = docSearchText(d);
+  return words.every((w) => hay.includes(w));
+}
+// Уривок тексту довкола першого збігу: текст екранований, збіги — у <mark>
+function searchSnippet(d, q) {
+  const words = searchWords(q);
+  const text = String(d.text || "").replace(/\s+/g, " ");
+  const lower = text.toLowerCase();
+  const first = words.map((w) => lower.indexOf(w)).filter((i) => i >= 0).sort((a, b) => a - b)[0];
+  if (first === undefined) return "";
+  const from = Math.max(0, first - 70), to = Math.min(text.length, first + 130);
+  let html = "", i = from;
+  while (i < to) {
+    // Найближчий збіг будь-якого слова, починаючи з позиції i
+    let at = -1, len = 0;
+    words.forEach((w) => { const p = lower.indexOf(w, i); if (p >= 0 && p < to && (at < 0 || p < at)) { at = p; len = w.length; } });
+    if (at < 0) { html += esc(text.slice(i, to)); break; }
+    html += esc(text.slice(i, at)) + "<mark>" + esc(text.slice(at, Math.min(at + len, to))) + "</mark>";
+    i = at + len;
+  }
+  return (from ? "…" : "") + html + (to < text.length ? "…" : "");
+}
+
 function renderActList(targetId, query = "") {
   const root = document.getElementById(targetId);
   if (!root) return;
@@ -1749,9 +1833,7 @@ function renderActList(targetId, query = "") {
   const section = params.get("type") || "all";
   const office = params.get("office") || "all";
   const sort = params.get("sort") || "date-desc";
-  let items = docsBySection(section).filter((a) =>
-    !q || `${a.title} ${a.number} ${a.type} ${a.body || ""} ${a.author || ""}`.toLowerCase().includes(q)
-  );
+  let items = docsBySection(section).filter((a) => docMatches(a, q));
   if (office !== "all") items = items.filter((a) => (a.office || "") === office);
   items.sort((a, b) => {
     if (sort === "date-asc") return String(a.publishedAt || a.date).localeCompare(String(b.publishedAt || b.date));
@@ -1772,6 +1854,7 @@ function renderActList(targetId, query = "") {
       <div>
         <h3><a href="${attr(docHref(a))}">${esc(a.title)}</a></h3>
         <div class="act-meta">${esc(a.type)} · ${esc(officeName(a.office) !== "—" ? officeName(a.office) : (a.body || ""))}</div>
+        ${q && searchSnippet(a, q) ? `<p class="search-snippet">${searchSnippet(a, q)}</p>` : ""}
       </div>
       <span class="badge ${attr(badgeClass(a.status))}">${esc(DOC_STATUSES[a.status] || a.status)}</span>
     </article>

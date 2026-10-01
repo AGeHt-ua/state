@@ -49,6 +49,12 @@ export default {
       if (url.pathname === "/api/password" && request.method === "POST") {
         return cors(await handlePasswordChange(request, env), origin);
       }
+      if (url.pathname === "/api/reset-password" && request.method === "POST") {
+        return cors(await handleResetPassword(request, env), origin);
+      }
+      if (url.pathname === "/api/audit" && request.method === "GET") {
+        return cors(await handleAudit(request, env, url), origin);
+      }
       if (url.pathname === "/api/delete-user" && request.method === "POST") {
         return cors(await handleDeleteUser(request, env), origin);
       }
@@ -216,7 +222,7 @@ const MAX_APPEAL_TEXT = 5000;
 const MAX_APPEAL_ROW = 100 * 1024;
 const MAX_PHOTO = 300 * 1024;
 const SEED_DOC_IDS = ["const-sa-01", "law-gov-01", "decree-warrant-01", "project-congress-law-01"];
-const DOC_CONTENT_FIELDS = ["title", "html", "docHtml", "text", "type", "typeKey", "number", "date", "subject", "body"];
+const DOC_CONTENT_FIELDS = ["title", "html", "docHtml", "text", "type", "typeKey", "number", "date", "subject", "body", "links"];
 const DOC_FROZEN_FIELDS = ["ownerLogin", "author", "office"];
 const TOKEN_TTL = 30 * 24 * 3600;
 const PBKDF2_ITERATIONS = 100000; // максимум, який дозволяє Workers
@@ -226,7 +232,7 @@ const MAX_ROW = 1900 * 1024; // ліміт рядка D1 — 2 МБ
 async function handleState(request, env) {
   const login = await tokenLogin(request, env);
   const actor = login ? await loadActor(env, login) : null;
-  return json({ user: login, data: await readCollections(env, COLLECTIONS, actor, { base: baseOf(request) }) });
+  return json({ user: login, scope: scopeOf(actor), data: await readCollections(env, COLLECTIONS, actor, { base: baseOf(request) }) });
 }
 
 async function handleRegister(request, env) {
@@ -284,7 +290,7 @@ async function handlePasswordLogin(request, env) {
     return json({ error: "Невірний логін або пароль." }, 401);
   };
 
-  const account = await env.DB.prepare("SELECT salt, hash FROM accounts WHERE login = ?").bind(login).first();
+  const account = await env.DB.prepare("SELECT salt, hash, must_change FROM accounts WHERE login = ?").bind(login).first();
   if (account) {
     const { hash } = await hashPassword(password, account.salt);
     if (!timingSafeEqual(hash, account.hash)) return failed();
@@ -303,7 +309,9 @@ async function handlePasswordLogin(request, env) {
     env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now),
     env.DB.prepare("INSERT INTO sessions (token_hash, login, expires_at) VALUES (?, ?, ?)").bind(await sha256(token), login, now + TOKEN_TTL)
   ]);
-  return json({ ok: true, login, token, data: await readCollections(env, COLLECTIONS, await loadActor(env, login), { base: baseOf(request) }) });
+  const actor = await loadActor(env, login);
+  return json({ ok: true, login, token, scope: scopeOf(actor), mustChangePassword: !!(account && account.must_change),
+    data: await readCollections(env, COLLECTIONS, actor, { base: baseOf(request) }) });
 }
 
 async function handleSignout(request, env) {
@@ -327,7 +335,7 @@ async function handlePasswordChange(request, env) {
   if (!timingSafeEqual(oldHash, account.hash)) return json({ error: "Поточний пароль невірний." }, 403);
   const { salt, hash } = await hashPassword(newPassword);
   await env.DB.batch([
-    env.DB.prepare("UPDATE accounts SET salt = ?, hash = ? WHERE login = ?").bind(salt, hash, login),
+    env.DB.prepare("UPDATE accounts SET salt = ?, hash = ?, must_change = 0 WHERE login = ?").bind(salt, hash, login),
     env.DB.prepare("DELETE FROM sessions WHERE login = ? AND token_hash != ?").bind(login, await sha256(token))
   ]);
   return json({ ok: true });
@@ -348,8 +356,11 @@ async function handleDeleteUser(request, env) {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM accounts WHERE login = ?").bind(target),
     env.DB.prepare("DELETE FROM sessions WHERE login = ?").bind(target),
+    env.DB.prepare("INSERT INTO tombstones (coll, id, at) SELECT coll, id, ?2 FROM rows WHERE (coll = 'state_users' AND id = ?1) OR (coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?1) " +
+      "ON CONFLICT (coll, id) DO UPDATE SET at = excluded.at").bind(target, Date.now()),
     env.DB.prepare("DELETE FROM rows WHERE coll = 'state_users' AND id = ?").bind(target),
-    env.DB.prepare("DELETE FROM rows WHERE coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?").bind(target)
+    env.DB.prepare("DELETE FROM rows WHERE coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?").bind(target),
+    auditStatement(env, actor, "Видалено акаунт", target, "")
   ]);
   return json({ ok: true, data: await readCollections(env, ["state_users", "state_profile_requests"], actor, { base: baseOf(request) }) });
 }
@@ -422,7 +433,12 @@ async function handleSync(request, env) {
     upserts.forEach((u) => statements.push(u.rev === null
       ? env.DB.prepare("INSERT INTO rows (coll, id, data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (coll, id) DO NOTHING").bind(coll, u.id, u.data, now)
       : env.DB.prepare("UPDATE rows SET data = ?, updated_at = ? WHERE coll = ? AND id = ? AND updated_at = ?").bind(u.data, now, coll, u.id, u.rev)));
-    removes.forEach((id) => statements.push(env.DB.prepare("DELETE FROM rows WHERE coll = ? AND id = ?").bind(coll, id)));
+    removes.forEach((id) => {
+      statements.push(env.DB.prepare("DELETE FROM rows WHERE coll = ? AND id = ?").bind(coll, id));
+      // «Надгробок»: браузери з кешем дізнаються, що запис видалено
+      statements.push(env.DB.prepare("INSERT INTO tombstones (coll, id, at) VALUES (?, ?, ?) ON CONFLICT (coll, id) DO UPDATE SET at = excluded.at").bind(coll, id, now));
+    });
+    for (const st of await sideEffects(env, actor, coll, upserts, removes, now)) statements.push(st);
   }
   if (statements.length > 500) return json({ error: "Забагато змін за раз." }, 400);
   if (statements.length) await env.DB.batch(statements);
@@ -680,7 +696,7 @@ async function readCollections(env, colls, actor, opts = {}) {
   const reviewer = actor && actor.can(["approveProfiles"]) ? 1 : 0;
   const since = Number(opts.since) || 0;
   const sql = `
-    SELECT coll, updated_at, json_set(
+    SELECT coll, id, updated_at, json_set(
       CASE
         WHEN coll = 'state_users' THEN json_set(
           CASE WHEN ?1 = 0 AND id != ?2 THEN ${PUBLIC_USER_SQL} ELSE data END,
@@ -707,14 +723,133 @@ async function readCollections(env, colls, actor, opts = {}) {
   const parts = {};
   list.forEach((c) => { parts[c] = []; });
   let maxRev = since;
-  results.forEach((r) => { parts[r.coll].push(r.data); maxRev = Math.max(maxRev, r.updated_at); });
+  const ids = [];
+  results.forEach((r) => { parts[r.coll].push(r.data); maxRev = Math.max(maxRev, r.updated_at); ids.push({ coll: r.coll, id: r.id }); });
   const raw = new RawJson("{" + list.map((c) => JSON.stringify(c) + ":[" + parts[c].join(",") + "]").join(",") + "}");
   raw.maxRev = maxRev;
+  raw.ids = ids;
   return raw;
 }
 
 function baseOf(request) {
   return new URL(request.url).origin;
+}
+
+/* ---------- Журнал дій адміністрації та наслідки змін ----------
+   Записуємо те, що важливо для довіри до порталу: призначення й права людей, видалення акаунтів, скидання паролів,
+   зміни структури, публікацію, скасування й видалення документів. Скасування актів (links.repeals) виконується тут же:
+   коли документ стає чинним, акти, які він скасовує, втрачають чинність. */
+function auditStatement(env, actor, action, target, details) {
+  return env.DB.prepare("INSERT INTO audit (at, actor, action, target, details) VALUES (?, ?, ?, ?, ?)")
+    .bind(Date.now(), actor ? actor.login : "", action, String(target || "").slice(0, 200), String(details || "").slice(0, 1000));
+}
+
+const DOC_STATUS_NAMES = { ok: "Чинний", dead: "Втратив чинність", trash: "У кошику", draft: "Проєкт", review: "На погодженні",
+  congress: "На голосуванні Конгресу", rejected: "Відхилено", adopted: "Прийнято", deleted: "Видалено" };
+
+async function sideEffects(env, actor, coll, upserts, removes, now) {
+  const out = [];
+  const ids = upserts.map((u) => u.id).concat(removes);
+  if (!ids.length) return out;
+  const names = { state_offices: "Апарат", state_positions: "Посада", state_approval_routes: "Маршрут", state_doc_types: "Тип документа" };
+
+  if (coll === "state_users") {
+    const old = await readRows(env, coll, ids);
+    for (const { id, row } of upserts) {
+      const o = old[id] || {};
+      const changes = [];
+      if ((o.office || "") !== (row.office || "") || (o.positionId || "") !== (row.positionId || "")) changes.push("посада: " + (o.positionId || "—") + " → " + (row.positionId || "—"));
+      if (JSON.stringify(o.roles || []) !== JSON.stringify(row.roles || [])) changes.push("роль: " + (o.roles || []).join(",") + " → " + (row.roles || []).join(","));
+      const a = (o.extraPermissions || []).slice().sort().join(","), b = (row.extraPermissions || []).slice().sort().join(",");
+      if (a !== b) changes.push("особисті права: [" + (a || "—") + "] → [" + (b || "—") + "]");
+      if (!!o.congressMember !== !!row.congressMember) changes.push(row.congressMember ? "надано статус конгресмена" : "знято статус конгресмена");
+      ["name", "post", "statId", "contact"].forEach((k) => { if ((o[k] || "") !== (row[k] || "") && old[id]) changes.push(k + ": «" + (o[k] || "") + "» → «" + (row[k] || "") + "»"); });
+      if (changes.length) out.push(auditStatement(env, actor, old[id] ? "Змінено людину" : "Додано людину", id, changes.join("; ")));
+    }
+    return out;
+  }
+
+  if (names[coll]) {
+    const { results } = await env.DB.prepare(`SELECT id, COALESCE(json_extract(data, '$.name'), json_extract(data, '$.title'), json_extract(data, '$.label'), id) AS name FROM rows WHERE coll = ? AND id IN (${ids.map(() => "?").join(",")})`).bind(coll, ...ids).all();
+    const known = Object.fromEntries(results.map((r) => [r.id, r.name]));
+    upserts.forEach(({ id, row }) => out.push(auditStatement(env, actor, names[coll] + (known[id] ? ": змінено" : ": створено"), row.name || row.title || row.label || id, "")));
+    removes.forEach((id) => out.push(auditStatement(env, actor, names[coll] + ": видалено", known[id] || id, "")));
+    return out;
+  }
+
+  if (coll === "state_docs") {
+    const { results } = await env.DB.prepare(`SELECT id, json_extract(data, '$.status') AS status, json_extract(data, '$.ownerLogin') AS owner, json_extract(data, '$.title') AS title, json_extract(data, '$.html') AS html FROM rows WHERE coll = 'state_docs' AND id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all();
+    const old = Object.fromEntries(results.map((r) => [r.id, r]));
+    for (const { id, row } of upserts) {
+      const o = old[id];
+      const title = row.title || (o && o.title) || id;
+      const was = o ? o.status : null;
+      if (was !== row.status && ["ok", "dead", "trash", "deleted", "rejected"].includes(row.status)) {
+        const last = (row.approvals || []).slice(-1)[0];
+        const how = row.status === "ok" && last && last.step === "admin" ? " (поза чергою)" : "";
+        out.push(auditStatement(env, actor, "Документ: " + (DOC_STATUS_NAMES[row.status] || row.status).toLowerCase() + how, title, was ? "було: " + (DOC_STATUS_NAMES[was] || was) : "новий"));
+      } else if (was === "trash" && row.status !== "trash") {
+        out.push(auditStatement(env, actor, "Документ: відновлено з кошика", title, ""));
+      } else if (o && o.owner && o.owner !== actor.login && o.html !== row.html) {
+        out.push(auditStatement(env, actor, "Документ: змінено текст чужого документа", title, "автор: " + o.owner));
+      }
+      // Скасування актів: документ щойно став чинним — акти зі списку links.repeals втрачають чинність
+      const repeals = row.links && Array.isArray(row.links.repeals) ? row.links.repeals.map(String).filter((x) => x && x !== id).slice(0, 50) : [];
+      if (row.status === "ok" && was !== "ok" && repeals.length) {
+        const entry = JSON.stringify({ at: new Date(now).toISOString(), by: actor.login, byName: actor.profile.name || actor.login, action: "Втратив чинність", summary: "Скасовано документом «" + title + "»." });
+        repeals.forEach((target) => {
+          out.push(env.DB.prepare(
+            "UPDATE rows SET data = json_insert(json_set(data, '$.status', 'dead', '$.repealedBy', ?1, '$.repealedAt', ?2, '$.history', json(COALESCE(data -> '$.history', '[]'))), '$.history[#]', json(?3)), " +
+            "updated_at = ?4 WHERE coll = 'state_docs' AND id = ?5 AND json_extract(data, '$.status') = 'ok'"
+          ).bind(id, new Date(now).toISOString(), entry, now + 1, target));
+        });
+        out.push(auditStatement(env, actor, "Документ: скасовує інші акти", title, repeals.join(", ")));
+      }
+    }
+    removes.forEach((id) => out.push(auditStatement(env, actor, "Документ: видалено остаточно", (old[id] && old[id].title) || id, "")));
+  }
+  return out;
+}
+
+// Скидання пароля адміністратором: тимчасовий пароль показується адміну один раз, людина змінює його після входу
+async function handleResetPassword(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const actor = await loadActor(env, login);
+  if (!actor.can(["managePeople"])) return json({ error: "Недостатньо прав для цієї дії." }, 403);
+  const body = await readJson(request);
+  const target = String((body && body.login) || "").trim().toLowerCase();
+  if (!target || target === login) return json({ error: "Свій пароль змініть у профілі." }, 400);
+  const account = await env.DB.prepare("SELECT 1 FROM accounts WHERE login = ?").bind(target).first();
+  if (!account) return json({ error: "Акаунт не знайдено або ще жодного разу не входив." }, 404);
+  const alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  const temp = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+  const { salt, hash } = await hashPassword(temp);
+  await env.DB.batch([
+    env.DB.prepare("UPDATE accounts SET salt = ?, hash = ?, must_change = 1 WHERE login = ?").bind(salt, hash, target),
+    env.DB.prepare("DELETE FROM sessions WHERE login = ?").bind(target),
+    env.DB.prepare("DELETE FROM limits WHERE key = ?").bind("auth-fail:" + target),
+    auditStatement(env, actor, "Скинуто пароль", target, "видано тимчасовий пароль")
+  ]);
+  return json({ ok: true, password: temp });
+}
+
+// Журнал — для адміністрації (люди, структура або реєстр документів)
+async function handleAudit(request, env, url) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const actor = await loadActor(env, login);
+  if (!actor.can(["managePeople", "manageStructure", "manageDocs", "manageRoutes"])) return json({ error: "Недостатньо прав для цієї дії." }, 403);
+  const before = Number(url.searchParams.get("before")) || Number.MAX_SAFE_INTEGER;
+  const { results } = await env.DB.prepare("SELECT id, at, actor, action, target, details FROM audit WHERE id < ? ORDER BY id DESC LIMIT 100").bind(before).all();
+  return json({ items: results });
+}
+
+// «Область видимості» відповіді: змінюється разом із правами — тоді браузер перезавантажує кеш повністю
+function scopeOf(actor) {
+  if (!actor) return "anon";
+  return actor.login + ":" + (actor.staff ? "staff" : "public") + (actor.can(["approveProfiles"]) ? ":rev" : "");
 }
 
 // Зміни після версії since — для живого оновлення сторінок (голосування, повідомлення)
@@ -723,8 +858,18 @@ async function handleChanges(request, env, url) {
   if (!since) return json({ error: "Потрібен параметр since." }, 400);
   const login = await tokenLogin(request, env);
   const actor = login ? await loadActor(env, login) : null;
-  const data = await readCollections(env, COLLECTIONS, actor, { base: baseOf(request), since });
-  return json({ user: login, now: data.maxRev, data });
+  // Перекриття на хвилину: запис, збережений паралельно з трохи меншою версією, теж не загубиться (злиття за id — безпечне)
+  const from = Math.max(1, since - 60000);
+  const data = await readCollections(env, COLLECTIONS, actor, { base: baseOf(request), since: from });
+  // Видалені записи й ті, що стали невидимими для цього користувача (наприклад, документ перенесли в кошик)
+  const gone = await env.DB.prepare(
+    "SELECT t.coll, t.id FROM tombstones t WHERE t.at > ? AND NOT EXISTS (SELECT 1 FROM rows r WHERE r.coll = t.coll AND r.id = t.id AND r.updated_at > t.at)"
+  ).bind(from).all();
+  const changed = await env.DB.prepare("SELECT coll, id FROM rows INDEXED BY rows_updated WHERE updated_at > ?").bind(from).all();
+  const visible = new Set(data.ids.map((x) => x.coll + "\u0000" + x.id));
+  const removed = gone.results.map((r) => ({ coll: r.coll, id: r.id }))
+    .concat(changed.results.filter((r) => COLLECTIONS.includes(r.coll) && !visible.has(r.coll + "\u0000" + r.id)).map((r) => ({ coll: r.coll, id: r.id })));
+  return json({ user: login, scope: scopeOf(actor), now: Math.max(since, data.maxRev), removed, data });
 }
 
 // Повний документ з версіями та історією (для сторінки документа) — з тими ж правилами видимості

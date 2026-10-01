@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   login TEXT PRIMARY KEY,
   salt TEXT NOT NULL,
   hash TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  must_change INTEGER NOT NULL DEFAULT 0 -- 1 — адмін скинув пароль, людина має змінити тимчасовий
 );
 
 -- Сесії входу: у базі лише SHA-256 від токена
@@ -33,4 +34,23 @@ CREATE TABLE IF NOT EXISTS limits (
   key TEXT PRIMARY KEY,
   count INTEGER NOT NULL,
   reset_at INTEGER NOT NULL
+);
+
+-- Видалені записи: браузери з кешем дізнаються, що запис зник (/api/changes)
+CREATE TABLE IF NOT EXISTS tombstones (
+  coll TEXT NOT NULL,
+  id TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (coll, id)
+);
+CREATE INDEX IF NOT EXISTS tombstones_at ON tombstones (at);
+
+-- Журнал дій адміністрації: хто, коли, що зробив
+CREATE TABLE IF NOT EXISTS audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at INTEGER NOT NULL,
+  actor TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT NOT NULL,
+  details TEXT NOT NULL
 );

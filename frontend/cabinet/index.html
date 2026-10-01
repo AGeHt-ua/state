@@ -7,16 +7,16 @@
   <script>if(window.top!==window.self){try{window.top.location=window.self.location}catch(e){document.documentElement.style.display="none"}}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Кабінет — State</title>
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20261001a" />
+  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20261001b" />
   <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../assets/styles.css?v=20261001a" />
+  <link rel="stylesheet" href="../assets/styles.css?v=20261001b" />
 </head>
 <body>
   <div class="topbar" id="top-office">Службовий кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../">
-        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20261001a" alt="STATE">
+        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20261001b" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p id="hdr-office">Кабінет</p>
@@ -128,10 +128,10 @@
       </details>
     </section>
   </div>
-  <script src="../assets/config.js?v=20261001a"></script>
-  <script src="../assets/accounts.js?v=20261001a"></script>
-  <script src="../assets/app.js?v=20261001a"></script>
-  <script src="../assets/store.js?v=20261001a"></script>
+  <script src="../assets/config.js?v=20261001b"></script>
+  <script src="../assets/accounts.js?v=20261001b"></script>
+  <script src="../assets/app.js?v=20261001b"></script>
+  <script src="../assets/store.js?v=20261001b"></script>
   <script>
     const user = requireAuth();
     if (user) {
@@ -239,6 +239,13 @@
         pwMsg.textContent = "";
         document.getElementById("password-details").open = false;
       });
+      // Прийшли з банера «змініть тимчасовий пароль» — одразу відкриваємо зміну пароля
+      if (new URLSearchParams(location.search).get("changePassword") === "1") {
+        document.getElementById("btn-edit-profile").click();
+        document.getElementById("password-details").open = true;
+        pwMsg.style.color = "#8a6300";
+        pwMsg.textContent = "Введіть тимчасовий пароль, який вам видав адміністратор, і придумайте новий.";
+      }
       pwForm.addEventListener("submit", (ev) => {
         ev.preventDefault();
         const data = new FormData(pwForm);
@@ -250,6 +257,8 @@
         pwForm.reset();
         pwMsg.style.color = "#2b6a3a";
         pwMsg.textContent = "Пароль змінено.";
+        const banner = document.getElementById("must-change-banner");
+        if (banner) banner.remove();
       });
     }
   </script>

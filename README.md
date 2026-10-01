@@ -75,6 +75,42 @@ npx wrangler secret put SESSION_SECRET
 
 Redirect URI в Discord Developer Portal: `https://<worker>.workers.dev/api/callback`
 
+## Зміни схеми бази (міграції)
+
+Нові таблиці й колонки для вже наявної бази — у `worker/migrations/`. Кожну застосувати до живої бази **один раз**:
+
+```bash
+cd worker
+npx wrangler d1 execute state-db --remote --file=migrations/0001_audit_reset_tombstones.sql
+```
+
+Для нової порожньої бази достатньо `schema.sql` — він уже містить усе.
+
+## Автотести
+
+`tests/api.test.mjs` перевіряє сервер: вхід і обмеження спроб, права, повний цикл погодження, Конгрес, захист від перезапису,
+скидання пароля, журнал, скасування актів, кеш змін. Запускати проти локального Worker із **чистою** базою:
+
+```bash
+npm run db:local
+npm run dev:worker
+```
+
+і в іншому терміналі:
+
+```bash
+npm test
+```
+
+## Автоматична перевірка й деплой (GitHub Actions)
+
+`.github/workflows/worker.yml`: на кожен push у `worker/` чи `tests/` GitHub піднімає Worker із чистою базою й проганяє автотести.
+Якщо тести пройшли — Worker деплоїться автоматично, **якщо** в репозиторії додано секрети `CLOUDFLARE_API_TOKEN`
+(Cloudflare → My Profile → API Tokens → шаблон «Edit Cloudflare Workers» + доступ до D1) і `CLOUDFLARE_ACCOUNT_ID`
+(GitHub → Settings → Secrets and variables → Actions). Без секретів — лише тести.
+
+Міграції бази автоматично не запускаються — їх застосовують вручну (див. вище).
+
 ## Деплой Pages
 
 Корінь Pages вказати як `frontend`.

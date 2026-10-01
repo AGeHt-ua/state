@@ -394,13 +394,15 @@
   /* ---------- Стан документа ---------- */
   function defaultFields(type) {
     const t = TYPES[type] || TYPES.nakaz;
+    // Поля про людину й справу — порожні (у документі видно підказку «[ПІБ особи]»), щоб не опублікувати вигадані дані.
+    // Номер присвоюється автоматично при збереженні; дата, місто й підписант — справжні значення за замовчуванням.
     return {
-      number: '415/2026', date: today(), city: 'Los-Santos',
-      name: 'Danichka Swarovski', post: type === 'summons' ? 'Співробітнику LSPD штату San-Andreas' : 'Заступник Директора департаменту культури',
-      idKind: type === 'scorder' ? 'passport' : 'ident', id: '5587', postId: '43099',
+      number: '', date: today(), city: 'Los-Santos',
+      name: '', post: '',
+      idKind: type === 'scorder' ? 'passport' : 'ident', id: '', postId: '',
       officer: user.post || t.officer, signer: user.username || '', signText: user.username || '',
-      caseNo: 'DOJ-91', role: 'підсудного', hearing: '29 серпня 2026 року о 21:00',
-      venue: 'у приміщенні Капітолію міста Los-Santos'
+      caseNo: '', role: type === 'summons' ? 'підсудного' : '', hearing: '',
+      venue: ''
     };
   }
   function defaultState(type) {
@@ -2062,6 +2064,45 @@
     $('apModal').hidden = false;
   }
 
+  /* ---------- Зв'язки з іншими актами: змінює / скасовує ---------- */
+  let linksDraft = { amends: [], repeals: [] };
+  function currentLinks() {
+    const l = state.links || {};
+    return { amends: (l.amends || []).slice(), repeals: (l.repeals || []).slice() };
+  }
+  function updateLinksNote() {
+    const l = currentLinks();
+    const parts = [];
+    if (l.amends.length) parts.push('змінює: ' + l.amends.length);
+    if (l.repeals.length) parts.push('скасовує: ' + l.repeals.length);
+    $('linksNote').textContent = parts.length ? parts.join(', ') : 'Не пов\'язано з іншими актами';
+  }
+  function renderLinks() {
+    const q = $('lnSearch').value.trim().toLowerCase();
+    const docs = (typeof allDocs === 'function' ? allDocs() : [])
+      .filter((d) => d.id !== curDocId && (d.status === 'ok' || linksDraft.amends.includes(d.id) || linksDraft.repeals.includes(d.id)))
+      .filter((d) => !q || (d.title + ' ' + (d.number || '') + ' ' + (d.type || '')).toLowerCase().includes(q))
+      .slice(0, 80);
+    $('lnList').innerHTML = docs.length ? docs.map((d) => {
+      const v = linksDraft.repeals.includes(d.id) ? 'repeals' : linksDraft.amends.includes(d.id) ? 'amends' : '';
+      return '<label class="ln-row"><span><b>' + esc(d.title) + '</b><small>' + esc((d.type || '') + (d.number ? ' · №' + d.number : '')) + '</small></span>' +
+        '<select data-link-doc="' + esc(d.id) + '"><option value="">—</option><option value="amends"' + (v === 'amends' ? ' selected' : '') + '>змінює</option>' +
+        '<option value="repeals"' + (v === 'repeals' ? ' selected' : '') + '>скасовує</option></select></label>';
+    }).join('') : '<p class="ap-hint">Чинних документів за цим запитом немає.</p>';
+  }
+  function openLinks() {
+    linksDraft = currentLinks();
+    $('lnSearch').value = '';
+    renderLinks();
+    $('lnModal').hidden = false;
+  }
+  function saveLinks() {
+    state.links = { amends: linksDraft.amends.slice(), repeals: linksDraft.repeals.slice() };
+    $('lnModal').hidden = true;
+    updateLinksNote();
+    persist(false);
+  }
+
   function saveToSite(status) {
     if (!canCreate) { toast('Для створення документів адміністратор має видати відповідний доступ'); return; }
     persist(false);
@@ -2073,8 +2114,9 @@
     if (prev && (prev.status === 'ok' || prev.status === 'dead') && finalStatus !== 'ok' &&
       !confirm('«' + prev.title + '» уже опубліковано.\n\nНова редакція піде як «' + (DOC_STATUSES[finalStatus] || finalStatus) +
         '», і поки її не погодять, документ зникне з публічної бази.\n\nПродовжити?')) return;
-    // Новий документ із номером, який уже має інший документ цього типу, отримує наступний вільний номер
-    if (!prev && f.number) {
+    // Порожній номер — наступний вільний; новий документ із уже зайнятим номером — теж наступний вільний
+    if (!String(f.number || '').trim()) setField('number', nextNumber());
+    else if (!prev) {
       const typeName = t.docType || t.label;
       if (allDocs().some((d) => (d.typeKey === state.type || d.type === typeName) && String(d.number) === String(f.number))) {
         const taken = f.number;
@@ -2095,6 +2137,7 @@
       body: officeTitle(user),
       status: finalStatus,
       publishHome: $('chkHome').checked,
+      links: currentLinks(),
       text: plainText(),
       docHtml: sheetHtml(),
       html: html,
@@ -2180,7 +2223,7 @@
     if (empty.length) problems.push('Не заповнені поля: ' + empty.join(', '));
     const t = TYPES[state.type] || TYPES.nakaz;
     const prof = PROFILES[state.type] || PROFILE_DEFAULT;
-    if (!String(state.fields.number || '').trim() && (/\{НОМЕР\}/.test(t.title) || prof.show.indexOf('number') !== -1)) problems.push('Немає номера документа (кнопка «Авто» на вкладці «Документ»)');
+    if (!String(state.fields.number || '').trim() && (/\{НОМЕР\}/.test(t.title) || prof.show.indexOf('number') !== -1)) setField('number', nextNumber()); // порожній номер — наступний вільний
     if (!String(state.fields.date || '').trim()) problems.push('Немає дати');
     if (plainText().replace(/\s+/g, '').length < 20) problems.push('Документ майже порожній');
     if (!problems.length) return true;
@@ -2310,7 +2353,7 @@
     const base = d.editor || { type: typeKey, fields: { number: d.number || '', date: ymd ? ymd[3] + '.' + ymd[2] + '.' + ymd[1] : (d.date || today()) } };
     const html = d.html ? sanitizeDocHtml(d.html) : (d.docHtml ? sanitizeDocHtml(d.docHtml) : '<p>' + esc(d.text || '').replace(/\n/g, '<br>') + '</p>');
     // Акт відкривається в окремому шаблоні, щоб не затерти поточну роботу; повторне відкриття — той самий шаблон
-    const st = mergeState(Object.assign({}, base, { html: html, pristine: false, name: d.title || '', srcDoc: d.id }));
+    const st = mergeState(Object.assign({}, base, { html: html, pristine: false, name: d.title || '', srcDoc: d.id, links: d.links || { amends: [], repeals: [] } }));
     persist(false);
     const existing = db.order.filter((k) => db.slots[k] && db.slots[k].srcDoc === d.id)[0];
     if (existing) db.slots[existing] = Object.assign(st, { created: db.slots[existing].created });
@@ -2531,6 +2574,9 @@
     fitPage: fitPage,
     applyTemplate: () => applyTemplate(false),
     saveDraft: () => { closeMenu(); saveToSite('draft'); },
+    openLinks: openLinks,
+    lnCancel: () => { $('lnModal').hidden = true; },
+    lnSave: saveLinks,
     sendPublish: () => { closeMenu(); if (canPublish && checkBeforeSend()) saveToSite('ok'); },
     sendReview: openApproval,
     apCancel: () => { $('apModal').hidden = true; },
@@ -2962,7 +3008,18 @@
   switchTab(ui.tab || 'doc');
   loadSlot(slot);
   // «Створити документ» (без ?id) — новий документ на основі шаблону, а не нова редакція останнього відкритого акта
-  if (!editId && curDocId) { curDocId = null; updateDocStatus(null); }
+  if (!editId && curDocId) { curDocId = null; updateDocStatus(null); state.links = { amends: [], repeals: [] }; }
+  updateLinksNote();
+  $('lnSearch').addEventListener('input', renderLinks);
+  $('lnList').addEventListener('change', (e) => {
+    const sel = e.target.closest('[data-link-doc]');
+    if (!sel) return;
+    const id = sel.getAttribute('data-link-doc');
+    linksDraft.amends = linksDraft.amends.filter((x) => x !== id);
+    linksDraft.repeals = linksDraft.repeals.filter((x) => x !== id);
+    if (sel.value === 'amends') linksDraft.amends.push(id);
+    if (sel.value === 'repeals') linksDraft.repeals.push(id);
+  });
   setZoom(narrow ? (canvas.clientWidth - 24) / sheet.offsetWidth * 100 : zoom, true);
   if (editId) loadFromDoc(editId);
   if (!db.slots[slot]) persist(false);
