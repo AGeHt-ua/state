@@ -162,7 +162,7 @@ function buildCabinetNav() {
     { href: "cabinet/appeals/", icon: "mail", label: staff ? "Звернення" : "Мої звернення", count: appealCount, on: route === "cabinet/appeals/" },
     // Робочий простір свого кабінету (повні адміністратори — усі кабінети)
     staff && typeof canEnterOffice === "function"
-      ? { href: "cabinet/office/", icon: "building", label: typeof isFullAdmin === "function" && isFullAdmin(user) ? "Кабінети" : "Мій кабінет", on: route === "cabinet/office/" } : null,
+      ? { href: typeof officeRoute === "function" ? officeRoute(userOffice(user)) : "office/", icon: "building", label: "Мій кабінет", on: route.indexOf("office/") === 0 } : null,
     // Суд: судова влада й адміністратори — усі справи; інші — якщо мають власні справи
     (typeof canManageCases === "function" && canManageCases(user)) || (typeof casesForUser === "function" && casesForUser(user).length)
       ? { href: "cabinet/court/", icon: "scales", label: "Суд", on: route === "cabinet/court/" } : null,
@@ -270,7 +270,8 @@ document.addEventListener("DOMContentLoaded", () => whenStateReady(() => {
   bindLogout();
   showMustChangeBanner();
   // Редактор документів має власний інтерфейс
-  if (document.body.classList.contains("wd-body")) return;
+  // Редактор і сайти кабінетів (office/…) мають власний інтерфейс
+  if (document.body.classList.contains("wd-body") || document.body.classList.contains("ws-app")) return;
   ensureHeader();
   bindSearch();
   ensureAccountActions();

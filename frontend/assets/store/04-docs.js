@@ -1246,3 +1246,12 @@ function applyGovStructure(byUser) {
   });
   return { ok: true, added, updated };
 }
+
+// Адреса сайту кабінету: власна сторінка office/<id>/ для кабінетів зі структури уряду, для решти — office/?o=<id>
+function officeRoute(id) {
+  const known = GOV_STRUCTURE.map((g) => g.office.id).concat(["directors"]);
+  return known.includes(id) ? "office/" + id + "/" : "office/?o=" + encodeURIComponent(id);
+}
+function officeUrl(id) {
+  return pathTo(officeRoute(id));
+}

@@ -439,22 +439,23 @@ test("суд: позов із фото → справа → засідання �
   await citCtx.close();
 });
 
-test("кабінет: рапорт → прийняття з балами, завдання → виконання → облік і премії; чужим вхід закрито", async ({ browser }) => {
-  // Громадянин у кабінет департаменту не потрапляє
+test("сайт кабінету: власний вигляд, рапорт → прийняття, завдання → виконання → облік і премії; чужим вхід закрито", async ({ browser }) => {
+  // Громадянин на сайт департаменту не потрапляє
   const cCtx = await browser.newContext();
   const c = await cCtx.newPage();
   await uiLogin(c, people.cit, pwd(people.cit));
-  await c.goto("/cabinet/office/?o=directors");
+  await c.goto("/office/directors/");
   await expect(c.locator("#ws-title")).toHaveText("Немає доступу");
   await cCtx.close();
 
-  // Працівник подає рапорт
+  // Працівник: «Мій кабінет» веде на окремий сайт кабінету без шапки порталу
   const sCtx = await browser.newContext();
   const s = await sCtx.newPage();
   await uiLogin(s, people.staff, pwd(people.staff));
-  await s.goto("/cabinet/office/");
-  await expect(s.locator("#ws-title")).toHaveText("Кабінет Директорів Департаменту");
-  await s.locator('#ws-tabs [data-tab="reports"]').click();
+  await s.getByRole("link", { name: "Мій кабінет" }).click();
+  await s.waitForURL(/\/office\/directors\/$/);
+  await expect(s.locator(".ws-brand")).toContainText("Кабінет Директорів Департаменту");
+  await expect(s.locator("header.header")).toHaveCount(0);
   await s.locator("[data-new-report]").click();
   await s.locator("#report-form input[name=title]").fill("Звіт UI " + RUN);
   await s.locator("#report-form textarea[name=text]").fill("Провів 3 перевірки.");
@@ -468,13 +469,13 @@ test("кабінет: рапорт → прийняття з балами, за�
   const h = await hCtx.newPage();
   h.on("dialog", (d) => d.accept());
   await uiLogin(h, people.head, pwd(people.head));
-  await h.goto("/cabinet/office/?o=directors#reports");
+  await h.goto("/office/directors/#reports");
   await h.locator(".ws-item-head", { hasText: "Звіт UI " + RUN }).click();
   await h.locator("[data-review] input[name=points]").fill("5");
   await h.locator('[data-review] [data-decision="accepted"]').click();
   await h.locator('#report-filter [data-rf="all"]').click();
   await expect(h.locator(".ws-item", { hasText: "Звіт UI " + RUN })).toContainText("Прийнято");
-  await h.locator('#ws-tabs [data-tab="tasks"]').click();
+  await h.locator('#ws-nav a[href="#tasks"]').click();
   await h.locator("[data-new-task]").click();
   await h.locator("#task-form input[name=title]").fill("Завдання UI " + RUN);
   await h.locator("#task-form select[name=assignee]").selectOption(people.staff);
@@ -482,34 +483,43 @@ test("кабінет: рапорт → прийняття з балами, за�
   await h.locator("#task-form button[type=submit]").click();
   await expect(h.locator(".ws-task-detail")).toContainText("Завдання UI " + RUN);
 
-  // Працівник виконує
-  await s.goto("/cabinet/office/#tasks");
-  await s.locator(".ws-task", { hasText: "Завдання UI " + RUN }).click();
+  // Працівник виконує (з головної — «Мої завдання»)
+  await s.goto("/office/directors/");
+  await s.locator(".ws-list a", { hasText: "Завдання UI " + RUN }).click();
+  await expect(s.locator(".ws-task-detail")).toContainText("Завдання UI " + RUN);
   await s.locator('[data-task-status="progress"]').click();
   await s.locator('[data-task-status="done"]').click();
   await expect(s.locator(".ws-task-detail")).toContainText("Виконано");
   await sCtx.close();
 
   // Керівник приймає й бачить облік: 5 (рапорт) + 7 (завдання) = 12 балів
+  await h.goto("/office/directors/#tasks");
   await h.reload();
   await h.locator(".ws-task", { hasText: "Завдання UI " + RUN }).click();
   await h.locator('[data-task-status="accepted"]').click();
-  await h.locator('#ws-tabs [data-tab="work"]').click();
-  const row = h.locator(".ws-table tbody tr", { hasText: "UI staff" });
-  await expect(row).toContainText("12");
+  await h.locator('#ws-nav a[href="#work"]').click();
+  // рядок цього працівника: рапорт +5 і завдання +7 (документи з інших тестів теж додають бали)
+  await expect(h.locator(".ws-table tbody tr", { hasText: "@" + people.staff })).toContainText("1 (5 б.)1 (7 б.)");
   await h.locator("[data-approve-bonus]").click();
   await expect(h.locator(".ws-bonus").first()).toContainText("затвердив");
+  // Склад: посади кабінету з вакансіями
+  await h.locator('#ws-nav a[href="#people"]').click();
+  await expect(h.locator(".ws-section-title").first()).toBeVisible();
   await hCtx.close();
 });
 
-test("адмін: «Застосувати структуру уряду» додає кабінети департаментів", async ({ page }) => {
+test("адмін: «Застосувати структуру уряду» додає кабінети департаментів зі своїми сайтами", async ({ page }) => {
   page.on("dialog", (d) => d.accept());
   await uiLogin(page, "admin", ADMIN_PASSWORD);
   await page.goto("/cabinet/admin/");
   await page.getByRole("tab", { name: /^Структура/ }).click();
   await page.locator('[data-act="apply-structure"]').click();
-  await page.goto("/cabinet/office/");
-  for (const name of ["Департамент фінансів", "Департамент внутрішньої безпеки", "Колегія адвокатів", "United States Secret Service • USSS"]) {
-    await expect(page.locator("#ws-office")).toContainText(name);
+  await page.goto("/office/usss/");
+  await expect(page.locator(".ws-brand")).toContainText("United States Secret Service");
+  for (const name of ["Департамент фінансів", "Департамент внутрішньої безпеки", "Колегія адвокатів"]) {
+    await expect(page.locator("#ws-switch")).toContainText(name);
   }
+  await page.locator('#ws-nav a[href="#people"]').click();
+  await expect(page.locator("#ws-content")).toContainText("Директор USSS");
+  await expect(page.locator("#ws-content")).toContainText("ВАКАНТНО");
 });

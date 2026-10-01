@@ -1,0 +1,98 @@
+/* Сайти кабінетів (office/<id>/): власний вигляд кожного кабінету поверх спільних стилів порталу.
+   Кольори кабінету задає ws.js змінними --ws-accent / --ws-side / --ws-side-2 на <body>. */
+body.ws-app {
+  --ws-accent: #d4a62f;
+  --ws-accent-ink: #1b1400;
+  --ws-side: #0d1f3a;
+  --ws-side-2: #132c52;
+  --ws-soft: rgba(212, 166, 47, .12);
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg, #f3f5f9);
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr);
+}
+.ws-side {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  background: linear-gradient(180deg, var(--ws-side) 0%, var(--ws-side-2) 100%);
+  color: #e9eef7; display: flex; flex-direction: column; padding: 22px 16px 16px; gap: 18px;
+  border-right: 1px solid rgba(255,255,255,.06);
+}
+.ws-brand { display: grid; justify-items: center; text-align: center; gap: 10px; padding: 6px 4px 16px; border-bottom: 1px solid rgba(255,255,255,.1); }
+.ws-emblem {
+  width: 78px; height: 78px; border-radius: 50%; display: grid; place-items: center; font-size: 38px;
+  background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.22), rgba(255,255,255,.04) 70%);
+  border: 2px solid var(--ws-accent); box-shadow: 0 0 0 6px rgba(255,255,255,.04), 0 10px 30px rgba(0,0,0,.35);
+}
+.ws-brand b { font: 800 17px/1.25 var(--serif, Georgia, serif); letter-spacing: .01em; color: #fff; }
+.ws-brand small { color: var(--ws-accent); font: 700 10.5px var(--sans, system-ui); letter-spacing: .18em; text-transform: uppercase; }
+.ws-nav { display: grid; gap: 3px; }
+.ws-nav a {
+  display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 10px; color: rgba(233,238,247,.82);
+  text-decoration: none; font: 600 14px var(--sans, system-ui); position: relative;
+}
+.ws-nav a .ws-ico { width: 22px; text-align: center; font-size: 16px; }
+.ws-nav a:hover { background: rgba(255,255,255,.07); color: #fff; }
+.ws-nav a.active { background: var(--ws-accent); color: var(--ws-accent-ink); }
+.ws-nav a .ws-count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #e5484d; color: #fff; font-size: 11.5px; display: grid; place-items: center; }
+.ws-nav a.active .ws-count { background: var(--ws-accent-ink); color: var(--ws-accent); }
+.ws-nav-sep { height: 1px; background: rgba(255,255,255,.1); margin: 8px 4px; }
+.ws-me { margin-top: auto; display: grid; gap: 10px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.06); }
+.ws-me-row { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.ws-me img, .ws-me .ws-av { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; flex: none; display: grid; place-items: center; background: var(--ws-accent); color: var(--ws-accent-ink); font-weight: 800; }
+.ws-me b { display: block; font-size: 13.5px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-me small { display: block; font-size: 12px; color: rgba(233,238,247,.65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-me-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.ws-me-actions a, .ws-me-actions button {
+  flex: 1 1 auto; text-align: center; padding: 7px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,.18);
+  background: none; color: #e9eef7; font: 600 12px var(--sans, system-ui); text-decoration: none; cursor: pointer;
+}
+.ws-me-actions a:hover, .ws-me-actions button:hover { background: rgba(255,255,255,.1); }
+
+.ws-main { min-width: 0; display: flex; flex-direction: column; }
+.ws-top {
+  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 14px 28px;
+  background: color-mix(in srgb, var(--surface, #fff) 92%, transparent); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line, #e3e7ee);
+}
+.ws-top h1 { margin: 0; font: 800 22px var(--serif, Georgia, serif); color: var(--navy-950, #0b1730); }
+.ws-top .ws-crumb { color: var(--muted); font-size: 12.5px; }
+.ws-top-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.ws-menu-btn { display: none; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; font-size: 18px; cursor: pointer; }
+.ws-content { padding: 24px 28px 48px; display: grid; gap: 18px; max-width: 1240px; width: 100%; box-sizing: border-box; }
+.ws-app .btn.gold { background: var(--ws-accent); color: var(--ws-accent-ink) !important; border-color: var(--ws-accent); }
+.ws-app .btn.gold:hover { filter: brightness(1.06); background: var(--ws-accent); }
+.ws-app .seg button.active, .ws-app .seg input:checked + span { background: var(--ws-side); }
+.ws-hero {
+  border-radius: 18px; padding: 22px 24px; color: #fff; position: relative; overflow: hidden;
+  background: linear-gradient(120deg, var(--ws-side) 0%, var(--ws-side-2) 70%);
+  display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+}
+.ws-hero::after { content: ""; position: absolute; right: -40px; top: -60px; width: 240px; height: 240px; border-radius: 50%; border: 30px solid rgba(255,255,255,.05); }
+.ws-hero h2 { margin: 0 0 4px; font: 800 24px var(--serif, Georgia, serif); }
+.ws-hero p { margin: 0; color: rgba(255,255,255,.75); }
+.ws-hero .ws-emblem { width: 64px; height: 64px; font-size: 30px; }
+.ws-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.ws-feed { display: grid; gap: 8px; }
+.ws-feed-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+.ws-feed-item b { font-size: 13.5px; }
+.ws-feed-item small { display: block; color: var(--muted); font-size: 12px; }
+.ws-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.ws-person { border: 1px solid var(--line); border-radius: 14px; padding: 16px; background: var(--surface); display: grid; justify-items: center; text-align: center; gap: 6px; }
+.ws-person img, .ws-person .ws-av { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--ws-soft); color: var(--navy-900); font: 800 26px var(--serif, Georgia, serif); border: 2px solid var(--ws-accent); }
+.ws-person b { font-size: 15px; }
+.ws-person small { color: var(--muted); font-size: 12.5px; }
+.ws-vacant { border-style: dashed; opacity: .75; }
+.ws-section-title { margin: 6px 0 0; font: 700 13px var(--sans, system-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+:root[data-theme="dark"] .ws-top h1 { color: var(--ink); }
+:root[data-theme="dark"] body.ws-app { background: var(--bg); }
+
+@media (max-width: 960px) {
+  body.ws-app { grid-template-columns: 1fr; }
+  .ws-side { position: fixed; inset: 0 auto 0 0; width: 272px; z-index: 30; transform: translateX(-100%); transition: transform .2s ease; }
+  body.ws-menu-open .ws-side { transform: none; box-shadow: 0 0 0 100vmax rgba(0,0,0,.45); }
+  .ws-menu-btn { display: inline-block; }
+  .ws-top { padding: 12px 16px; }
+  .ws-content { padding: 16px; }
+  .ws-grid-2 { grid-template-columns: 1fr; }
+}
