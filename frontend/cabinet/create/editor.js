@@ -2179,8 +2179,8 @@
       });
     } catch (e) { console.error(e); }
     const saved = getDoc(doc.id);
-    if (!saved || saved.docHtml !== doc.docHtml) {
-      toast('Не вдалося зберегти на сайті: сховище браузера переповнене (зменшіть фон чи зображення)');
+    if (!saved) {
+      toast('Не вдалося зберегти документ на сайті. Спробуйте ще раз.');
       return;
     }
     curDocId = doc.id;
@@ -2342,7 +2342,8 @@
   }
 
   function loadFromDoc(id) {
-    const d = typeof getDoc === 'function' ? getDoc(id) : null;
+    // У списку документи легкі (без тексту й оформлення) — для редагування завантажуємо повний
+    const d = typeof loadFullDoc === 'function' ? loadFullDoc(id) : null;
     if (!d) { toast('Документ не знайдено'); return; }
     if (!canEditDoc(d)) { toast('Цей документ може редагувати лише автор'); return; }
     curDocId = d.id;

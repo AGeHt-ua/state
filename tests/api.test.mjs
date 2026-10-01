@@ -94,6 +94,10 @@ cur = await doc(admin, d1);
 r = await sync(admin, "state_docs", [Object.assign({}, cur, { status: "ok" })]);
 check("губернатор погоджує останній крок", r.status === 200, r.body.error);
 check("документ опубліковано", (await doc(T.cit, d1) || {}).status === "ok");
+const listed = await doc(admin, d1);
+check("у списку документ легкий (без тексту-оформлення й версій)", listed && listed._partial && listed.html === undefined && listed.docHtml === undefined && listed.versions === undefined);
+const fullAfter = (await get("/api/doc/" + d1, admin)).body.doc;
+check("після погоджень текст документа збережено", fullAfter.html === "<p>Текст</p>");
 
 // ---------- 4. Атаки на документи ----------
 const victim = await doc(T.staff, d1);
@@ -124,6 +128,13 @@ const r2 = await sync(admin, "state_docs", [Object.assign({}, stale, { note: "B"
 check("застаріла зміна — 409", r.status === 200 && r2.status === 409);
 const full = (await get("/api/doc/" + d1, admin)).body.doc;
 check("версії й історія не губляться", Array.isArray(full.history) && full.history.length >= 0 && full.note === "A");
+
+const heavy = u("heavy");
+const bigHtml = "<div style=\"background:url(data:image/png;base64," + "A".repeat(50000) + ")\">Бланк</div>";
+await sync(admin, "state_docs", [Object.assign({}, base, { id: heavy, ownerLogin: "admin", author: "Адміністратор", office: "governor", status: "draft", docHtml: bigHtml,
+  versions: [{ id: "v1", docHtml: bigHtml }, { id: "v2", docHtml: bigHtml }, { id: "v3", docHtml: bigHtml }] })]);
+const heavyFull = (await get("/api/doc/" + heavy, admin)).body.doc;
+check("версії не дублюють однакове оформлення", heavyFull.versions.filter((v) => v.docHtml).length === 1 && heavyFull.docHtml === bigHtml);
 
 // ---------- 7. Зв'язки: новий акт скасовує старий ----------
 const repealer = u("repeal");

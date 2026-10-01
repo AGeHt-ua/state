@@ -396,6 +396,13 @@ async function handleSync(request, env) {
     }
     const removes = (Array.isArray(op.remove) ? op.remove : []).map((raw) => String(raw || "").slice(0, 128)).filter(Boolean);
 
+    const partialDocs = coll === "state_docs" ? upserts.filter((u) => u.partial) : [];
+    const partialOld = partialDocs.length ? await readRows(env, coll, partialDocs.map((u) => u.id)) : {};
+    partialDocs.forEach((u) => {
+      const old = partialOld[u.id];
+      if (old) DOC_HEAVY_FIELDS.forEach((k) => { if (u.row[k] === undefined && old[k] !== undefined) u.row[k] = old[k]; });
+    });
+
     const denied = await checkWrite(env, actor, coll, upserts, removes);
     if (denied) return json({ error: denied }, 403);
 
@@ -409,15 +416,15 @@ async function handleSync(request, env) {
     Object.values(current).forEach((r) => { maxRev = Math.max(maxRev, r); });
 
     // Скорочений документ (без версій та історії) доповнюємо збереженими в базі; фото профілю, що прийшло посиланням, лишається тим, що в базі
-    const needExisting = upserts.filter((u) => (coll === "state_docs" && u.partial) ||
-      (coll === "state_users" && typeof u.row.photo === "string" && u.row.photo.includes("/api/photo/")));
+    const needExisting = upserts.filter((u) => coll === "state_users" && typeof u.row.photo === "string" && u.row.photo.includes("/api/photo/"));
     const existing = needExisting.length ? await readRows(env, coll, needExisting.map((u) => u.id)) : {};
     for (const u of upserts) {
-      const old = existing[u.id];
+      const old = existing[u.id] || partialOld[u.id];
       if (coll === "state_docs" && u.partial && old) {
         u.row.history = (old.history || []).concat(u.row.history || []).slice(-80);
         u.row.versions = (old.versions || []).concat(u.row.versions || []).slice(-30);
       }
+      if (coll === "state_docs") u.row.versions = compactVersions(u.row.versions);
       if (coll === "state_users" && typeof u.row.photo === "string" && u.row.photo.includes("/api/photo/")) u.row.photo = (old && old.photo) || "";
       if (coll === "state_users" && String(u.row.photo || "").length > MAX_PHOTO) return json({ error: "Фото завелике. Оберіть менше зображення." }, 413);
       u.data = JSON.stringify(u.row);
@@ -667,6 +674,26 @@ async function positionFor(env, id) {
   try { return Object.assign({}, base || {}, JSON.parse(row.data)); } catch { return base; }
 }
 
+// Поля документа, яких немає в легкому списку: їх доповнює сервер, коли документ приходить скороченим
+const DOC_HEAVY_FIELDS = ["html", "docHtml", "editor"];
+
+// Версія зберігає вигляд документа (docHtml, разом із фоном бланку) лише коли він змінився —
+// інакше 30 копій фону переповнили б запис (ліміт D1 — 2 МБ)
+function compactVersions(versions) {
+  if (!Array.isArray(versions)) return versions;
+  let last = null;
+  return versions.map((v) => {
+    if (!v || typeof v !== "object") return v;
+    if (!v.docHtml || v.docHtml === last) {
+      const copy = Object.assign({}, v);
+      delete copy.docHtml;
+      return copy;
+    }
+    last = v.docHtml;
+    return v;
+  });
+}
+
 function rowId(coll, row) {
   const id = String((coll === "state_users" ? row.login : row.id) || "").trim();
   return id && id.length <= 128 ? id : "";
@@ -686,7 +713,7 @@ const LEGISLATIVE_SQL = LEGISLATIVE_TYPES.map((t) => `'${t.replace(/'/g, "''")}'
 /* Легка видача: документи — без версій та історії (вони завантажуються на сторінці документа через /api/doc/…),
    фото профілів — посиланням на /api/photo/… (браузер кешує картинку), до кожного запису додається _rev — версія запису
    для захисту від перезапису. opts.since — лише записи, змінені після цієї версії (живе оновлення, /api/changes). */
-const DOC_LIST_SQL = "json_set(json_remove(data, '$.versions', '$.history'), '$._partial', json('true'), " +
+const DOC_LIST_SQL = "json_set(json_remove(data, '$.versions', '$.history', '$.html', '$.docHtml', '$.editor'), '$._partial', json('true'), " +
   "'$._versions', COALESCE(json_array_length(data, '$.versions'), 0), '$._history', COALESCE(json_array_length(data, '$.history'), 0))";
 
 async function readCollections(env, colls, actor, opts = {}) {

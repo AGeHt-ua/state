@@ -374,11 +374,11 @@ function saveSnapshot() {
   clearTimeout(snapshotTimer);
   snapshotTimer = setTimeout(() => {
     try {
-      // Повні документи (з версіями) у кеш не кладемо — лише скорочені, як у списку
+      // Повні документи (з текстом, оформленням і версіями) у кеш не кладемо — лише легкі, як у списку
       const docs = JSON.parse(REMOTE.cache.state_docs || "[]").map((d) => {
-        if (!Array.isArray(d.versions) && !Array.isArray(d.history)) return d;
+        if (d._partial) return d;
         const x = Object.assign({}, d, { _partial: true, _versions: (d.versions || []).length, _history: (d.history || []).length });
-        delete x.versions; delete x.history;
+        delete x.versions; delete x.history; delete x.html; delete x.docHtml; delete x.editor;
         return x;
       });
       const cache = Object.assign({}, REMOTE.cache, { state_docs: JSON.stringify(docs) });
