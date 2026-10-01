@@ -314,10 +314,14 @@ async function handleDiscordCallback(request, env, url) {
     body: new URLSearchParams({ client_id: env.DISCORD_CLIENT_ID, client_secret: env.DISCORD_CLIENT_SECRET, grant_type: "authorization_code", code, redirect_uri: url.origin + "/api/discord/callback" })
   });
   const token = await tokenRes.json().catch(() => ({}));
-  if (!tokenRes.ok || !token.access_token) return backToSite(env, failPath, "discord_error=failed");
+  if (!tokenRes.ok || !token.access_token) {
+    // Причина від Discord (invalid_client — невірний секрет, invalid_grant — код/адреса повернення); токени не пишемо
+    console.error("discord token", tokenRes.status, token.error || "", token.error_description || "");
+    return backToSite(env, failPath, "discord_error=" + (token.error === "invalid_client" ? "bad_secret" : "failed"));
+  }
   const auth = { headers: { Authorization: "Bearer " + token.access_token } };
   const meRes = await fetch(discordBase(env) + "/api/v10/users/@me", auth);
-  if (!meRes.ok) return backToSite(env, failPath, "discord_error=failed");
+  if (!meRes.ok) { console.error("discord me", meRes.status); return backToSite(env, failPath, "discord_error=failed"); }
   const me = await meRes.json();
   const discordId = String(me.id || "");
   const discordName = String(me.username || "").slice(0, 64);
