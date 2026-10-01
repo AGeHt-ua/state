@@ -326,10 +326,12 @@ test("звернення: громадянин подає, апарат відп
   await citCtx.close();
 });
 
-test("редактор: кнопка «</> Код» і Ctrl+Shift+M відкривають вставку розмітки", async ({ page }) => {
+test("редактор: «Код розробника» і Ctrl+Shift+M відкривають вставку розмітки", async ({ page }) => {
   await uiLogin(page, people.head, pwd(people.head));
   await page.goto("/cabinet/create/");
-  await page.locator(".tb-code").click();
+  await page.locator('.wd-tab[data-tab="insert"]').click();
+  await page.locator('.rb-btn[data-act="markup"]').click();
+  await expect(page.locator("#mkModal h3")).toHaveText("Код розробника");
   await expect(page.locator("#mkModal")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator("#mkModal")).toBeHidden();
