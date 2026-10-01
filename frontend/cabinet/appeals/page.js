@@ -102,21 +102,26 @@ whenStateReady(async function () {
         </div>
         <span class="badge ${statusCls(a.status)}">${esc(appealStatusLabel(a.status))}</span>
       </div>
+      ${a.caseId ? `<div class="appeal-case-link">⚖️ За цим позовом відкрито судову справу — <a href="../court/#${attr(encodeURIComponent(a.caseId))}">перейти до справи</a></div>`
+        : asOffice && canManageCases(user) && a.status !== "closed" ? `<div class="appeal-case-link"><button type="button" class="btn ghost" data-open-case="${attr(a.id)}">⚖️ Відкрити судову справу</button> <small class="muted">позивач — автор звернення, суть — текст позову</small></div>` : ""}
       <div class="appeal-chat" id="appeal-chat">
         ${messages(a).map((m) => {
           const own = m.by === user.login;
           const fromOwner = m.by === a.ownerLogin;
           return `<div class="chat-msg ${own ? "is-own" : ""} ${fromOwner ? "from-owner" : "from-office"}">
             <span class="chat-who">${esc(own ? "Ви" : m.byName || "—")}${!fromOwner ? ` <small>· ${esc(officeName(a.office))}</small>` : ""}</span>
-            <p>${esc(m.text || "").replace(/\n/g, "<br>")}</p>
+            ${m.text ? `<p>${esc(m.text).replace(/\n/g, "<br>")}</p>` : ""}
+            ${attachmentsHtml(m.attachments)}
             <time>${esc(formatDocWhen({ date: m.at }))}</time>
           </div>`;
         }).join("")}
       </div>
       ${a.status === "closed" ? `<p class="muted appeal-closed">Звернення закрито${a.closedByName ? " · " + esc(a.closedByName) : ""}. Писати в ньому вже не можна — за потреби подайте нове.</p>` : `
       <form class="appeal-reply" id="appeal-reply">
-        <textarea name="message" required rows="3" placeholder="${asOffice ? "Відповідь громадянину…" : "Уточнення до звернення…"}  (Ctrl+Enter — надіслати)"></textarea>
+        <textarea name="message" rows="3" placeholder="${asOffice ? "Відповідь громадянину…" : "Уточнення до звернення…"}  (Ctrl+Enter — надіслати)"></textarea>
+        <div class="att-chips" id="reply-files-list" hidden></div>
         <div class="form-actions">
+          <label class="btn ghost att-add" title="Фото чи PDF, до 5 файлів">📎<input type="file" id="reply-files" accept="image/*,application/pdf" multiple hidden></label>
           <button class="btn ${asOffice ? "gold" : "ghost"}" type="submit">${asOffice ? "Надати відповідь" : "Надіслати"}</button>
           <button class="btn ghost" type="button" data-close-appeal-id="${attr(a.id)}">Закрити звернення</button>
         </div>
@@ -124,8 +129,11 @@ whenStateReady(async function () {
     if (draft) box.querySelector("textarea").value = draft;
     const chat = $("appeal-chat");
     chat.scrollTop = chat.scrollHeight;
+    hydrateAttachments(chat);
+    replyFiles = $("reply-files") ? attachPicker($("reply-files"), $("reply-files-list")) : null;
   }
 
+  let replyFiles = null;
   function drawAll(keepDraft) {
     drawTabs();
     drawList();
@@ -164,6 +172,24 @@ whenStateReady(async function () {
   });
   $("appeal-detail").addEventListener("click", (e) => {
     if (e.target.closest("[data-back]")) return select("");
+    const oc = e.target.closest("[data-open-case]");
+    if (oc) {
+      const a = allAppeals().find((x) => x.id === oc.dataset.openCase);
+      if (!a || !confirm("Відкрити судову справу за зверненням " + a.number + "?\nПозивач — " + (a.name || a.ownerLogin) + ". Далі в розділі «Суд» можна призначити суддю, засідання й винести рішення.")) return;
+      const c = saveCase({
+        kind: a.kind === "Позов" ? "Цивільна" : "Адміністративна",
+        title: String(a.text || "").replace(/\s+/g, " ").slice(0, 90),
+        summary: a.text || "",
+        plaintiff: { login: a.ownerLogin, name: a.name || a.ownerLogin },
+        defendant: { login: "", name: "" },
+        status: "open",
+        appealId: a.id,
+        createdBy: user.login
+      }, { user, event: { kind: "opened", text: "Відкрито провадження за зверненням " + a.number + "." } });
+      saveAppeal(Object.assign({}, a, { caseId: c.id, status: "answered" }), { user, message: "За вашим зверненням відкрито судову справу " + c.number + ". Хід справи, засідання й рішення — у розділі «Суд» кабінету." });
+      location.href = "../court/#" + encodeURIComponent(c.id);
+      return;
+    }
     const c = e.target.closest("[data-close-appeal-id]");
     if (!c) return;
     const appeal = allAppeals().find((x) => x.id === c.dataset.closeAppealId);
@@ -171,13 +197,24 @@ whenStateReady(async function () {
     saveAppeal(Object.assign({}, appeal, { status: "closed", closedAt: new Date().toISOString(), closedBy: user.login, closedByName: actorName(user) }), { user, message: "Звернення закрито." });
     drawAll(false);
   });
-  $("appeal-detail").addEventListener("submit", (e) => {
+  $("appeal-detail").addEventListener("submit", async (e) => {
     if (e.target.id !== "appeal-reply") return;
     e.preventDefault();
     const appeal = allAppeals().find((x) => x.id === ui.selected);
     const message = String(new FormData(e.target).get("message") || "").trim();
-    if (!appeal || !message) return;
-    saveAppeal(Object.assign({}, appeal, { status: ui.tab === "office" ? "answered" : "waiting" }), { user, message });
+    const hasFiles = replyFiles && replyFiles.files.length;
+    if (!appeal || (!message && !hasFiles)) return;
+    const btn = e.target.querySelector("[type=submit]");
+    let attachments = [];
+    if (hasFiles) {
+      btn.disabled = true;
+      btn.textContent = "Завантаження файлів…";
+      const up = await replyFiles.upload("appeal:" + appeal.id);
+      btn.disabled = false;
+      if (!up.ok) { alert(up.error); btn.textContent = ui.tab === "office" ? "Надати відповідь" : "Надіслати"; return; }
+      attachments = up.list;
+    }
+    saveAppeal(Object.assign({}, appeal, { status: ui.tab === "office" ? "answered" : "waiting" }), { user, message, attachments });
     drawAll(false);
   });
   $("appeal-detail").addEventListener("keydown", (e) => {
@@ -191,6 +228,7 @@ whenStateReady(async function () {
   const modal = $("appeal-modal");
   const form = $("appeal-form");
   form.office.innerHTML = allOffices().map((o) => `<option value="${attr(o.id)}">${esc(o.name)}</option>`).join("");
+  const newFiles = attachPicker($("appeal-files"), $("appeal-files-list"));
   function fillMe() {
     form.name.value = user.username || "";
     form.statId.value = user.statId || "";
@@ -201,6 +239,7 @@ whenStateReady(async function () {
   }
   $("appeal-new-btn").addEventListener("click", () => {
     form.reset();
+    newFiles.clear();
     fillMe();
     $("appeal-form-msg").textContent = "";
     modal.hidden = false;
@@ -208,12 +247,25 @@ whenStateReady(async function () {
   });
   modal.addEventListener("click", (e) => { if (e.target === modal || e.target.closest("[data-close-appeal]")) modal.hidden = true; });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") modal.hidden = true; });
-  form.addEventListener("submit", (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const data = new FormData(form);
     const text = String(data.get("text") || "").trim();
     if (text.length < 10) { $("appeal-form-msg").textContent = "Опишіть суть детальніше (хоча б кілька слів)."; return; }
+    const id = "appeal-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    let attachments = [];
+    if (newFiles.files.length) {
+      const btn = form.querySelector("[type=submit]");
+      btn.disabled = true;
+      btn.textContent = "Завантаження файлів…";
+      const up = await newFiles.upload("appeal:" + id);
+      btn.disabled = false;
+      btn.textContent = "Надіслати";
+      if (!up.ok) { $("appeal-form-msg").textContent = up.error; return; }
+      attachments = up.list;
+    }
     const saved = saveAppeal({
+      id,
       ownerLogin: user.login,
       name: data.get("name"),
       statId: data.get("statId"),
@@ -222,7 +274,8 @@ whenStateReady(async function () {
       office: data.get("office"),
       text,
       status: "waiting"
-    }, { user, message: text });
+    }, { user, message: text, attachments });
+    newFiles.clear();
     modal.hidden = true;
     ui.tab = "mine";
     ui.status = "all";

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://localhost:8787; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <script src="../../assets/boot.js?v=20261001l"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Суд — State</title>
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001l" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20261001l" />
+</head>
+<body>
+  <div class="topbar" id="top-office">Кабінет</div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="../../">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001l" alt="STATE">
+        <div>
+          <h1>STATE | UKRAINE GTA 5 RP</h1>
+          <p>Судові справи</p>
+        </div>
+      </a>
+    </div>
+  </header>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../../">Головна</a>
+      <a href="../../acts/">Законодавча база</a>
+      <a href="../../structure/">Органи влади</a>
+    </div>
+  </nav>
+  <main class="wrap">
+    <div class="cabinet-layout">
+      <aside class="side-nav">
+        <a href="../">Профіль</a>
+        <a href="../portal/">Портал послуг</a>
+        <a href="../inbox/">Повідомлення</a>
+        <a href="../appeals/">Звернення</a>
+        <a class="active" href="./">Суд</a>
+        <a href="../all/" data-staff-nav>Реєстр документів</a>
+        <a href="../admin/" id="nav-admin" data-staff-nav>Адмін-панель</a>
+        <a class="create-doc-link" href="../create/" data-staff-nav>Створити документ</a>
+      </aside>
+      <section class="appeals-page court-page">
+        <div class="appeals-head">
+          <div>
+            <h2 class="page-title" style="margin:0">Суд</h2>
+            <p class="muted" id="court-lead">Судові справи: сторони, суддя, засідання, матеріали й рішення.</p>
+          </div>
+          <button class="btn gold" type="button" id="case-new-btn" hidden>+ Нова справа</button>
+        </div>
+        <nav class="admin-tabs appeals-tabs" role="tablist" id="court-tabs"></nav>
+        <div class="appeals-toolbar">
+          <div class="seg" role="group" aria-label="Статус" id="court-status">
+            <button type="button" data-st="all" class="active">Усі</button>
+            <button type="button" data-st="active">У провадженні</button>
+            <button type="button" data-st="decided">Рішення</button>
+            <button type="button" data-st="done">Закриті</button>
+          </div>
+          <input type="search" id="court-q" placeholder="Пошук: номер, сторони, суть" aria-label="Пошук справ">
+        </div>
+        <div class="appeals-layout" id="court-layout">
+          <div class="appeals-list" id="court-list" role="listbox" aria-label="Справи"></div>
+          <div class="appeal-detail" id="case-detail"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Нова справа / зміна сторін -->
+  <div class="modal-backdrop" id="case-modal" hidden>
+    <section class="modal-card appeal-modal" role="dialog" aria-modal="true" aria-labelledby="case-modal-title">
+      <button class="modal-close" type="button" data-close-modal aria-label="Закрити">×</button>
+      <h3 id="case-modal-title">Нова справа</h3>
+      <form id="case-form">
+        <input type="hidden" name="id">
+        <div class="form-grid">
+          <label>Вид справи<select name="kind"></select></label>
+          <label>Коротка назва<input name="title" required maxlength="90" placeholder="Про стягнення боргу"></label>
+        </div>
+        <div class="form-grid">
+          <label>Позивач / заявник<input name="plaintiff" list="court-people" required placeholder="Ім'я або логін людини"></label>
+          <label>Відповідач / обвинувачений<input name="defendant" list="court-people" placeholder="Ім'я або логін людини"></label>
+        </div>
+        <label id="case-summary-wrap">Суть справи<textarea name="summary" rows="5" placeholder="Обставини, вимоги, докази."></textarea></label>
+        <p class="field-help">Якщо людина є на порталі — оберіть її зі списку: тоді вона бачитиме справу у своєму кабінеті.</p>
+        <p class="lead" id="case-form-msg" style="color:#8a2b2b;margin:0"></p>
+        <div class="modal-actions">
+          <button class="btn gold" type="submit">Зберегти</button>
+          <button class="btn ghost" type="button" data-close-modal>Скасувати</button>
+        </div>
+      </form>
+    </section>
+  </div>
+  <datalist id="court-people"></datalist>
+
+  <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
+  <script src="../../assets/config.js?v=20261001l"></script>
+  <script src="../../assets/accounts.js?v=20261001l"></script>
+  <script src="../../assets/app.js?v=20261001l"></script>
+  <script src="../../assets/store/01-base.js?v=20261001l"></script>
+  <script src="../../assets/store/02-remote.js?v=20261001l"></script>
+  <script src="../../assets/store/03-people.js?v=20261001l"></script>
+  <script src="../../assets/store/04-docs.js?v=20261001l"></script>
+  <script src="../../assets/store/05-ui.js?v=20261001l"></script>
+  <script src="page.js?v=20261001l"></script>
+</body>
+</html>

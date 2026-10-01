@@ -251,6 +251,70 @@ check("невірний номер шаблону відхиляється", (aw
 check("шаблон видаляється", (await call("DELETE", "/api/templates/d1abc", undefined, T.staff)).status === 200 &&
   !((await get("/api/templates", T.staff)).body.slots || {}).d1abc);
 
+// ---------- 17. Судові справи й вкладення ----------
+ip = "10.0.17.1";
+const judgeLogin = u("judge");
+await register(judgeLogin);
+{
+  const all = (await state(admin)).state_users;
+  const j = Object.assign({}, all.find((x) => x.login === judgeLogin), { roles: ["official"], office: "court", positionId: "court-staff" });
+  check("суддю призначено в судову владу", (await sync(admin, "state_users", [j])).status === 200);
+}
+const TJ = await login(judgeLogin, pwd(judgeLogin));
+const caseId = u("case");
+const cases = async (token) => ((await state(token)).state_cases || []);
+const caseRow = { id: caseId, number: "С-2026-9" + RUN.slice(-3), kind: "Цивільна", title: "Тестова справа", summary: "Суть",
+  plaintiff: { login: cit, name: "Позивач" }, defendant: { login: "", name: "Відповідач" }, status: "new", createdBy: people.staff, events: [] };
+check("громадянин не створює справу напряму", (await sync(T.cit, "state_cases", [Object.assign({}, caseRow, { createdBy: cit })])).status === 403);
+check("посадовець не може одразу відкрити провадження", (await sync(T.staff, "state_cases", [Object.assign({}, caseRow, { status: "open" })])).status === 403);
+check("посадовець подає справу до суду", (await sync(T.staff, "state_cases", [caseRow])).status === 200);
+let cs = (await cases(TJ)).find((c) => c.id === caseId);
+check("суд бачить усі справи", !!cs);
+r = await sync(TJ, "state_cases", [Object.assign({}, cs, { status: "hearing", judge: judgeLogin, hearing: { at: "2026-10-05T18:00", place: "Зала 1" },
+  events: (cs.events || []).concat([{ kind: "hearing", text: "Призначено засідання", by: "admin", byName: "Підробка" }]) })]);
+check("суддя призначає засідання", r.status === 200, r.body.error);
+cs = (await cases(T.cit)).find((c) => c.id === caseId);
+check("сторона бачить свою справу", cs && cs.status === "hearing");
+check("подію справи підписує сервер", cs && cs.events.slice(-1)[0].by === judgeLogin && cs.events.slice(-1)[0].byName !== "Підробка");
+check("стороння людина справи не бачить", !(await cases(T.head)).some((c) => c.id === caseId));
+check("сторона не змінює статус", (await sync(T.cit, "state_cases", [Object.assign({}, cs, { status: "decided" })])).status === 403);
+
+// Вкладення
+const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const upload = (token, parent, extra = {}) => post("/api/attach", Object.assign({ parent, name: "доказ.png", type: "image/png", data: png }, extra), token);
+r = await upload(T.cit, "case:" + caseId);
+check("сторона завантажує доказ у справу", r.status === 200 && !!r.body.id, r.body.error);
+const citFile = r.body.id;
+check("недопустимий тип файла відхиляється", (await upload(T.cit, "case:" + caseId, { type: "text/html" })).status === 400);
+check("не можна завантажити в чужу справу", (await upload(T.head, "case:" + caseId)).status === 403);
+const judgeFile = (await upload(TJ, "case:" + caseId)).body.id;
+r = await sync(T.cit, "state_cases", [Object.assign({}, cs, { events: cs.events.concat([{ kind: "note", text: "Мої докази", attachments: [{ id: citFile }, { id: judgeFile }] }]) })]);
+check("сторона додає матеріали з вкладенням", r.status === 200, r.body.error);
+cs = (await cases(T.cit)).find((c) => c.id === caseId);
+const note = cs.events.slice(-1)[0];
+check("чужий файл до повідомлення не прикріпити", note.attachments && note.attachments.length === 1 && note.attachments[0].id === citFile && note.attachments[0].name === "доказ.png");
+const getFile = (id, token) => fetch(B + "/api/attach/" + id, { headers: { Authorization: "Bearer " + token, "CF-Connecting-IP": ip } });
+check("суддя відкриває доказ", (await getFile(citFile, TJ)).status === 200);
+check("стороння людина доказ не відкриє", (await getFile(citFile, T.head)).status === 403);
+check("файли не потрапляють у дані порталу", !JSON.stringify((await get("/api/state", admin)).body).includes(png.slice(0, 40)));
+// Вкладення у зверненні: файл до нового звернення, потім саме звернення з ним
+const apAttId = u("apatt");
+const apFile = (await upload(T.cit, "appeal:" + apAttId)).body.id;
+r = await sync(T.cit, "state_appeals", [{ id: apAttId, ownerLogin: cit, office: "court", kind: "Позов", text: "Позов із доказом", status: "waiting",
+  thread: [{ text: "Позов із доказом", attachments: [{ id: apFile }] }] }]);
+check("звернення з вкладенням", r.status === 200 && (await state(T.cit)).state_appeals.find((a) => a.id === apAttId).thread[0].attachments.length === 1);
+check("посадовець відкриває вкладення звернення", (await getFile(apFile, T.head)).status === 200);
+
+// Номери звернень присвоює сервер — у різних людей не повторюються, підробити не можна
+ip = "10.0.17.9";
+const n1 = u("num1"), n2 = u("num2");
+await sync(T.cit, "state_appeals", [{ id: n1, number: "ZV-FAKE", ownerLogin: cit, office: "court", text: "Перше звернення громадянина", status: "waiting", thread: [] }]);
+await sync(T.head, "state_appeals", [{ id: n2, number: "ZV-FAKE", ownerLogin: people.head, office: "court", text: "Звернення іншої людини", status: "waiting", thread: [] }]);
+const all17 = (await state(admin)).state_appeals;
+const num1 = (all17.find((a) => a.id === n1) || {}).number, num2 = (all17.find((a) => a.id === n2) || {}).number;
+check("номер звернення присвоює сервер, без повторів", /^ZV-\d{4}-\d{4}$/.test(num1 || "") && /^ZV-\d{4}-\d{4}$/.test(num2 || "") && num1 !== num2, num1 + " / " + num2);
+check("номер справи присвоює сервер", /^С-\d{4}-\d{4}$/.test((((await cases(TJ)).find((c) => c.id === caseId)) || {}).number || ""));
+
 // ---------- 15. Вхід через Discord (підставний Discord на порту 9098; лише якщо Worker запущено з DISCORD_API_BASE) ----------
 if ((await get("/api/health")).body.discord) {
   const mock = await startMockDiscord();

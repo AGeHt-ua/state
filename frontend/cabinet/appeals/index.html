@@ -4,18 +4,18 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://localhost:8787; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <script src="../../assets/boot.js?v=20261001k"></script>
+  <script src="../../assets/boot.js?v=20261001l"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Звернення — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001k" />
-  <link rel="stylesheet" href="../../assets/styles.css?v=20261001k" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001l" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20261001l" />
 </head>
 <body>
   <div class="topbar" id="top-office">Кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001k" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001l" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Звернення та позови</p>
@@ -79,6 +79,11 @@
         </div>
         <label>Куди звертаєтесь<select name="office" required></select></label>
         <label>Суть<textarea name="text" required rows="6" placeholder="Опишіть ситуацію, вимогу або позов: що сталося, коли, хто причетний, чого ви просите."></textarea></label>
+        <div class="att-picker">
+          <label class="btn ghost att-add">📎 Додати фото чи PDF<input type="file" id="appeal-files" accept="image/*,application/pdf" multiple hidden></label>
+          <span class="field-help">Скріни, фото, документи — до 5 файлів, кожен до 1,3 МБ (фото стискаються автоматично).</span>
+          <div class="att-chips" id="appeal-files-list" hidden></div>
+        </div>
         <details class="advanced" id="appeal-me">
           <summary>Ваші дані: <span id="appeal-me-line"></span></summary>
           <div class="form-grid">
@@ -96,14 +101,14 @@
     </section>
   </div>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/config.js?v=20261001k"></script>
-  <script src="../../assets/accounts.js?v=20261001k"></script>
-  <script src="../../assets/app.js?v=20261001k"></script>
-  <script src="../../assets/store/01-base.js?v=20261001k"></script>
-  <script src="../../assets/store/02-remote.js?v=20261001k"></script>
-  <script src="../../assets/store/03-people.js?v=20261001k"></script>
-  <script src="../../assets/store/04-docs.js?v=20261001k"></script>
-  <script src="../../assets/store/05-ui.js?v=20261001k"></script>
-  <script src="page.js?v=20261001k"></script>
+  <script src="../../assets/config.js?v=20261001l"></script>
+  <script src="../../assets/accounts.js?v=20261001l"></script>
+  <script src="../../assets/app.js?v=20261001l"></script>
+  <script src="../../assets/store/01-base.js?v=20261001l"></script>
+  <script src="../../assets/store/02-remote.js?v=20261001l"></script>
+  <script src="../../assets/store/03-people.js?v=20261001l"></script>
+  <script src="../../assets/store/04-docs.js?v=20261001l"></script>
+  <script src="../../assets/store/05-ui.js?v=20261001l"></script>
+  <script src="page.js?v=20261001l"></script>
 </body>
 </html>

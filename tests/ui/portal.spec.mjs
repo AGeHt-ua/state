@@ -18,7 +18,7 @@ async function api(method, path, body, token) {
 }
 const apiLogin = async (login, password) => (await api("POST", "/api/auth", { login, password })).token;
 
-const people = { head: "uihead" + RUN, staff: "uistaff" + RUN, cit: "uicit" + RUN, mgr: "uimgr" + RUN };
+const people = { head: "uihead" + RUN, staff: "uistaff" + RUN, cit: "uicit" + RUN, mgr: "uimgr" + RUN, judge: "uijudge" + RUN };
 
 test.beforeAll(async () => {
   for (const [k, l] of Object.entries(people)) {
@@ -30,7 +30,8 @@ test.beforeAll(async () => {
   const res = await api("POST", "/api/sync", { ops: [{ coll: "state_users", upsert: [
     role(people.head, { positionId: "director" }),
     role(people.staff, { positionId: "directors-staff" }),
-    role(people.mgr, { positionId: "directors-staff", extraPermissions: ["managePeople"] })
+    role(people.mgr, { positionId: "directors-staff", extraPermissions: ["managePeople"] }),
+    role(people.judge, { office: "court", positionId: "court-staff" })
   ] }] }, admin);
   expect(res.ok, res.error).toBeTruthy();
 });
@@ -359,4 +360,81 @@ test("профіль: аватар з Discord підставляється в п
   } finally {
     await mock.close();
   }
+});
+
+// Крихітне PNG-зображення для вкладень
+const PNG = { name: "доказ.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64") };
+
+test("суд: позов із фото → справа → засідання → повістка → рішення, позивач бачить хід справи", async ({ browser }) => {
+  const claim = "Позов UI " + RUN + ": прошу стягнути борг.";
+  // 1. Громадянин подає позов до суду з фото
+  const citCtx = await browser.newContext();
+  const cit = await citCtx.newPage();
+  cit.on("dialog", (d) => d.accept());
+  await uiLogin(cit, people.cit, pwd(people.cit));
+  await cit.goto("/cabinet/appeals/");
+  await cit.locator("#appeal-new-btn").click();
+  await cit.locator("#appeal-form .kind-seg label", { hasText: "Позов" }).click();
+  await expect(cit.locator('#appeal-form input[name=kind][value="Позов"]')).toBeChecked();
+  await cit.locator("#appeal-form select[name=office]").selectOption("court");
+  await cit.locator("#appeal-form textarea[name=text]").fill(claim);
+  await cit.locator("#appeal-files").setInputFiles(PNG);
+  await expect(cit.locator("#appeal-files-list")).toContainText("доказ");
+  await cit.locator("#appeal-form button[type=submit]").click();
+  await expect(cit.locator("#appeal-chat")).toContainText(claim);
+  await expect(cit.locator("#appeal-chat .att-img img")).toHaveCount(1);
+
+  // 2. Суддя відкриває справу з позову
+  const jCtx = await browser.newContext();
+  const judge = await jCtx.newPage();
+  judge.on("dialog", (d) => d.accept());
+  await uiLogin(judge, people.judge, pwd(people.judge));
+  await judge.goto("/cabinet/appeals/");
+  await judge.locator('#appeals-tabs [data-tab="office"]').click();
+  await judge.locator(".appeal-item", { hasText: "UI " + RUN }).click();
+  await expect(judge.locator("#appeal-chat .att-img img")).toHaveCount(1);
+  await judge.locator("[data-open-case]").click();
+  await judge.waitForURL(/\/cabinet\/court\/#/);
+  await expect(judge.locator("#case-detail .badge").first()).toHaveText("Відкрито провадження");
+  const caseNo = (await judge.locator("#case-detail h3").textContent()).split(" · ")[0];
+
+  // 3. Суддя, засідання
+  await judge.locator('[data-form="judge"] select').selectOption(people.judge);
+  await judge.locator('[data-form="judge"] button').click();
+  await expect(judge.locator(".case-meta")).toContainText("UI judge");
+  await judge.locator('[data-form="hearing"] input[name=at]').fill("2026-10-05T18:00");
+  await judge.locator('[data-form="hearing"] input[name=place]').fill("Верховний Суд, зала 1");
+  await judge.locator('[data-form="hearing"] button').click();
+  await expect(judge.locator("#case-detail .badge").first()).toHaveText("Призначено засідання");
+  await expect(judge.locator(".case-meta")).toContainText("05.10.2026 18:00");
+
+  // 4. Повістка відкривається в редакторі з полями справи
+  await judge.locator("a", { hasText: "Створити повістку" }).click();
+  await judge.waitForURL(/\/cabinet\/create\//);
+  await expect(judge.locator("#f-caseNo")).toHaveValue(caseNo);
+  await expect(judge.locator("#f-venue")).toHaveValue("Верховний Суд, зала 1");
+
+  // 5. Рішення
+  await judge.goto("/cabinet/court/");
+  await judge.locator(".appeal-item", { hasText: caseNo }).click();
+  await judge.locator('[data-form="decision"] select').selectOption("Позов задоволено");
+  await judge.locator('[data-form="decision"] textarea').fill("Стягнути борг у повному обсязі.");
+  await judge.locator('[data-form="decision"] button').click();
+  await expect(judge.locator("#case-detail .badge").first()).toHaveText("Винесено рішення");
+  await jCtx.close();
+
+  // 6. Позивач: хід справи в зверненні й у розділі «Суд», додає доказ у матеріали
+  await cit.reload();
+  await expect(cit.locator("#appeal-chat")).toContainText("призначено засідання");
+  await expect(cit.locator("#appeal-chat")).toContainText("винесено рішення");
+  await cit.goto("/cabinet/court/");
+  await cit.locator(".appeal-item", { hasText: caseNo }).click();
+  await expect(cit.locator(".case-meta")).toContainText("Позов задоволено");
+  await expect(cit.locator(".case-actions")).toHaveCount(0);
+  await cit.locator("#case-note textarea").fill("Додаю ще один доказ.");
+  await cit.locator("#case-files").setInputFiles(PNG);
+  await cit.locator("#case-note button[type=submit]").click();
+  await expect(cit.locator("#case-chat")).toContainText("Додаю ще один доказ.");
+  await expect(cit.locator("#case-chat .att-img img")).toHaveCount(1);
+  await citCtx.close();
 });

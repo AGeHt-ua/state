@@ -88,6 +88,8 @@ export default {
       if (url.pathname === "/api/discord/unlink" && request.method === "POST") return cors(await handleDiscordUnlink(request, env), origin);
       if (url.pathname === "/api/discord/avatar" && request.method === "GET") return cors(await handleDiscordAvatar(request, env), origin);
       if (url.pathname === "/api/discord/links" && request.method === "GET") return cors(await handleDiscordLinks(request, env), origin);
+      if (url.pathname === "/api/attach" && request.method === "POST") return cors(await handleAttachUpload(request, env), origin);
+      if (url.pathname.startsWith("/api/attach/") && request.method === "GET") return cors(await handleAttachGet(request, env, decodeURIComponent(url.pathname.slice(12))), origin);
       if (url.pathname === "/api/templates") return cors(await handleTemplates(request, env), origin);
       if (url.pathname.startsWith("/api/templates/")) return cors(await handleTemplate(request, env, decodeURIComponent(url.pathname.slice(15))), origin);
       if (url.pathname === "/api/discord/admin-unlink" && request.method === "POST") return cors(await handleDiscordAdminUnlink(request, env), origin);
@@ -105,10 +107,11 @@ export default {
    - люди (state_users) — лише адміністратори (managePeople / approveProfiles / manageCongress);
    - апарати, посади, маршрути, типи документів — manageStructure / manageRoutes;
    - документи й фони — посадовці (governor / official / prosecutor / court);
-   - звернення й заявки на зміну профілю — посадовці будь-які, інші — лише свої. */
+   - звернення й заявки на зміну профілю — посадовці будь-які, інші — лише свої;
+   - судові справи — судова влада й повні адміністратори всі, сторони й автор справи — свої. */
 const COLLECTIONS = [
   "state_users", "state_offices", "state_positions", "state_approval_routes",
-  "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds", "state_doc_types"
+  "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds", "state_doc_types", "state_cases"
 ];
 const PUBLIC_USER_FIELDS = ["login", "name", "roles", "office", "positionId", "post", "photo", "congressMember"];
 const STAFF_ROLES = ["governor", "official", "prosecutor", "court"];
@@ -511,6 +514,86 @@ async function handlePasswordChange(request, env) {
 
 // Видалення акаунта адміністратором (managePeople): вхід, сесії, профіль і заявки на зміну профілю.
 // Документи й звернення людини лишаються в реєстрі як історія. Себе й службові акаунти видалити не можна.
+/* ---------- Вкладення (фото, скріни, PDF) у зверненнях і судових справах ----------
+   Окремі записи rows (coll = 'attach'): у дані порталу не потрапляють, віддаються лише тим, хто має доступ до звернення чи справи.
+   До повідомлення можна прикріпити лише власні файли, завантажені саме до цього звернення / справи (перевіряє verifyAttachments). */
+const ATTACH_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"];
+const ATTACH_MAX_BYTES = 1300 * 1024;
+const ATTACH_PER_PARENT = 40;
+const ATTACH_ID_RE = /^[A-Za-z0-9_-]{16,48}$/;
+
+async function attachParentAccess(env, actor, parent) {
+  const m = String(parent || "").match(/^(appeal|case):([A-Za-z0-9_.:-]{1,128})$/);
+  if (!m) return { ok: false };
+  if (m[1] === "appeal") {
+    const row = (await readRows(env, "state_appeals", [m[2]]))[m[2]];
+    if (!row) return { ok: true, fresh: true };          // нове звернення: файл додають до першого повідомлення
+    return { ok: actor.staff || row.ownerLogin === actor.login };
+  }
+  const row = (await readRows(env, "state_cases", [m[2]]))[m[2]];
+  if (!row) return { ok: actor.staff, fresh: true };
+  return { ok: isCourtManager(actor) || caseParty(row, actor.login) };
+}
+
+async function handleAttachUpload(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  const actor = await loadActor(env, login);
+  const body = await readJson(request);
+  if (!body) return json({ error: "Файл завеликий (до 1,3 МБ)." }, 413);
+  const type = String(body.type || "");
+  const name = String(body.name || "файл").replace(/[\u0000-\u001f<>"]/g, "").slice(0, 120) || "файл";
+  if (!ATTACH_TYPES.includes(type)) return json({ error: "Можна додавати фото (JPG, PNG, WebP, GIF) і PDF." }, 400);
+  const data = String(body.data || "");
+  if (!/^[A-Za-z0-9+/]+=*$/.test(data)) return json({ error: "Невірний файл." }, 400);
+  const size = Math.floor(data.length * 3 / 4) - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0);
+  if (size > ATTACH_MAX_BYTES) return json({ error: "Файл завеликий (до 1,3 МБ). Зменште зображення або PDF." }, 413);
+  const parent = String(body.parent || "");
+  const access = await attachParentAccess(env, actor, parent);
+  if (!access.ok) return json({ error: "Немає доступу до цього звернення чи справи." }, 403);
+  const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM rows WHERE coll = 'attach' AND json_extract(data, '$.parent') = ?").bind(parent).first();
+  if (n >= ATTACH_PER_PARENT) return json({ error: "Забагато файлів у цьому зверненні чи справі (до " + ATTACH_PER_PARENT + ")." }, 400);
+  if (!(await hit(env, "attach:" + login, { max: 40, window: 60 * 60 }))) return json({ error: "Забагато файлів за годину. Спробуйте пізніше." }, 429);
+  const id = randomToken(18);
+  const meta = { id, name, type, size };
+  await env.DB.prepare("INSERT INTO rows (coll, id, data, updated_at) VALUES ('attach', ?, ?, ?)")
+    .bind(id, JSON.stringify(Object.assign({ parent, owner: login, data }, meta)), Date.now()).run();
+  return json(meta);
+}
+
+async function handleAttachGet(request, env, id) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  if (!ATTACH_ID_RE.test(id)) return json({ error: "Файл не знайдено." }, 404);
+  const row = (await readRows(env, "attach", [id]))[id];
+  if (!row) return json({ error: "Файл не знайдено." }, 404);
+  const actor = await loadActor(env, login);
+  const access = row.owner === login ? { ok: true } : await attachParentAccess(env, actor, row.parent);
+  if (!access.ok || (access.fresh && row.owner !== login)) return json({ error: "Немає доступу до цього файлу." }, 403);
+  const bytes = Uint8Array.from(atob(row.data), (c) => c.charCodeAt(0));
+  return new Response(bytes, { headers: securityHeaders(new Headers({
+    "Content-Type": row.type,
+    "Content-Disposition": "inline; filename*=UTF-8''" + encodeURIComponent(row.name),
+    "Cache-Control": "private, max-age=3600"
+  })) });
+}
+
+// Нові повідомлення звернення / події справи: лишаються лише власні вкладення, завантажені саме сюди (назва й розмір — з бази)
+async function verifyAttachments(env, actor, parent, list, before) {
+  const fresh = (Array.isArray(list) ? list : []).slice(before || 0).filter((e) => e && Array.isArray(e.attachments));
+  if (!fresh.length) return;
+  const ids = [...new Set(fresh.flatMap((e) => e.attachments.map((a) => String((a && a.id) || "")).filter((x) => ATTACH_ID_RE.test(x))))].slice(0, 20);
+  const rows = ids.length ? await readRows(env, "attach", ids) : {};
+  fresh.forEach((e) => {
+    e.attachments = e.attachments
+      .map((a) => rows[String((a && a.id) || "")])
+      .filter((r) => r && r.parent === parent && r.owner === actor.login)
+      .slice(0, 10)
+      .map((r) => ({ id: r.id, name: r.name, type: r.type, size: r.size }));
+    if (!e.attachments.length) delete e.attachments;
+  });
+}
+
 /* ---------- Особисті шаблони редактора ----------
    Кожен шаблон — окремий запис rows (coll = 'user_tpl', id = 'логін/номер'), порядок і активний — 'user_tpl_meta'.
    Бачить і змінює лише власник; до загального стану порталу не потрапляють, але є в щоденних резервних копіях. */
@@ -644,7 +727,7 @@ async function handleSync(request, env, ctx) {
     }
     const removes = (Array.isArray(op.remove) ? op.remove : []).map((raw) => String(raw || "").slice(0, 128)).filter(Boolean);
 
-    const partialOld = (coll === "state_docs" || coll === "state_appeals") && upserts.length ? await readRows(env, coll, upserts.map((u) => u.id)) : {};
+    const partialOld = (coll === "state_docs" || coll === "state_appeals" || coll === "state_cases") && upserts.length ? await readRows(env, coll, upserts.map((u) => u.id)) : {};
     upserts.filter((u) => coll === "state_docs" && u.partial).forEach((u) => {
       const old = partialOld[u.id];
       if (old) DOC_HEAVY_FIELDS.forEach((k) => { if (u.row[k] === undefined && old[k] !== undefined) u.row[k] = old[k]; });
@@ -672,7 +755,18 @@ async function handleSync(request, env, ctx) {
         stampDoc(u.row, partialOld[u.id], actor, nowIso);
         u.row.versions = compactVersions(u.row.versions);
       }
-      if (coll === "state_appeals") stampAppeal(u.row, partialOld[u.id], actor, nowIso);
+      // Номер нового звернення / справи присвоює сервер (наскрізний лічильник): у браузері видно лише свої записи, тож номери там повторювались б
+      if ((coll === "state_appeals" || coll === "state_cases") && !partialOld[u.id]) u.row.number = await nextNumber(env, coll);
+      if (coll === "state_appeals") {
+        stampAppeal(u.row, partialOld[u.id], actor, nowIso);
+        await verifyAttachments(env, actor, "appeal:" + u.id, u.row.thread, ((partialOld[u.id] || {}).thread || []).length);
+      }
+      if (coll === "state_cases") {
+        const o = partialOld[u.id] || {};
+        u.row.events = appendStamped(o.events, u.row.events, actor, nowIso).slice(-200);
+        if (!partialOld[u.id]) { u.row.createdAt = nowIso; if (!isCourtManager(actor)) u.row.createdBy = actor.login; }
+        await verifyAttachments(env, actor, "case:" + u.id, u.row.events, (o.events || []).length);
+      }
       if (coll === "state_users" && typeof u.row.photo === "string" && u.row.photo.includes("/api/photo/")) u.row.photo = (old && old.photo) || "";
       if (coll === "state_users" && String(u.row.photo || "").length > MAX_PHOTO) return json({ error: "Фото завелике. Оберіть менше зображення." }, 413);
       u.data = JSON.stringify(u.row);
@@ -723,6 +817,7 @@ async function checkWrite(env, actor, coll, upserts, removes) {
   }
   if (coll === "state_doc_backgrounds") return actor.staff ? "" : noRights;
   if (coll === "state_docs") return checkDocsWrite(env, actor, upserts, removes);
+  if (coll === "state_cases") return checkCasesWrite(env, actor, upserts, removes);
 
   // Звернення й заявки на зміну профілю: посадовець (або адміністратор профілів) — будь-які, інші — лише свої
   const ownerField = coll === "state_appeals" ? "ownerLogin" : "login";
@@ -745,6 +840,57 @@ async function checkWrite(env, actor, coll, upserts, removes) {
       return "Забагато дій за короткий час. Спробуйте пізніше.";
     }
   }
+  return "";
+}
+
+// Наскрізна нумерація за рік: ZV-2026-0001 (звернення), С-2026-0001 (справи). Атомарний лічильник у limits;
+// перший раз він стартує з кількості вже наявних номерів цього року
+async function nextNumber(env, coll) {
+  const year = new Date().getFullYear();
+  const prefix = (coll === "state_cases" ? "С-" : "ZV-") + year + "-";
+  const row = await env.DB.prepare(
+    "INSERT INTO limits (key, count, reset_at) VALUES (?1, (SELECT COUNT(*) FROM rows WHERE coll = ?2 AND json_extract(data, '$.number') LIKE ?3) + 1, 4102444800) " +
+    "ON CONFLICT (key) DO UPDATE SET count = count + 1 RETURNING count"
+  ).bind("seq:" + coll + ":" + year, coll, prefix + "%").first();
+  return prefix + String(row.count).padStart(4, "0");
+}
+
+/* ---------- Судові справи ----------
+   Судова влада (апарат court) і повні адміністратори ведуть справи: відкривають, призначають суддю й засідання, виносять рішення.
+   Інший посадовець може подати справу (статус «new», автор — він сам). Сторони й автор справи можуть лише додавати
+   матеріали (події «note» з вкладеннями) — решта полів справи для них незмінна. */
+function isCourtManager(actor) {
+  return !!actor && (actor.full || (actor.staff && actor.profile.office === "court"));
+}
+const CASE_STATUSES = ["new", "open", "hearing", "decided", "closed", "rejected"];
+function caseParty(row, login) {
+  return !!row && ((row.plaintiff && row.plaintiff.login === login) || (row.defendant && row.defendant.login === login) || row.createdBy === login);
+}
+async function checkCasesWrite(env, actor, upserts, removes) {
+  const noRights = "Недостатньо прав для дії зі справою.";
+  if (removes.length && !actor.full) return noRights;
+  const existing = await readRows(env, "state_cases", upserts.map((u) => u.id));
+  for (const { id, row } of upserts) {
+    if (!CASE_STATUSES.includes(row.status)) return "Невідомий статус справи.";
+    if (JSON.stringify(row).length > MAX_APPEAL_ROW) return "Справа завелика: почніть нову або скоротіть матеріали.";
+    if (isCourtManager(actor)) continue;
+    const old = existing[id];
+    if (!old) {
+      // Подати справу може посадовець (напр. прокурор): лише нову, від свого імені
+      if (!actor.staff || row.status !== "new" || row.createdBy !== actor.login || row.judge) return noRights;
+      continue;
+    }
+    if (!caseParty(old, actor.login)) return noRights;
+    // Сторона додає лише матеріали: усе інше — як було, нові події — тільки «note»
+    const keys = new Set(Object.keys(old).concat(Object.keys(row)));
+    keys.delete("events");
+    for (const k of keys) if (JSON.stringify(old[k] === undefined ? null : old[k]) !== JSON.stringify(row[k] === undefined ? null : row[k])) return noRights;
+    const before = (old.events || []).length;
+    const fresh = (row.events || []).slice(before);
+    if ((row.events || []).length < before || fresh.some((e) => !e || e.kind !== "note")) return noRights;
+    if (fresh.some((e) => String(e.text || "").length > MAX_APPEAL_TEXT)) return "Повідомлення задовге (до " + MAX_APPEAL_TEXT + " символів).";
+  }
+  if (upserts.length && !actor.staff && !(await hit(env, "case:" + actor.login, LIMITS.appeal, upserts.length))) return "Забагато дій за короткий час. Спробуйте пізніше.";
   return "";
 }
 
@@ -1114,7 +1260,8 @@ async function overdueReminder(env) {
    Відновлення — worker/scripts/restore-from-backup.mjs. Окремо D1 сам дозволяє відкотити базу на будь-який момент (Time Travel). */
 async function dailyBackup(env) {
   if (!env.BACKUPS) return;
-  const rows = await env.DB.prepare("SELECT coll, id, updated_at, data FROM rows").all();
+  // Вкладення (файли) не копіюються в KV — завеликі; їх зберігає Time Travel самої бази D1
+  const rows = await env.DB.prepare("SELECT coll, id, updated_at, data FROM rows WHERE coll != 'attach'").all();
   const accounts = await env.DB.prepare("SELECT login, salt, hash, created_at, must_change, discord_id, discord_name FROM accounts").all();
   const audit = await env.DB.prepare("SELECT id, at, actor, action, target, details FROM audit ORDER BY id DESC LIMIT 5000").all();
   // data вже JSON-текст: зберігаємо як рядок, без повторного розбору (економія процесорного часу)
@@ -1221,6 +1368,7 @@ async function readCollections(env, colls, actor, opts = {}) {
       AND updated_at > ?5
       AND (coll != 'state_appeals' OR ?1 = 1 OR json_extract(data, '$.ownerLogin') = ?2)
       AND (coll != 'state_profile_requests' OR ?3 = 1 OR json_extract(data, '$.login') = ?2)
+      AND (coll != 'state_cases' OR ?6 = 1 OR json_extract(data, '$.plaintiff.login') = ?2 OR json_extract(data, '$.defendant.login') = ?2 OR json_extract(data, '$.createdBy') = ?2)
       AND (coll != 'state_docs' OR ?1 = 1
         OR json_extract(data, '$.status') IN ('ok', 'dead')
         OR (json_extract(data, '$.status') IN ('review', 'congress', 'adopted', 'draft') AND (
@@ -1228,7 +1376,7 @@ async function readCollections(env, colls, actor, opts = {}) {
           OR json_extract(data, '$.type') IN (SELECT json_extract(t.data, '$.label') FROM rows t WHERE t.coll = 'state_doc_types' AND json_extract(t.data, '$.congress') = 1)))
         OR (json_extract(data, '$.publishHome') = 1 AND COALESCE(json_extract(data, '$.status'), '') NOT IN ('trash', 'rejected', 'deleted')))
     ORDER BY rowid`;
-  const { results } = await env.DB.prepare(sql).bind(full, me, reviewer, opts.base || "", since).all();
+  const { results } = await env.DB.prepare(sql).bind(full, me, reviewer, opts.base || "", since, isCourtManager(actor) ? 1 : 0).all();
   const parts = {};
   list.forEach((c) => { parts[c] = []; });
   let maxRev = since;
@@ -1260,6 +1408,22 @@ async function sideEffects(env, actor, coll, upserts, removes, now, notices = []
   const out = [];
   const ids = upserts.map((u) => u.id).concat(removes);
   if (!ids.length) return out;
+  if (coll === "state_cases") {
+    const before = await readRows(env, "state_cases", upserts.map((u) => u.id));
+    const link = (id) => env.FRONTEND_URL ? "\n" + env.FRONTEND_URL + "cabinet/court/#" + encodeURIComponent(id) : "";
+    for (const { id, row } of upserts) {
+      const o = before[id] || {};
+      const title = (row.number || "") + (row.title ? " «" + row.title + "»" : "");
+      const h = row.hearing || {};
+      if (!before[id]) notices.push("⚖️ Нова судова справа " + title + link(id));
+      if (h.at && (h.at !== (o.hearing || {}).at || h.place !== (o.hearing || {}).place)) notices.push("📅 Засідання у справі " + title + ": " + String(h.at).replace("T", " ") + (h.place ? ", " + h.place : "") + link(id));
+      if (row.status === "decided" && o.status !== "decided") notices.push("🔨 Рішення у справі " + title + (row.decision && row.decision.result ? ": " + row.decision.result : "") + link(id));
+      if (["open", "hearing", "decided", "closed", "rejected"].includes(row.status) && row.status !== o.status) {
+        out.push(auditStatement(env, actor, "Справа: " + ({ open: "відкрито провадження", hearing: "призначено засідання", decided: "винесено рішення", closed: "закрито", rejected: "відмовлено" })[row.status], row.number || id, row.title || ""));
+      }
+    }
+    return out;
+  }
   const names = { state_offices: "Апарат", state_positions: "Посада", state_approval_routes: "Маршрут", state_doc_types: "Тип документа" };
 
   if (coll === "state_users") {
@@ -1366,7 +1530,7 @@ async function handleAudit(request, env, url) {
 // «Область видимості» відповіді: змінюється разом із правами — тоді браузер перезавантажує кеш повністю
 function scopeOf(actor) {
   if (!actor) return "anon";
-  return actor.login + ":" + (actor.staff ? "staff" : "public") + (actor.can(["approveProfiles"]) ? ":rev" : "");
+  return actor.login + ":" + (actor.staff ? "staff" : "public") + (actor.can(["approveProfiles"]) ? ":rev" : "") + (isCourtManager(actor) ? ":court" : "");
 }
 
 // Зміни після версії since — для живого оновлення сторінок (голосування, повідомлення)

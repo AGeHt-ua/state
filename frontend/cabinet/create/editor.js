@@ -405,8 +405,9 @@ whenStateReady(function () {
       venue: ''
     };
   }
-  function defaultState(type) {
-    const tp = type && officeTypes.indexOf(type) !== -1 ? type : officeTypes[0];
+  // any — дозволити тип іншого кабінету (документ для судової справи, створений адміністратором)
+  function defaultState(type, any) {
+    const tp = type && (officeTypes.indexOf(type) !== -1 || (any && TYPES[type])) ? type : officeTypes[0];
     const court = office === 'court';
     return {
       v: 2,
@@ -433,7 +434,7 @@ whenStateReady(function () {
       seal: Object.assign(d.seal, s.seal || {})
     });
     // Документ іншого кабінету (відкритий на редагування) зберігає свій тип
-    if (officeTypes.indexOf(st.type) === -1 && !(st.srcDoc && TYPES[st.type])) st.type = officeTypes[0];
+    if (officeTypes.indexOf(st.type) === -1 && !((st.srcDoc || st.caseId) && TYPES[st.type])) st.type = officeTypes[0];
     st.office = office;
     return st;
   }
@@ -2272,6 +2273,7 @@ whenStateReady(function () {
       publishHome: $('chkHome').checked,
       fundamental: $('chkFundamental').checked,
       links: currentLinks(),
+      caseId: state.caseId || (prev && prev.caseId) || undefined,
       text: plainText(),
       docHtml: sheetHtml(),
       html: html,
@@ -3170,6 +3172,29 @@ whenStateReady(function () {
   });
   setZoom(narrow ? (canvas.clientWidth - 24) / sheet.offsetWidth * 100 : zoom, true);
   if (editId) loadFromDoc(editId);
+  // Документ для судової справи (з картки справи): ?case=<id>&type=summons|ruling|arrest — новий шаблон із полями справи
+  const caseParam = new URLSearchParams(location.search).get('case');
+  if (!editId && caseParam && typeof getCase === 'function') {
+    const c = getCase(caseParam);
+    if (c) {
+      const want = new URLSearchParams(location.search).get('type');
+      const tp = want && TYPES[want] ? want : 'summons';
+      persist(false);
+      const st = defaultState(tp, true);
+      const h = c.hearing || {};
+      st.name = (TYPES[tp] ? TYPES[tp].label : 'Документ') + ' · справа ' + c.number;
+      st.caseId = c.id;
+      Object.assign(st.fields, {
+        caseNo: c.number,
+        hearing: h.at && typeof formatHearing === 'function' ? formatHearing(h.at) : '',
+        venue: h.place || '',
+        name: (c.defendant && c.defendant.name) || ''
+      });
+      loadSlot(addSlot(st));
+      persist(false);
+      toast('Документ для справи ' + c.number + ': поля справи заповнено');
+    }
+  }
   if (!db.slots[slot]) persist(false);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutPages());
 

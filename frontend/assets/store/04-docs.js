@@ -404,13 +404,13 @@ function saveAppeal(appeal, meta = {}) {
     updatedAt: now
   });
   const thread = (previous && previous.thread) || appeal.thread || [];
-  if (meta.message) {
-    thread.push({
+  if (meta.message || (meta.attachments && meta.attachments.length)) {
+    thread.push(Object.assign({
       at: now,
       by: actor && (actor.login || actor.id),
       byName: actorName(actor),
       text: String(meta.message || "").trim()
-    });
+    }, Array.isArray(meta.attachments) && meta.attachments.length ? { attachments: meta.attachments } : {}));
   }
   next.thread = thread;
   const items = allAppeals().filter((a) => a.id !== next.id);
@@ -940,3 +940,177 @@ function officeName(code) {
   return (custom && custom.name) || OFFICE_NAMES[code] || code || "—";
 }
 
+
+/* ---------- Судові справи ----------
+   Справа: номер, вид, сторони (позивач / відповідач — людина порталу або просто ім'я), суддя, статус, засідання, рішення,
+   матеріали (events: події та повідомлення сторін із вкладеннями). Пов'язані документи — doc.caseId.
+   Права (так само перевіряє сервер): судова влада й повні адміністратори ведуть усі справи; сторони — бачать свої й додають матеріали. */
+const CASE_STATUSES = {
+  new: "Подано",
+  open: "Відкрито провадження",
+  hearing: "Призначено засідання",
+  decided: "Винесено рішення",
+  closed: "Закрито",
+  rejected: "Відмовлено у відкритті"
+};
+const CASE_KINDS = ["Цивільна", "Кримінальна", "Адміністративна"];
+const CASE_RESULTS = ["Позов задоволено", "Позов задоволено частково", "У позові відмовлено", "Визнано винним", "Виправдано", "Провадження закрито"];
+
+function canManageCases(user) {
+  return !!user && (isFullAdmin(user) || (isStaff(user) && userOffice(user) === "court"));
+}
+function allCases() {
+  return loadLS("state_cases", []).slice()
+    .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+}
+function getCase(id) {
+  return allCases().find((c) => c.id === id) || null;
+}
+function isCaseParty(c, user) {
+  const me = user && user.login;
+  return !!me && ((c.plaintiff && c.plaintiff.login === me) || (c.defendant && c.defendant.login === me) || c.createdBy === me);
+}
+function casesForUser(user) {
+  if (!user) return [];
+  return canManageCases(user) ? allCases() : allCases().filter((c) => isCaseParty(c, user));
+}
+function caseNumber() {
+  const year = new Date().getFullYear();
+  const n = allCases().filter((c) => String(c.number || "").includes("-" + year + "-")).length + 1;
+  return "С-" + year + "-" + String(n).padStart(4, "0");
+}
+function caseStatusClass(status) {
+  return status === "decided" ? "ok" : status === "closed" || status === "rejected" ? "dead" : "draft";
+}
+function caseDocs(c) {
+  return allDocs().filter((d) => d.caseId === c.id && d.status !== "trash");
+}
+// Зберегти справу; meta.event — подія в матеріалах (kind, text, attachments). Автора й час події ставить сервер.
+function saveCase(c, meta = {}) {
+  const previous = getCase(c.id);
+  const now = new Date().toISOString();
+  const next = Object.assign({}, previous || {}, c, {
+    id: c.id || ("case-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5)),
+    number: c.number || (previous && previous.number) || caseNumber(),
+    // Сторона справи додає лише матеріали — решту полів (і час оновлення) змінює тільки суд
+    updatedAt: !previous || canManageCases(meta.user || currentUser()) ? now : previous.updatedAt
+  });
+  const events = ((previous && previous.events) || c.events || []).slice();
+  if (meta.event) {
+    const user = meta.user || currentUser();
+    events.push(Object.assign({ at: now, by: user && user.login, byName: actorName(user) }, meta.event));
+  }
+  next.events = events;
+  const items = loadLS("state_cases", []).filter((x) => x.id !== next.id);
+  items.push(next);
+  saveLS("state_cases", items);
+  return getCase(next.id) || next;
+}
+function formatHearing(at) {
+  if (!at) return "";
+  const m = String(at).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  return m ? m[3] + "." + m[2] + "." + m[1] + " " + m[4] + ":" + m[5] : String(at);
+}
+
+/* ---------- Вкладення: фото, скріни, PDF ----------
+   Фото стискаються в браузері (до 1600 px, JPEG), PDF — як є (до 1,3 МБ). Файл належить зверненню чи справі (parent),
+   відкрити його може лише той, хто має до них доступ. */
+const ATTACH_LIMIT = 1300 * 1024;
+function fileToBase64(blob) {
+  return new Promise((done) => {
+    const r = new FileReader();
+    r.onerror = () => done("");
+    r.onload = () => done(String(r.result || "").replace(/^data:[^,]*,/, ""));
+    r.readAsDataURL(blob);
+  });
+}
+async function uploadAttachment(parent, file) {
+  let type = String(file.type || "");
+  let data = "";
+  let name = file.name || "файл";
+  if (type.startsWith("image/") && type !== "image/gif") {
+    const url = await new Promise((done) => shrinkImage(file, 1600, done));
+    if (!url) return { ok: false, error: "Не вдалося прочитати зображення «" + name + "»." };
+    data = url.replace(/^data:[^,]*,/, "");
+    type = "image/jpeg";
+    name = name.replace(/\.(png|webp|bmp|heic|jpe?g)$/i, "") + ".jpg";
+  } else if (type === "application/pdf" || type === "image/gif") {
+    if (file.size > ATTACH_LIMIT) return { ok: false, error: "«" + name + "» завеликий (до 1,3 МБ)." };
+    data = await fileToBase64(file);
+  } else {
+    return { ok: false, error: "«" + name + "»: можна додавати фото й PDF." };
+  }
+  if (data.length * 3 / 4 > ATTACH_LIMIT) return { ok: false, error: "«" + name + "» завеликий навіть після стиснення (до 1,3 МБ)." };
+  const res = await apiFetch("POST", "/api/attach", { parent, name, type, data });
+  return res.ok ? { ok: true, meta: res.data } : { ok: false, error: res.data.error || "Не вдалося завантажити «" + name + "»." };
+}
+const ATTACH_URLS = {};
+async function attachmentUrl(id) {
+  if (ATTACH_URLS[id]) return ATTACH_URLS[id];
+  try {
+    const r = await fetch(REMOTE.url + "/api/attach/" + encodeURIComponent(id), { headers: { Authorization: "Bearer " + apiToken() } });
+    if (!r.ok) return "";
+    ATTACH_URLS[id] = URL.createObjectURL(await r.blob());
+    return ATTACH_URLS[id];
+  } catch (err) {
+    return "";
+  }
+}
+function attachSize(n) {
+  return n > 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + " МБ" : Math.max(1, Math.round(n / 1024)) + " КБ";
+}
+// Розмітка вкладень повідомлення; мініатюри підвантажує hydrateAttachments(контейнер)
+function attachmentsHtml(list) {
+  if (!Array.isArray(list) || !list.length) return "";
+  return `<div class="att-list">${list.map((a) => a.type && a.type.startsWith("image/")
+    ? `<button type="button" class="att att-img" data-att="${attr(a.id)}" title="${attr(a.name)}"><span class="att-ph">🖼</span></button>`
+    : `<button type="button" class="att att-file" data-att="${attr(a.id)}" title="Відкрити"><span>📄</span><b>${esc(a.name)}</b><small>${esc(attachSize(a.size || 0))}</small></button>`).join("")}</div>`;
+}
+function hydrateAttachments(root) {
+  (root || document).querySelectorAll(".att-img[data-att]:not([data-ready])").forEach(async (b) => {
+    b.dataset.ready = "1";
+    const url = await attachmentUrl(b.dataset.att);
+    b.innerHTML = url ? `<img src="${attr(url)}" alt="">` : `<span class="att-ph">⚠</span>`;
+  });
+}
+// Один обробник на сторінку: клік по вкладенню відкриває файл у новій вкладці
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest && e.target.closest("[data-att]");
+  if (!b) return;
+  e.preventDefault();
+  const win = window.open("", "_blank");
+  const url = await attachmentUrl(b.dataset.att);
+  if (!url) { if (win) win.close(); alert("Не вдалося відкрити файл: немає доступу або зв'язку з сервером."); return; }
+  if (win) win.location.href = url; else location.href = url;
+});
+// Вибір файлів для повідомлення: список «чипів» із можливістю прибрати
+function attachPicker(input, box) {
+  const files = [];
+  const draw = () => {
+    box.innerHTML = files.map((f, i) => `<span class="att-chip">${f.type === "application/pdf" ? "📄" : "🖼"} ${esc(f.name)} <button type="button" data-rm="${i}" aria-label="Прибрати">×</button></span>`).join("");
+    box.hidden = !files.length;
+  };
+  input.addEventListener("change", () => {
+    Array.from(input.files || []).forEach((f) => { if (files.length < 5) files.push(f); });
+    input.value = "";
+    draw();
+  });
+  box.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-rm]");
+    if (b) { files.splice(Number(b.dataset.rm), 1); draw(); }
+  });
+  return {
+    files,
+    clear() { files.length = 0; draw(); },
+    // Завантажити всі вибрані; помилка будь-якого файла зупиняє надсилання
+    async upload(parent) {
+      const out = [];
+      for (const f of files) {
+        const res = await uploadAttachment(parent, f);
+        if (!res.ok) return { ok: false, error: res.error };
+        out.push(res.meta);
+      }
+      return { ok: true, list: out };
+    }
+  };
+}

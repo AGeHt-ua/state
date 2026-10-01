@@ -1099,3 +1099,38 @@ label > input, label > select, label > textarea { margin-top: 5px; }
   .appeal-detail-head { flex-wrap: wrap; }
   .chat-msg { max-width: 92%; }
 }
+
+/* Вкладення: мініатюри фото й файли PDF у переписці */
+.att-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+.att { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); cursor: pointer; padding: 0; color: inherit; font: inherit; }
+.att-img { width: 96px; height: 72px; overflow: hidden; display: grid; place-items: center; }
+.att-img img { width: 100%; height: 100%; object-fit: cover; }
+.att-ph { font-size: 22px; opacity: .6; }
+.att-file { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; padding: 6px 10px; max-width: 240px; text-align: left; }
+.att-file span { grid-row: span 2; font-size: 20px; }
+.att-file b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-file small { color: var(--muted); font-size: 11.5px; }
+.att:hover { border-color: var(--navy-600); }
+.att-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.att-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); font-size: 12.5px; max-width: 260px; }
+.att-chip button { border: 0; background: none; cursor: pointer; font-size: 15px; line-height: 1; color: var(--muted); }
+.att-picker { display: grid; gap: 4px; margin: 4px 0 10px; justify-items: start; }
+.att-add { cursor: pointer; }
+.appeal-case-link { padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--surface-2); font-size: 13.5px; }
+
+/* Суд: картка справи */
+.case-body { padding: 14px 16px 0; display: grid; gap: 12px; min-width: 0; }
+.case-meta { margin: 0; }
+.case-decision { margin: 6px 0 0; }
+.case-summary p { margin: 8px 0 0; }
+.case-actions { display: grid; gap: 8px; padding: 12px; border: 1px dashed var(--line-strong); border-radius: 12px; background: var(--surface-2); }
+.case-action-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.case-action-row > b { min-width: 110px; font-size: 13px; color: var(--navy-900); }
+.case-action-row select, .case-action-row input { width: auto; min-width: 0; flex: 1 1 160px; }
+.case-decide textarea { flex: 1 1 100%; min-height: 64px; }
+.case-h { margin: 6px 0 0; }
+.case-timeline { padding: 4px 0 12px; max-height: 46vh; }
+.case-event { display: flex; gap: 10px; align-items: flex-start; align-self: stretch; padding: 6px 10px; border-left: 3px solid var(--gold); background: var(--surface-2); border-radius: 0 8px 8px 0; }
+.case-event b { display: block; font-size: 13.5px; font-weight: 600; }
+.case-event small { color: var(--muted); font-size: 12px; }
+:root[data-theme="dark"] .case-action-row > b { color: var(--ink); }
