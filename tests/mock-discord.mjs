@@ -1,5 +1,5 @@
 // Підставний Discord для автотестів (Worker запускається з DISCORD_API_BASE=http://127.0.0.1:9098).
-// Код авторизації = Discord ID користувача; ID, що містить «404», — не учасник Discord-сервера.
+// Код авторизації = Discord ID користувача; ID, що починається з «7404», — не учасник Discord-сервера.
 // /api/oauth2/authorize одразу повертає на redirect_uri з кодом ?as=<ID> (за замовчуванням — сталий тестовий ID),
 // тож UI-тест може пройти вхід кліком, як справжня людина.
 import http from "node:http";
@@ -24,7 +24,7 @@ export async function startMockDiscord(port = MOCK_DISCORD_PORT) {
       }
       if (url.pathname === "/api/oauth2/token") return send(200, { access_token: "tok-" + new URLSearchParams(body).get("code") });
       if (url.pathname === "/api/v10/users/@me") return send(200, { id, username: "dc_" + id.slice(-6), global_name: "Discord " + id.slice(-4) });
-      if (url.pathname.startsWith("/api/v10/users/@me/guilds/")) return id.includes("404") ? send(404, {}) : send(200, { roles: [] });
+      if (url.pathname.startsWith("/api/v10/users/@me/guilds/")) return id.startsWith("7404") ? send(404, {}) : send(200, { roles: [] });
       send(404, {});
     });
   });

@@ -235,6 +235,22 @@ r = await post("/api/sessions/revoke", { all: true }, s1);
 check("вийти на всіх інших пристроях", r.status === 200 && (r.body.items || []).length === 1);
 check("інший вхід більше не діє", (await get("/api/sessions", s2)).status === 401);
 
+// ---------- 16. Особисті шаблони редактора на сервері ----------
+ip = "10.0.16.1";
+const tplBody = { type: "order", name: "Мій шаблон", html: "<p>Текст шаблону</p>", updated: Date.now(), created: Date.now() };
+const put = (path, body, token) => call("PUT", path, body, token);
+check("шаблон зберігається на сервері", (await put("/api/templates/d1abc", tplBody, T.staff)).status === 200);
+check("порядок шаблонів зберігається", (await put("/api/templates", { order: ["d1abc"], active: "d1abc" }, T.staff)).status === 200);
+let tpls = (await get("/api/templates", T.staff)).body;
+check("шаблон повертається власнику", tpls.slots && tpls.slots.d1abc && tpls.slots.d1abc.name === "Мій шаблон" && tpls.meta.active === "d1abc");
+check("чужі шаблони не видно", Object.keys((await get("/api/templates", T.head)).body.slots || {}).length === 0);
+check("шаблони не потрапляють у загальний стан порталу", !JSON.stringify((await get("/api/state", admin)).body).includes("Текст шаблону"));
+check("без входу шаблонів немає", (await get("/api/templates")).status === 401);
+check("завеликий шаблон відхиляється", (await put("/api/templates/dbig", { html: "x".repeat(2000000) }, T.staff)).status === 413);
+check("невірний номер шаблону відхиляється", (await put("/api/templates/" + encodeURIComponent("../x"), tplBody, T.staff)).status === 400);
+check("шаблон видаляється", (await call("DELETE", "/api/templates/d1abc", undefined, T.staff)).status === 200 &&
+  !((await get("/api/templates", T.staff)).body.slots || {}).d1abc);
+
 // ---------- 15. Вхід через Discord (підставний Discord на порту 9098; лише якщо Worker запущено з DISCORD_API_BASE) ----------
 if ((await get("/api/health")).body.discord) {
   const mock = await startMockDiscord();

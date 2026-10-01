@@ -233,3 +233,26 @@ test("Discord без дублів: новий акаунт → прив'язка
     await mock.close();
   }
 });
+
+test("шаблони редактора зберігаються на сервері й видно на іншому пристрої", async ({ browser }) => {
+  const name = "Шаблон UI " + RUN;
+  // Пристрій 1: створюємо шаблон
+  const ctx1 = await browser.newContext();
+  const p1 = await ctx1.newPage();
+  p1.on("dialog", (d) => d.accept(d.type() === "prompt" ? name : undefined));
+  await uiLogin(p1, people.head, pwd(people.head));
+  await p1.goto("/cabinet/create/");
+  await p1.locator('.wd-tab[data-tab="file"]').click();
+  await p1.locator('.rb-btn[data-act="newSlot"]').click();
+  await expect(p1.locator("#slotSel")).toContainText(name);
+  await expect(p1.locator("#saveState")).toHaveText("Збережено", { timeout: 15000 });
+  await ctx1.close();
+
+  // Пристрій 2: чистий браузер — шаблон приходить із сервера
+  const ctx2 = await browser.newContext();
+  const p2 = await ctx2.newPage();
+  await uiLogin(p2, people.head, pwd(people.head));
+  await p2.goto("/cabinet/create/");
+  await expect(p2.locator("#slotSel")).toContainText(name);
+  await ctx2.close();
+});

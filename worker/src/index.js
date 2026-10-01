@@ -87,6 +87,8 @@ export default {
       if (url.pathname === "/api/discord/status" && request.method === "GET") return cors(await handleDiscordStatus(request, env), origin);
       if (url.pathname === "/api/discord/unlink" && request.method === "POST") return cors(await handleDiscordUnlink(request, env), origin);
       if (url.pathname === "/api/discord/links" && request.method === "GET") return cors(await handleDiscordLinks(request, env), origin);
+      if (url.pathname === "/api/templates") return cors(await handleTemplates(request, env), origin);
+      if (url.pathname.startsWith("/api/templates/")) return cors(await handleTemplate(request, env, decodeURIComponent(url.pathname.slice(15))), origin);
       if (url.pathname === "/api/discord/admin-unlink" && request.method === "POST") return cors(await handleDiscordAdminUnlink(request, env), origin);
       return cors(json({ error: "Not found" }, 404), origin);
     } catch (err) {
@@ -477,6 +479,64 @@ async function handlePasswordChange(request, env) {
 
 // Видалення акаунта адміністратором (managePeople): вхід, сесії, профіль і заявки на зміну профілю.
 // Документи й звернення людини лишаються в реєстрі як історія. Себе й службові акаунти видалити не можна.
+/* ---------- Особисті шаблони редактора ----------
+   Кожен шаблон — окремий запис rows (coll = 'user_tpl', id = 'логін/номер'), порядок і активний — 'user_tpl_meta'.
+   Бачить і змінює лише власник; до загального стану порталу не потрапляють, але є в щоденних резервних копіях. */
+const TPL_MAX_BYTES = 1900000;   // один шаблон разом із фоном і печаткою
+const TPL_MAX_COUNT = 100;
+const TPL_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+
+async function handleTemplates(request, env) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  if (request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT id, data, updated_at FROM rows WHERE coll = 'user_tpl' AND id LIKE ? ESCAPE '\\'")
+      .bind(login.replace(/[\\%_]/g, "\\$&") + "/%").all();
+    const meta = await env.DB.prepare("SELECT data FROM rows WHERE coll = 'user_tpl_meta' AND id = ?").bind(login).first();
+    // Готовий JSON із бази вставляється як є — без повторного розбору великих шаблонів
+    const slots = results.map((r) => JSON.stringify(r.id.slice(login.length + 1)) + ":" + r.data);
+    return json(new RawJson('{"slots":{' + slots.join(",") + '},"meta":' + (meta ? meta.data : "null") + "}"));
+  }
+  if (request.method === "PUT") {
+    const body = await readJson(request);
+    const order = body && Array.isArray(body.order) ? body.order.filter((x) => TPL_ID_RE.test(String(x))).slice(0, TPL_MAX_COUNT).map(String) : null;
+    if (!order) return json({ error: "Невірний запит." }, 400);
+    const active = TPL_ID_RE.test(String(body.active || "")) ? String(body.active) : (order[0] || "");
+    await env.DB.prepare("INSERT INTO rows (coll, id, data, updated_at) VALUES ('user_tpl_meta', ?, ?, ?) ON CONFLICT (coll, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at")
+      .bind(login, JSON.stringify({ order, active }), Date.now()).run();
+    return json({ ok: true });
+  }
+  return json({ error: "Метод не підтримується." }, 405);
+}
+
+async function handleTemplate(request, env, slotId) {
+  const login = await tokenLogin(request, env);
+  if (!login) return json({ error: "Сесія завершилась. Увійдіть знову." }, 401);
+  if (!TPL_ID_RE.test(slotId)) return json({ error: "Невірний номер шаблону." }, 400);
+  const id = login + "/" + slotId;
+  if (request.method === "DELETE") {
+    await env.DB.prepare("DELETE FROM rows WHERE coll = 'user_tpl' AND id = ?").bind(id).run();
+    return json({ ok: true });
+  }
+  if (request.method !== "PUT") return json({ error: "Метод не підтримується." }, 405);
+  const len = Number(request.headers.get("Content-Length") || 0);
+  if (len > TPL_MAX_BYTES) return json({ error: "Шаблон завеликий (понад 1,9 МБ): зменште фон чи зображення." }, 413);
+  const text = await request.text();
+  if (text.length > TPL_MAX_BYTES) return json({ error: "Шаблон завеликий (понад 1,9 МБ): зменште фон чи зображення." }, 413);
+  let tpl;
+  try { tpl = JSON.parse(text); } catch { return json({ error: "Невірний запит." }, 400); }
+  if (!tpl || typeof tpl !== "object" || Array.isArray(tpl)) return json({ error: "Невірний запит." }, 400);
+  const exists = await env.DB.prepare("SELECT 1 FROM rows WHERE coll = 'user_tpl' AND id = ?").bind(id).first();
+  if (!exists) {
+    const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM rows WHERE coll = 'user_tpl' AND id LIKE ? ESCAPE '\\'")
+      .bind(login.replace(/[\\%_]/g, "\\$&") + "/%").first();
+    if (n >= TPL_MAX_COUNT) return json({ error: "Забагато шаблонів (до " + TPL_MAX_COUNT + "): видаліть зайві." }, 400);
+  }
+  await env.DB.prepare("INSERT INTO rows (coll, id, data, updated_at) VALUES ('user_tpl', ?, ?, ?) ON CONFLICT (coll, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at")
+    .bind(id, JSON.stringify(tpl), Date.now()).run();
+  return json({ ok: true });
+}
+
 // Повне видалення акаунта: вхід, сесії, профіль і заявки (документи й звернення лишаються в реєстрі)
 function deleteAccountStatements(env, target) {
   return [
@@ -485,7 +545,8 @@ function deleteAccountStatements(env, target) {
     env.DB.prepare("INSERT INTO tombstones (coll, id, at) SELECT coll, id, ?2 FROM rows WHERE (coll = 'state_users' AND id = ?1) OR (coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?1) " +
       "ON CONFLICT (coll, id) DO UPDATE SET at = excluded.at").bind(target, Date.now()),
     env.DB.prepare("DELETE FROM rows WHERE coll = 'state_users' AND id = ?").bind(target),
-    env.DB.prepare("DELETE FROM rows WHERE coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?").bind(target)
+    env.DB.prepare("DELETE FROM rows WHERE coll = 'state_profile_requests' AND json_extract(data, '$.login') = ?").bind(target),
+    env.DB.prepare("DELETE FROM rows WHERE (coll = 'user_tpl' AND substr(id, 1, length(?1) + 1) = ?1 || '/') OR (coll = 'user_tpl_meta' AND id = ?1)").bind(target)
   ];
 }
 
@@ -1469,7 +1530,7 @@ function cors(response, origin) {
     headers.set("Access-Control-Allow-Credentials", "true");
     headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
     headers.set("Access-Control-Max-Age", "86400");
-    headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   }
   headers.append("Vary", "Origin");
   return new Response(response.body, { status: response.status, headers });

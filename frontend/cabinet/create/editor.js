@@ -538,8 +538,90 @@ whenStateReady(function () {
   }
 
   let db = loadDb();
+
+  /* ---------- Шаблони на сервері ----------
+     Сервер — головне сховище (однакові шаблони на всіх пристроях, нічого не губиться при очищенні браузера);
+     браузер — лише швидка копія. Кожен шаблон відвантажується окремо, коли змінився (за часом зміни й назвою). */
+  const SYNCED_KEY = STORE + ':synced';
+  const tplSync = { ok: false, uploaded: {}, meta: '', busy: false, again: false, timer: null };
+  const tplPrint = (st) => (st.updated || 0) + '|' + (st.created || 0) + '|' + (st.name || '');
+  (function mergeServerTemplates() {
+    const res = typeof apiRequest === 'function' ? apiRequest('GET', '/api/templates') : { ok: false };
+    if (!res.ok) return;
+    tplSync.ok = true;
+    const server = (res.data && res.data.slots) || {};
+    const meta = res.data && res.data.meta;
+    let lastSynced = 0;
+    try { lastSynced = Number(localStorage.getItem(SYNCED_KEY)) || 0; } catch (e) { /* приватний режим */ }
+    // Шаблон є лише в цьому браузері: якщо сервер уже синхронізувався, а шаблон старший за ту синхронізацію —
+    // його видалили на іншому пристрої; новіший — створений тут без зв'язку, відвантажимо.
+    Object.keys(db.slots).forEach((id) => {
+      if (!server[id] && meta && (db.slots[id].updated || db.slots[id].created || 0) <= lastSynced) delete db.slots[id];
+    });
+    Object.keys(server).forEach((id) => {
+      const remote = server[id];
+      const local = db.slots[id];
+      if (!local || (remote.updated || 0) >= (local.updated || 0)) db.slots[id] = remote;
+      if (db.slots[id] === remote) tplSync.uploaded[id] = tplPrint(remote);
+    });
+    if (meta && Array.isArray(meta.order)) {
+      db.order = meta.order.concat(db.order.filter((id) => meta.order.indexOf(id) === -1));
+      if (!db.slots[db.active]) db.active = meta.active;
+      tplSync.meta = JSON.stringify({ order: meta.order, active: meta.active });
+    }
+    db = normalizeDb(db);
+  })();
+  function syncTemplates() {
+    if (!tplSync.ok) return;
+    clearTimeout(tplSync.timer);
+    tplSync.timer = setTimeout(runTplSync, 300);
+  }
+  async function runTplSync() {
+    if (tplSync.busy) { tplSync.again = true; return; }
+    tplSync.busy = true;
+    let failed = '';
+    try {
+      for (const id of db.order.slice()) {
+        const st = db.slots[id];
+        if (!st || tplSync.uploaded[id] === tplPrint(st)) continue;
+        const print = tplPrint(st);
+        const res = await apiFetch('PUT', '/api/templates/' + encodeURIComponent(id), st);
+        if (res.ok) tplSync.uploaded[id] = print;
+        else failed = (res.data && res.data.error) || 'немає зв\'язку з сервером';
+      }
+      for (const id of Object.keys(tplSync.uploaded)) {
+        if (db.slots[id]) continue;
+        const res = await apiFetch('DELETE', '/api/templates/' + encodeURIComponent(id));
+        if (res.ok) delete tplSync.uploaded[id]; else failed = (res.data && res.data.error) || 'немає зв\'язку з сервером';
+      }
+      const meta = JSON.stringify({ order: db.order, active: db.active });
+      if (meta !== tplSync.meta) {
+        const res = await apiFetch('PUT', '/api/templates', { order: db.order, active: db.active });
+        if (res.ok) tplSync.meta = meta; else failed = (res.data && res.data.error) || 'немає зв\'язку з сервером';
+      }
+      if (failed) {
+        setSaved('Не збережено на сервері', 'err');
+        toast('Шаблон не збережено на сервері: ' + failed);
+      } else {
+        try { localStorage.setItem(SYNCED_KEY, String(Date.now())); } catch (e) { /* приватний режим */ }
+        setSaved('Збережено');
+      }
+    } finally {
+      tplSync.busy = false;
+      if (tplSync.again) { tplSync.again = false; runTplSync(); }
+    }
+  }
+  // Незбережене на сервері не губимо: попередження при закритті сторінки
+  window.addEventListener('beforeunload', (e) => {
+    if (tplSync.ok && (tplSync.busy || tplSync.timer && db.order.some((id) => db.slots[id] && tplSync.uploaded[id] !== tplPrint(db.slots[id])))) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
   if (!db.order.length) { const id = newSlotId(); db.order.push(id); db.active = id; }
   let slot = db.active;
+  syncTemplates();
   let state = defaultState();
   window.state = state;
 
@@ -1345,7 +1427,14 @@ whenStateReady(function () {
   }
 
   function writeDb() {
-    localStorage.setItem(STORE, JSON.stringify(db));
+    syncTemplates();
+    try {
+      localStorage.setItem(STORE, JSON.stringify(db));
+    } catch (e) {
+      // Сховище браузера переповнене: копію в браузері прибираємо — шаблони однаково на сервері
+      try { localStorage.removeItem(STORE); } catch (e2) { /* нічого */ }
+      if (!tplSync.ok) throw e;
+    }
   }
   function autoLabel(s) {
     const t = TYPES[s.type];
