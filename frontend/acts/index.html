@@ -2,21 +2,20 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://localhost:8787; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <script>if(window.top!==window.self){try{window.top.location=window.self.location}catch(e){document.documentElement.style.display="none"}}</script>
+  <script src="../assets/boot.js?v=20261001d"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Законодавча база — State</title>
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20261001c" />
-  <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../assets/styles.css?v=20261001c" />
+  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20261001d" />
+  <link rel="stylesheet" href="../assets/styles.css?v=20261001d" />
 </head>
 <body>
   <div class="topbar">Офіційний портал Уряду штату Сан-Андреас</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../">
-        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20261001c" alt="STATE">
+        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20261001d" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Законодавство і органи влади штату</p>
@@ -62,32 +61,14 @@
     </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../assets/config.js?v=20261001c"></script>
-  <script src="../assets/accounts.js?v=20261001c"></script>
-  <script src="../assets/app.js?v=20261001c"></script>
-  <script src="../assets/store.js?v=20261001c"></script>
-  <script>
-    const params = new URLSearchParams(location.search);
-    const cur = params.get("type") || "all";
-    const nav = document.getElementById("sec-nav");
-    // Розділи з кількістю актів; порожні ховаємо, щоб меню не було довгим
-    nav.innerHTML = `<nav class="side-links">${actSections().map((s) => {
-      const n = docsBySection(s.key).length;
-      if (!n && s.key !== "all" && s.key !== cur) return "";
-      const p = new URLSearchParams(params);
-      p.set("type", s.key);
-      return `<a class="${s.key === cur ? "active" : ""}" href="?${p.toString()}"><span>${esc(s.label)}</span><span class="pill">${n}</span></a>`;
-    }).join("")}</nav>`;
-    const form = document.getElementById("sort-form");
-    form.office.insertAdjacentHTML("beforeend", allOffices().map((o) => `<option value="${attr(o.id)}">${esc(o.name)}</option>`).join(""));
-    form.sort.value = params.get("sort") || "date-desc";
-    form.office.value = params.get("office") || "all";
-    form.addEventListener("change", () => {
-      const p = new URLSearchParams(location.search);
-      p.set("sort", form.sort.value);
-      p.set("office", form.office.value);
-      location.search = p.toString();
-    });
-  </script>
+  <script src="../assets/config.js?v=20261001d"></script>
+  <script src="../assets/accounts.js?v=20261001d"></script>
+  <script src="../assets/app.js?v=20261001d"></script>
+  <script src="../assets/store/01-base.js?v=20261001d"></script>
+  <script src="../assets/store/02-remote.js?v=20261001d"></script>
+  <script src="../assets/store/03-people.js?v=20261001d"></script>
+  <script src="../assets/store/04-docs.js?v=20261001d"></script>
+  <script src="../assets/store/05-ui.js?v=20261001d"></script>
+  <script src="page.js?v=20261001d"></script>
 </body>
 </html>

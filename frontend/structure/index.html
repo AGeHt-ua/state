@@ -2,21 +2,20 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://localhost:8787; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <script>if(window.top!==window.self){try{window.top.location=window.self.location}catch(e){document.documentElement.style.display="none"}}</script>
+  <script src="../assets/boot.js?v=20261001d"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Органи влади — State | Ukraine GTA 5 RP</title>
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20261001c" />
-  <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../assets/styles.css?v=20261001c" />
+  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20261001d" />
+  <link rel="stylesheet" href="../assets/styles.css?v=20261001d" />
 </head>
 <body>
   <div class="topbar">Офіційний портал Уряду штату Сан-Андреас · Ukraine GTA 5 RP</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../">
-        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20261001c" alt="STATE">
+        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20261001d" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Законодавство і органи влади штату</p>
@@ -32,52 +31,14 @@
     <div class="branch-grid" id="branches"></div>
   </main>
   <footer class="footer"></footer>
-  <script src="../assets/config.js?v=20261001c"></script>
-  <script src="../assets/accounts.js?v=20261001c"></script>
-  <script src="../assets/app.js?v=20261001c"></script>
-  <script src="../assets/store.js?v=20261001c"></script>
-  <script>
-    // Гілка влади визначається роллю апарату
-    const GOV_BRANCHES = [
-      { id: "exec", title: "Виконавча влада", roles: ["governor", "official"], text: "Губернатор штату, уряд і департаменти." },
-      { id: "court", title: "Судова влада", roles: ["court"], text: "Верховний, апеляційні та окружні суди." },
-      { id: "pros", title: "Прокуратура", roles: ["prosecutor"], text: "Нагляд за законністю та кримінальне переслідування." }
-    ];
-    const offices = allOffices();
-    const positions = allPositions();
-    const people = allUsers().filter((u) => isStaff(u));
-    const other = { id: "other", title: "Інші органи", roles: [], text: "Апарати, створені в адмін-панелі." };
-    const known = new Set(GOV_BRANCHES.flatMap((b) => b.roles));
-    const groups = GOV_BRANCHES.concat([other]).map((b) => ({
-      b,
-      offices: offices.filter((o) => b === other ? !known.has(o.role) : b.roles.includes(o.role))
-    })).filter((g) => g.offices.length);
-    // Конгрес — не апарат, а посадовці зі статусом конгресмена
-    const congress = congressMembers();
-    const congressCard = `
-      <section class="card branch-card">
-        <p class="branch-tag">Законодавча влада</p>
-        <p class="muted" style="margin:0 0 12px">Конгрес штату: розгляд і голосування за закони.</p>
-        <h3>Конгрес штату</h3>
-        ${congress.length ? congress.map((u) => `<div class="structure-row"><div><b>${esc(u.name || u.login)}</b><span>${esc(u.post || officeName(u.office || userOffice(u)))}</span></div><span class="pill">конгресмен</span></div>`).join("") : `<p class="muted">Склад ще не сформовано.</p>`}
-      </section>`;
-    document.getElementById("branches").innerHTML = congressCard + groups.map(({ b, offices }) => `
-      <section class="card branch-card">
-        <p class="branch-tag">${esc(b.title)}</p>
-        <p class="muted" style="margin:0 0 12px">${esc(b.text)}</p>
-        ${offices.map((o) => {
-          const posts = positions.filter((p) => p.office === o.id);
-          const members = people.filter((u) => (u.office || userOffice(u)) === o.id);
-          return `
-            <h3>${esc(o.name)}</h3>
-            ${posts.length || members.length ? posts.map((p) => {
-              const holders = members.filter((u) => u.positionId === p.id);
-              return `<div class="structure-row"><div><b>${esc(p.title)}</b><span>${holders.length ? holders.map((u) => esc(u.name || u.login)).join(", ") : "вакантно"}</span></div></div>`;
-            }).join("") + members.filter((u) => !posts.some((p) => p.id === u.positionId)).map((u) =>
-              `<div class="structure-row"><div><b>${esc(u.post || "Посадовець")}</b><span>${esc(u.name || u.login)}</span></div></div>`
-            ).join("") : `<p class="muted">Склад ще не сформовано.</p>`}`;
-        }).join("")}
-      </section>`).join("");
-  </script>
+  <script src="../assets/config.js?v=20261001d"></script>
+  <script src="../assets/accounts.js?v=20261001d"></script>
+  <script src="../assets/app.js?v=20261001d"></script>
+  <script src="../assets/store/01-base.js?v=20261001d"></script>
+  <script src="../assets/store/02-remote.js?v=20261001d"></script>
+  <script src="../assets/store/03-people.js?v=20261001d"></script>
+  <script src="../assets/store/04-docs.js?v=20261001d"></script>
+  <script src="../assets/store/05-ui.js?v=20261001d"></script>
+  <script src="page.js?v=20261001d"></script>
 </body>
 </html>

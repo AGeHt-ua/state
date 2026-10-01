@@ -1,0 +1,160 @@
+/* Скрипт сторінки «acts/view». Запускається, коли дані порталу завантажені й сторінка готова. */
+whenStateReady(async function () {
+  const id = new URLSearchParams(location.search).get("id");
+  // Зв'язки: що цей документ змінює / скасовує і які документи змінили / скасували його
+  function linkRows() {
+    const ref = (d) => `<a href="${attr(docHref(d))}">${esc(d.title)}</a>`;
+    const byIds = (ids) => ids.map((x) => getDoc(x)).filter(Boolean);
+    const own = docLinks(doc);
+    const back = docBacklinks(doc.id);
+    const rows = [
+      ["Змінює", byIds(own.amends)],
+      ["Скасовує", byIds(own.repeals)],
+      ["Зміни внесено", back.amendedBy],
+      [doc.status === "dead" ? "Скасовано" : "Скасовується", back.repealedBy.concat(doc.repealedBy && !back.repealedBy.some((d) => d.id === doc.repealedBy) ? byIds([doc.repealedBy]) : [])]
+    ].filter(([, list]) => list.length);
+    return rows.map(([label, list]) => `<tr><th>${label}</th><td>${list.map(ref).join("<br>")}</td></tr>`).join("");
+  }
+  // Список документів приходить скороченим — тут завантажуємо повний (з версіями й журналом)
+  const doc = await loadFullDoc(id);
+  // Хтось проголосував чи погодив — оновлюємо картку, щоб було видно актуальний стан
+  if (doc) watchState(() => { const fresh = getDoc(id); if (fresh && fresh._rev !== doc._rev) location.reload(); });
+  const root = document.getElementById("doc-root");
+  const viewer = currentUser();
+  if (!doc || (doc.status === "trash" && !(viewer && isStaff(viewer)))) {
+    root.innerHTML = "<h2 class='page-title'>Документ не знайдено</h2><p><a href='../'>До списку</a></p>";
+  } else {
+    const canSeeLifecycle = viewer && isStaff(viewer);
+    const history = (doc.history || []).slice().reverse();
+    const versions = (doc.versions || []).slice().reverse();
+    function stepActorName(step) {
+      const raw = String(step || "");
+      if (raw === "congress") return "Конгрес штату";
+      if (raw === "authorOffice") return officeName(doc.office);
+      if (raw.startsWith("position:")) return routeStepName(raw, doc);
+      if (raw.startsWith("user:")) return routeStepName(raw, doc);
+      return officeName(raw);
+    }
+    function stepActorOffice(step) {
+      const raw = String(step || "");
+      if (raw === "congress") return "Колегіальне голосування";
+      if (raw.startsWith("position:")) {
+        const position = positionById(raw.slice(9));
+        return position ? officeName(position.office) : "Погодження документа";
+      }
+      if (raw.startsWith("user:")) {
+        const member = allUsers().find((u) => u.login === raw.slice(5));
+        return member ? officeName(member.office || userOffice(member)) : "Погодження документа";
+      }
+      return "Погодження документа";
+    }
+    // Підписанти: автор + кожен крок маршруту з фактичним рішенням із doc.approvals
+    const approvals = doc.approvals || [];
+    const inRoute = doc.status === "review" || doc.status === "congress";
+    const current = Number(doc.approvalIndex || 0);
+    const author = allUsers().find((u) => u.login === doc.ownerLogin);
+    // Публікація адміністратором без решти маршруту
+    const adminPublish = doc.status !== "draft" && doc.status !== "rejected" ? approvals.filter((a) => a.step === "admin").slice(-1)[0] : null;
+    const signerRows = [{
+      role: "Автор",
+      name: doc.author || "—",
+      office: (author && author.post ? author.post + " · " : "") + (doc.body || officeName(doc.office)),
+      state: "Створено", cls: "ok",
+      at: (doc.history && doc.history[0] && doc.history[0].at) || doc.date
+    }].concat((doc.approvalSteps || []).map((step, index) => {
+      const done = approvals.filter((a) => a.step === step && a.decision === "approved").slice(-1)[0];
+      const returned = approvals.filter((a) => a.step === step && a.decision !== "approved").slice(-1)[0];
+      let state = "Очікує черги", cls = "muted";
+      if (done && (index < current || doc.status === "ok" || doc.status === "adopted" || doc.status === "dead")) { state = "Погоджено"; cls = "ok"; }
+      else if (adminPublish && !inRoute) { state = "Пропущено"; cls = "muted"; }
+      else if (inRoute && index === current) {
+        if (step === "congress") { const t = congressTally(doc); state = "Голосування: за " + t.pro + ", проти " + t.contra; }
+        else state = "Очікує рішення";
+        cls = "draft";
+      } else if (returned && (doc.status === "draft" || doc.status === "rejected")) {
+        state = returned.decision === "rejected" ? "Відхилено" : "Повернено"; cls = "dead";
+      } else if (!inRoute && doc.status !== "ok") { state = "—"; cls = "muted"; }
+      const actor = done || returned;
+      return {
+        role: step === "congress" ? "Голосування Конгресу" : stepActorOffice(step),
+        name: actor ? actor.byName + (actor.post ? " · " + actor.post : "") : stepActorName(step),
+        office: actor && actor.comment ? "Коментар: " + actor.comment : "",
+        state, cls,
+        at: actor ? actor.at : ""
+      };
+    })).concat(adminPublish ? [{
+      role: "Адміністратор",
+      name: adminPublish.byName + (adminPublish.post ? " · " + adminPublish.post : ""),
+      office: "Опубліковано без решти маршруту",
+      state: "Опубліковано", cls: "ok",
+      at: adminPublish.at
+    }] : []);
+    document.title = doc.title;
+    root.innerHTML = `
+      <div class="crumbs"><a href="../../">Головна</a> / <a href="../">Законодавча база</a> / ${esc(doc.number)}</div>
+      <h2 class="page-title">${esc(doc.title)}</h2>
+      <table class="meta-table">
+        <tr><th>Вид</th><td>${esc(doc.type)}</td></tr>
+        <tr><th>Номер</th><td>${esc(doc.number)}</td></tr>
+        <tr><th>Дата</th><td>${esc(formatDocWhen(doc))}</td></tr>
+        <tr><th>Статус</th><td><span class="badge ${attr(badgeClass(doc.status))}">${esc(DOC_STATUSES[doc.status] || doc.status)}</span></td></tr>
+        <tr><th>Орган</th><td>${esc(doc.body || "—")}</td></tr>
+        <tr><th>Автор</th><td>${esc(doc.author || "—")}</td></tr>
+        ${(doc.approvalSteps || []).length && (viewer && isStaff(viewer) || doc.status === "review" || doc.status === "congress") ? `<tr><th>Погодження</th><td>${approvalPathHtml(doc, { compact: true })}</td></tr>` : ""}
+        ${linkRows()}
+      </table>
+      ${doc.docHtml
+        ? `<div class="published-paper"><article class="a4-page">${sanitizeDocHtml(doc.docHtml)}</article></div>`
+        : doc.html
+          /* Документ з попередньої версії Канцелярії: лише текст аркуша, без полів сторінки */
+          ? `<div class="published-paper"><article class="a4-page"><div class="ch-sheet" style="width:210mm;min-height:297mm;padding:20mm 15mm 20mm 30mm"><div class="doc-content">${sanitizeDocHtml(doc.html)}</div></div></article></div>`
+          : `<div>${esc(doc.text || "").replace(/\n/g, "<br>")}</div>`}
+        <section class="card lifecycle-card">
+          <h3>Погодження та підписанти</h3>
+          ${doc.status === "draft" && doc.returnedReason ? `<p class="notice">Повернено на доопрацювання${doc.returnedByName ? " (" + esc(doc.returnedByName) + ")" : ""}: ${esc(doc.returnedReason)}</p>` : ""}
+          ${doc.status === "rejected" && doc.rejectedReason ? `<p class="notice danger">${esc(doc.rejectedReason)}</p>` : ""}
+          <ol class="signer-list">
+            ${signerRows.map((row) => `
+              <li class="signer-row is-${attr(row.cls)}">
+                <div>
+                  <small>${esc(row.role)}</small>
+                  <b>${esc(row.name)}</b>
+                  ${row.office ? `<span>${esc(row.office)}</span>` : ""}
+                </div>
+                <div class="signer-state">
+                  <span class="badge ${attr(row.cls === "muted" ? "dead" : row.cls)}">${esc(row.state)}</span>
+                  ${row.at ? `<small>${esc(formatDocWhen({ date: row.at }))}</small>` : ""}
+                </div>
+              </li>
+            `).join("")}
+          </ol>
+        </section>
+      ${canSeeLifecycle ? `
+        <section class="card lifecycle-card">
+          <h3>Життєвий цикл документа</h3>
+          <div class="lifecycle-grid">
+            <div>
+              <h4>Версії</h4>
+              ${versions.length ? versions.map((v) => `
+                <article class="timeline-item">
+                  <b>${esc(v.label || "Редакція")}</b>
+                  <span>${esc(formatDocWhen({ date: v.at }))} · ${esc(v.byName || "Система")} · ${esc(DOC_STATUSES[v.status] || v.status || "")}</span>
+                </article>
+              `).join("") : "<p class='muted'>Версій ще немає.</p>"}
+            </div>
+            <div>
+              <h4>Журнал змін</h4>
+              ${history.length ? history.map((h) => `
+                <article class="timeline-item">
+                  <b>${esc(h.action || "Оновлено")}</b>
+                  <span>${esc(formatDocWhen({ date: h.at }))} · ${esc(h.byName || "Система")}</span>
+                  <p>${esc(h.summary || "")}</p>
+                </article>
+              `).join("") : "<p class='muted'>Записів журналу ще немає.</p>"}
+            </div>
+          </div>
+        </section>
+      ` : ""}
+    `;
+  }
+});

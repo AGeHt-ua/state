@@ -257,7 +257,8 @@ function showMustChangeBanner() {
     Вам видано тимчасовий пароль. <a href="${pathTo("cabinet/?changePassword=1")}" style="color:#fff;font-weight:700;text-decoration:underline">Змініть його зараз</a> — інакше він може потрапити до сторонніх.</div>`);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+// Шапка й меню залежать від того, хто увійшов, тож будуються, коли дані порталу завантажені
+document.addEventListener("DOMContentLoaded", () => whenStateReady(() => {
   bindLogout();
   showMustChangeBanner();
   // Редактор документів має власний інтерфейс
@@ -275,4 +276,4 @@ document.addEventListener("DOMContentLoaded", () => {
     if (input && q) input.value = q;
     renderActList("acts-list", q);
   }
-});
+}));

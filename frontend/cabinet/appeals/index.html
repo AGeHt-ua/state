@@ -2,21 +2,20 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://localhost:8787; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <script>if(window.top!==window.self){try{window.top.location=window.self.location}catch(e){document.documentElement.style.display="none"}}</script>
+  <script src="../../assets/boot.js?v=20261001d"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Звернення — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001c" />
-  <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20261001c" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001d" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20261001d" />
 </head>
 <body>
   <div class="topbar" id="top-office">Кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001c" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001d" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Звернення та позови</p>
@@ -82,110 +81,14 @@
     </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/config.js?v=20261001c"></script>
-  <script src="../../assets/accounts.js?v=20261001c"></script>
-  <script src="../../assets/app.js?v=20261001c"></script>
-  <script src="../../assets/store.js?v=20261001c"></script>
-  <script>
-    const user = requireAuth();
-    if (!user) throw new Error("auth");
-    document.getElementById("top-office").textContent = isCitizen(user) ? "Кабінет громадянина" : officeTitle(user);
-    const staff = isStaff(user);
-    if (isCitizen(user)) {
-      document.querySelectorAll("[data-staff-nav]").forEach((el) => { el.style.display = "none"; });
-      document.getElementById("office-appeals-card").style.display = "none";
-    } else {
-      document.getElementById("appeals-lead").textContent = "Посадовець також може подавати звернення як громадянин штату.";
-    }
-    document.querySelector("input[name='name']").value = user.username || "";
-    document.querySelector("input[name='statId']").value = user.statId || "";
-    document.querySelector("input[name='contact']").value = user.contact || "";
-    if (!canAdmin(user)) {
-      const admin = document.getElementById("nav-admin");
-      if (admin) admin.style.display = "none";
-    }
-    document.querySelector("select[name='office']").innerHTML = allOffices().map((office) =>
-      `<option value="${attr(office.id)}">${esc(office.name)}</option>`
-    ).join("");
-
-    function drawAppeals() {
-      const renderAppeal = (appeal, mode) => `
-        <article class="appeal-card">
-          <div class="admin-row-title">
-            <b>${esc(appeal.number)} · ${esc(appeal.kind || "Звернення")}</b>
-            <span class="badge ${appeal.status === "answered" ? "ok" : appeal.status === "closed" ? "dead" : "draft"}">${esc(appealStatusLabel(appeal.status))}</span>
-          </div>
-          <div class="admin-row-meta">
-            <span>${esc(officeName(appeal.office))}</span>
-            <span>${esc(formatDocWhen({ date: appeal.createdAt }))}</span>
-            <span>${esc(appeal.name)} · ${esc(appeal.statId)}</span>
-          </div>
-          <p>${esc(appeal.text)}</p>
-          <div class="appeal-thread">
-            ${(appeal.thread || []).filter((m, i) => !(i === 0 && m.text === String(appeal.text || "").trim())).map((m) => `<div class="${m.by === appeal.ownerLogin ? "from-owner" : "from-office"}"><b>${esc(m.byName)}</b><span>${esc(formatDocWhen({ date: m.at }))}</span><p>${esc(m.text)}</p></div>`).join("")}
-          </div>
-          ${appeal.status === "closed" ? `<p class="muted">Звернення закрито${appeal.closedByName ? " · " + esc(appeal.closedByName) : ""}.</p>` : `
-          <form data-appeal-reply="${attr(appeal.id)}" class="reply-form">
-            <input type="hidden" name="mode" value="${attr(mode)}">
-            <textarea name="message" required placeholder="${mode === "office" ? "Надати відповідь..." : "Додати уточнення..."}"></textarea>
-            <div class="form-actions">
-              <button class="btn ${mode === "office" ? "gold" : "ghost"}" type="submit">${mode === "office" ? "Надати відповідь" : "Додати повідомлення"}</button>
-              <button class="btn ghost" type="button" data-appeal-close="${attr(appeal.id)}">Закрити звернення</button>
-            </div>
-          </form>`}
-        </article>
-      `;
-      const own = citizenAppealsFor(user);
-      document.getElementById("my-appeals-list").innerHTML = own.length
-        ? own.map((appeal) => renderAppeal(appeal, "own")).join("")
-        : "<p class='lead'>Ви ще не подавали звернень або позовів.</p>";
-      if (staff) {
-        const officeItems = officeAppealsFor(user).filter((appeal) => appeal.ownerLogin !== user.login);
-        document.getElementById("office-appeals-list").innerHTML = officeItems.length
-          ? officeItems.map((appeal) => renderAppeal(appeal, "office")).join("")
-          : "<p class='lead'>До вашого апарату ще немає звернень.</p>";
-      }
-      document.querySelectorAll("[data-appeal-reply]").forEach((form) => {
-        form.addEventListener("submit", (e) => {
-          e.preventDefault();
-          const appeal = allAppeals().find((a) => a.id === form.dataset.appealReply);
-          if (!appeal) return;
-          const message = new FormData(form).get("message");
-          const mode = new FormData(form).get("mode");
-          saveAppeal(Object.assign({}, appeal, { status: mode === "office" ? "answered" : "waiting" }), { user, message });
-          drawAppeals();
-        });
-      });
-      document.querySelectorAll("[data-appeal-close]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const appeal = allAppeals().find((a) => a.id === btn.dataset.appealClose);
-          if (!appeal || !confirm("Закрити звернення " + appeal.number + "? Після цього в ньому не можна буде писати.")) return;
-          saveAppeal(Object.assign({}, appeal, { status: "closed", closedAt: new Date().toISOString(), closedBy: user.login, closedByName: actorName(user) }), { user, message: "Звернення закрито." });
-          drawAppeals();
-        });
-      });
-      if (typeof enhanceCabinetNavigation === "function" && document.querySelector(".side-me")) enhanceCabinetNavigation();
-    }
-    document.getElementById("appeal-form").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const data = new FormData(e.target);
-      saveAppeal({
-        ownerLogin: user.login,
-        name: data.get("name"),
-        statId: data.get("statId"),
-        contact: data.get("contact"),
-        kind: data.get("kind"),
-        office: data.get("office"),
-        text: data.get("text"),
-        status: "waiting"
-      }, { user, message: data.get("text") });
-      e.target.reset();
-      document.querySelector("input[name='name']").value = user.username || "";
-      document.querySelector("input[name='statId']").value = user.statId || "";
-      document.querySelector("input[name='contact']").value = user.contact || "";
-      drawAppeals();
-    });
-    drawAppeals();
-  </script>
+  <script src="../../assets/config.js?v=20261001d"></script>
+  <script src="../../assets/accounts.js?v=20261001d"></script>
+  <script src="../../assets/app.js?v=20261001d"></script>
+  <script src="../../assets/store/01-base.js?v=20261001d"></script>
+  <script src="../../assets/store/02-remote.js?v=20261001d"></script>
+  <script src="../../assets/store/03-people.js?v=20261001d"></script>
+  <script src="../../assets/store/04-docs.js?v=20261001d"></script>
+  <script src="../../assets/store/05-ui.js?v=20261001d"></script>
+  <script src="page.js?v=20261001d"></script>
 </body>
 </html>

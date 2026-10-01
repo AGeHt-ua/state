@@ -2,21 +2,20 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://localhost:8787; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <script>if(window.top!==window.self){try{window.top.location=window.self.location}catch(e){document.documentElement.style.display="none"}}</script>
+  <script src="../../assets/boot.js?v=20261001d"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Реєстр документів — State</title>
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001c" />
-  <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../../assets/styles.css?v=20261001c" />
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/u-original.svg?v=20261001d" />
+  <link rel="stylesheet" href="../../assets/styles.css?v=20261001d" />
 </head>
 <body>
   <div class="topbar" id="top-office">Кабінет</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../../">
-        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001c" alt="STATE">
+        <img class="crest crest-logo" src="../../assets/logos/u-original.svg?v=20261001d" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p>Повний документообіг кабінету</p>
@@ -83,97 +82,14 @@
     </div>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../../assets/config.js?v=20261001c"></script>
-  <script src="../../assets/accounts.js?v=20261001c"></script>
-  <script src="../../assets/app.js?v=20261001c"></script>
-  <script src="../../assets/store.js?v=20261001c"></script>
-  <script>
-    const user = requireAuth();
-    if (!user) throw new Error("auth");
-    if (isCitizen(user)) location.href = "../appeals/";
-    const isAdmin = canManageDocs(user);
-    const canEditAll = (user.roles || [])[0] === "governor" || hasPermission(user, "editAllDocs");
-    const form = document.getElementById("registry-filter");
-    const params = new URLSearchParams(location.search);
-    document.getElementById("top-office").textContent = officeTitle(user);
-    if (!canAdmin(user)) document.getElementById("nav-admin").style.display = "none";
-    // Дії з документами — лише кнопками з підтвердженням (раніше спрацьовували від самого відкриття адреси)
-    document.getElementById("registry-list").addEventListener("click", (e) => {
-      const b = e.target.closest("[data-doc-action]");
-      if (!b) return;
-      const doc = getDoc(b.dataset.id);
-      if (!doc) return;
-      const a = b.dataset.docAction;
-      if (a === "publish" && confirm("Опублікувати «" + doc.title + "» одразу, без погодження?")) forcePublishDoc(doc.id, user);
-      if (a === "repeal" && confirm("Документ «" + doc.title + "» втрачає чинність і переходить в архів. Продовжити?")) setDocValidity(doc.id, user, false);
-      if (a === "reinstate") setDocValidity(doc.id, user, true);
-      if (!isAdmin) return drawRegistry();
-      if (a === "trash" && confirm("Перенести «" + doc.title + "» у кошик?")) trashDoc(doc.id, user);
-      if (a === "restore") restoreDoc(doc.id, user);
-      if (a === "delete" && confirm("Видалити «" + doc.title + "» остаточно?\nЦю дію не можна скасувати.")) deleteDoc(doc.id);
-      drawRegistry();
-    });
-    DOC_TYPES.concat(["Кодекс","Наказ","Указ","Розпорядження","Постанова","Доручення","Ордер","Повістка","Ухвала суду","Наказ Голови ВС"], customDocTypes().map((t) => t.label)).filter((v, i, a) => a.indexOf(v) === i).forEach((type) => {
-      const option = document.createElement("option");
-      option.value = type;
-      option.textContent = type;
-      form.type.appendChild(option);
-    });
-    form.status.value = params.get("status") || "all";
-    form.type.value = params.get("type") || "all";
-    form.q.value = params.get("q") || "";
-    function canEdit(doc) {
-      return canEditAll || !doc.ownerLogin || doc.ownerLogin === user.login;
-    }
-    function visibleDocs() {
-      const q = form.q.value.trim().toLowerCase();
-      return allDocs().filter((doc) => {
-        if (form.status.value !== "trash" && doc.status === "trash" && !q) return false;
-        if (!isAdmin && !canEditAll && !hasPermission(user, "approveAnyDocs") && doc.ownerLogin && doc.ownerLogin !== user.login && doc.office !== userOffice(user)) return false;
-        if (form.status.value === "mine") { if (doc.ownerLogin !== user.login) return false; }
-        else if (form.status.value !== "all" && doc.status !== form.status.value) return false;
-        if (form.type.value !== "all" && doc.type !== form.type.value) return false;
-        return docMatches(doc, q);
-      });
-    }
-    function drawRegistry() {
-      const docs = visibleDocs();
-      const counts = docs.reduce((acc, doc) => {
-        acc[doc.status] = (acc[doc.status] || 0) + 1;
-        return acc;
-      }, {});
-      document.getElementById("registry-title").textContent = `Документи: ${docs.length}`;
-      document.getElementById("registry-note").innerHTML = Object.keys(counts).length
-        ? Object.keys(counts).map((status) => `<span class="pill">${esc(DOC_STATUSES[status] || status)}: ${counts[status]}</span>`).join(" ")
-        : "За цим фільтром документів немає.";
-      document.getElementById("registry-list").innerHTML = docs.length ? docs.map((doc) => `
-        <article class="act-row">
-          <div class="act-num">${esc(formatDocWhen(doc))}</div>
-          <div>
-            <h3><a href="${attr(docHref(doc))}">${esc(doc.title)}</a></h3>
-            <div class="act-meta">${esc(doc.type)} · ${esc(doc.number)} · ${esc(officeName(doc.office) !== "—" ? officeName(doc.office) : (doc.body || ""))}</div>
-            ${doc.status === "review" || doc.status === "congress" ? approvalPathHtml(doc, { compact: true }) : ""}
-            <div class="route-line">
-              ${esc(doc._versions != null ? doc._versions : (doc.versions || []).length)} версій · ${esc(doc._history != null ? doc._history : (doc.history || []).length)} записів журналу
-            </div>
-          </div>
-          <span>
-            <span class="badge ${attr(badgeClass(doc.status))}">${esc(DOC_STATUSES[doc.status] || doc.status)}</span>
-            ${canEdit(doc) && doc.status !== "trash" && !doc.seeded ? `<a class="btn ghost" href="../create/?id=${encodeURIComponent(doc.id)}">Редагувати</a>` : ""}
-            ${canForcePublish(doc, user) ? `<button type="button" class="btn gold" data-doc-action="publish" data-id="${attr(doc.id)}">Опублікувати</button>` : ""}
-            ${isAdmin && doc.status === "ok" ? `<button type="button" class="btn ghost" data-doc-action="repeal" data-id="${attr(doc.id)}">Скасувати чинність</button>` : ""}
-            ${isAdmin && doc.status === "dead" ? `<button type="button" class="btn ghost" data-doc-action="reinstate" data-id="${attr(doc.id)}">Відновити чинність</button>` : ""}
-            ${isAdmin && doc.status !== "trash" ? `<button type="button" class="btn ghost danger" data-doc-action="trash" data-id="${attr(doc.id)}">У кошик</button>` : ""}
-            ${isAdmin && doc.status === "trash" ? `<button type="button" class="btn ghost" data-doc-action="restore" data-id="${attr(doc.id)}">Відновити</button>` : ""}
-            ${isAdmin && doc.status === "trash" ? `<button type="button" class="btn ghost danger" data-doc-action="delete" data-id="${attr(doc.id)}">Видалити остаточно</button>` : ""}
-          </span>
-        </article>
-      `).join("") : "<p class='lead'>Документів за цим фільтром немає.</p>";
-    }
-    window.drawRegistry = drawRegistry;
-    form.addEventListener("input", drawRegistry);
-    form.addEventListener("change", drawRegistry);
-    drawRegistry();
-  </script>
+  <script src="../../assets/config.js?v=20261001d"></script>
+  <script src="../../assets/accounts.js?v=20261001d"></script>
+  <script src="../../assets/app.js?v=20261001d"></script>
+  <script src="../../assets/store/01-base.js?v=20261001d"></script>
+  <script src="../../assets/store/02-remote.js?v=20261001d"></script>
+  <script src="../../assets/store/03-people.js?v=20261001d"></script>
+  <script src="../../assets/store/04-docs.js?v=20261001d"></script>
+  <script src="../../assets/store/05-ui.js?v=20261001d"></script>
+  <script src="page.js?v=20261001d"></script>
 </body>
 </html>

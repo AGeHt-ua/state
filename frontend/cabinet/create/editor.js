@@ -1,7 +1,7 @@
 /* Канцелярія — Word-подібний редактор документів.
    Документ — один суцільний contenteditable на аркуші A4 з розбивкою на сторінки.
    «Поля» (ПІБ, номер, дата…) — атомарні span.fld, які оновлюються наживо з панелі. */
-(function () {
+whenStateReady(function () {
   'use strict';
 
   const user = typeof requireAuth === 'function' ? requireAuth() : null;
@@ -2341,9 +2341,9 @@
     toast(loadLS('state_doc_backgrounds', []).length === items.length ? 'Фон збережено для всіх' : 'Не вдалося зберегти фон: сховище переповнене');
   }
 
-  function loadFromDoc(id) {
+  async function loadFromDoc(id) {
     // У списку документи легкі (без тексту й оформлення) — для редагування завантажуємо повний
-    const d = typeof loadFullDoc === 'function' ? loadFullDoc(id) : null;
+    const d = typeof loadFullDoc === 'function' ? await loadFullDoc(id) : null;
     if (!d) { toast('Документ не знайдено'); return; }
     if (!canEditDoc(d)) { toast('Цей документ може редагувати лише автор'); return; }
     curDocId = d.id;
@@ -3031,4 +3031,4 @@
     persist: persist,
     applySeal: applySeal
   };
-})();
+});

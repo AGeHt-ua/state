@@ -2,21 +2,20 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https: http://localhost:8787; connect-src 'self' https://state-ukraine-gta5.d-f-12339.workers.dev http://localhost:8787 http://127.0.0.1:8787; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self' blob:">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <script>if(window.top!==window.self){try{window.top.location=window.self.location}catch(e){document.documentElement.style.display="none"}}</script>
+  <script src="../assets/boot.js?v=20261001d"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Реєстрація — State</title>
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20261001c" />
-  <script>try{var t=localStorage.getItem("state_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}</script>
-  <link rel="stylesheet" href="../assets/styles.css?v=20261001c" />
+  <link rel="icon" type="image/svg+xml" href="../assets/logos/u-original.svg?v=20261001d" />
+  <link rel="stylesheet" href="../assets/styles.css?v=20261001d" />
 </head>
 <body>
   <div class="topbar">Офіційний портал Уряду штату Сан-Андреас</div>
   <header class="header">
     <div class="header-inner">
       <a class="brand" href="../">
-        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20261001c" alt="STATE">
+        <img class="crest crest-logo" src="../assets/logos/u-original.svg?v=20261001d" alt="STATE">
         <div>
           <h1>STATE | UKRAINE GTA 5 RP</h1>
           <p id="hdr-kind">Реєстрація в кабінеті</p>
@@ -50,43 +49,14 @@
     </section>
   </main>
   <footer class="footer"><div class="footer-inner"><span>© 2026 State | Ukraine GTA 5 RP</span></div></footer>
-  <script src="../assets/config.js?v=20261001c"></script>
-  <script src="../assets/accounts.js?v=20261001c"></script>
-  <script src="../assets/app.js?v=20261001c"></script>
-  <script src="../assets/store.js?v=20261001c"></script>
-  <script>
-    const type = new URLSearchParams(location.search).get("type") === "official" ? "official" : "citizen";
-    const citizen = type === "citizen";
-    document.getElementById("page-title").textContent = citizen ? "Реєстрація громадянина штату" : "Реєстрація посадовця";
-    document.getElementById("hdr-kind").textContent = citizen ? "Кабінет громадянина" : "Заявка посадовця";
-    document.getElementById("reg-lead").textContent = citizen
-      ? "Громадянин отримує кабінет одразу: звернення, позови, статуси і переписка з апаратами."
-      : "Посадовець після реєстрації очікує, доки адміністратор призначить апарат, роль і посаду.";
-    document.getElementById("post-row").style.display = citizen ? "none" : "table-row";
-    document.querySelector("input[name='post']").required = !citizen;
-    document.querySelector("input[name='statId']").required = citizen;
-    document.querySelector("input[name='contact']").required = citizen;
-    document.getElementById("reg-form").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const data = new FormData(e.target);
-      const res = registerUser({
-        name: data.get("name"),
-        post: data.get("post"),
-        statId: data.get("statId"),
-        contact: data.get("contact"),
-        login: data.get("login"),
-        password: data.get("password"),
-        accountType: type
-      });
-      const box = document.getElementById("reg-msg");
-      if (!res.ok) {
-        box.style.color = "#8a2b2b";
-        box.textContent = res.error;
-        return;
-      }
-      loginWithPassword(String(data.get("login")).trim().toLowerCase(), data.get("password"));
-      location.href = citizen ? pathTo("cabinet/") : pathTo("cabinet/pending/");
-    });
-  </script>
+  <script src="../assets/config.js?v=20261001d"></script>
+  <script src="../assets/accounts.js?v=20261001d"></script>
+  <script src="../assets/app.js?v=20261001d"></script>
+  <script src="../assets/store/01-base.js?v=20261001d"></script>
+  <script src="../assets/store/02-remote.js?v=20261001d"></script>
+  <script src="../assets/store/03-people.js?v=20261001d"></script>
+  <script src="../assets/store/04-docs.js?v=20261001d"></script>
+  <script src="../assets/store/05-ui.js?v=20261001d"></script>
+  <script src="page.js?v=20261001d"></script>
 </body>
 </html>
