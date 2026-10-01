@@ -8,9 +8,9 @@ FRONTEND_ORIGIN = "https://ageht-ua.github.io,http://localhost:8080"
 # Адреса сайту для посилань у сповіщеннях Discord
 FRONTEND_URL = "https://ageht-ua.github.io/state/frontend/"
 # Вхід через Discord (див. README): Client ID застосунку; секрет — npx wrangler secret put DISCORD_CLIENT_SECRET
-DISCORD_CLIENT_ID = ""
+DISCORD_CLIENT_ID = "1555128227192901734"
 # ID Discord-сервера: входити через Discord можуть лише його учасники (порожньо — будь-хто з Discord)
-DISCORD_GUILD_ID = ""
+DISCORD_GUILD_ID = "920571973535428628"
 # "1" — нові акаунти лише через Discord (реєстрація з паролем вимикається)
 REQUIRE_DISCORD = ""
 
