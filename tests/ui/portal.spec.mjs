@@ -394,7 +394,9 @@ test("суд: позов із фото → справа → засідання �
   await judge.locator(".appeal-item", { hasText: "UI " + RUN }).click();
   await expect(judge.locator("#appeal-chat .att-img img")).toHaveCount(1);
   await judge.locator("[data-open-case]").click();
-  await judge.waitForURL(/\/cabinet\/court\/#/);
+  // Суддя веде справу на сайті кабінету суду
+  await judge.waitForURL(/\/office\/court\/#case=/);
+  await expect(judge.locator(".ws-brand")).toContainText("Верховний Суд");
   await expect(judge.locator("#case-detail .badge").first()).toHaveText("Відкрито провадження");
   const caseNo = (await judge.locator("#case-detail h3").textContent()).split(" · ")[0];
 
@@ -415,7 +417,7 @@ test("суд: позов із фото → справа → засідання �
   await expect(judge.locator("#f-venue")).toHaveValue("Верховний Суд, зала 1");
 
   // 5. Рішення
-  await judge.goto("/cabinet/court/");
+  await judge.goto("/office/court/#cases");
   await judge.locator(".appeal-item", { hasText: caseNo }).click();
   await judge.locator('[data-form="decision"] select').selectOption("Позов задоволено");
   await judge.locator('[data-form="decision"] textarea').fill("Стягнути борг у повному обсязі.");
@@ -522,4 +524,19 @@ test("адмін: «Застосувати структуру уряду» до�
   await page.locator('#ws-nav a[href="#people"]').click();
   await expect(page.locator("#ws-content")).toContainText("Директор USSS");
   await expect(page.locator("#ws-content")).toContainText("ВАКАНТНО");
+});
+
+test("меню порталу: «Мій кабінет» першим, адміністрація бачить усі кабінети, «Суд» — у кабінеті суду", async ({ page }) => {
+  await uiLogin(page, "admin", ADMIN_PASSWORD);
+  const side = page.locator(".side-nav");
+  await expect(side.locator("> *").nth(1)).toHaveClass(/my-office-link/);
+  await expect(side.locator(".side-offices a")).toHaveCount(await side.locator(".side-offices a").count());
+  expect(await side.locator(".side-offices a").count()).toBeGreaterThanOrEqual(8);
+  await expect(side.locator(".side-links")).not.toContainText("Суд");
+  // З сайту кабінету «↩ Портал» веде на головну порталу
+  await side.locator(".side-offices a", { hasText: "Верховний Суд" }).click();
+  await page.waitForURL(/\/office\/court\/$/);
+  await expect(page.locator('#ws-nav a[href="#cases"]')).toBeVisible();
+  await page.locator(".ws-me-actions a", { hasText: "Портал" }).click();
+  await page.waitForURL((url) => url.pathname.endsWith("/") && !url.pathname.includes("office"));
 });

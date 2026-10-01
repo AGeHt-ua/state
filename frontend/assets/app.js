@@ -1,7 +1,10 @@
-function siteBase() {
+// Корінь сайту визначаємо один раз під час завантаження: сайти кабінетів перебудовують сторінку, і тег скрипта зникає
+const SITE_BASE = (() => {
   const el = document.querySelector('script[src*="assets/app.js"]');
-  if (!el) return "./";
-  return el.src.replace(/assets\/app\.js.*$/, "");
+  return el ? el.src.replace(/assets\/app\.js.*$/, "") : "./";
+})();
+function siteBase() {
+  return SITE_BASE;
 }
 
 function pathTo(route) {
@@ -160,16 +163,22 @@ function buildCabinetNav() {
     { href: "cabinet/", icon: "home", label: "Огляд", on: route === "cabinet/" },
     { href: "cabinet/inbox/", icon: "bell", label: "Повідомлення", count: inboxCount, on: route === "cabinet/inbox/" },
     { href: "cabinet/appeals/", icon: "mail", label: staff ? "Звернення" : "Мої звернення", count: appealCount, on: route === "cabinet/appeals/" },
-    // Робочий простір свого кабінету (повні адміністратори — усі кабінети)
-    staff && typeof canEnterOffice === "function"
-      ? { href: typeof officeRoute === "function" ? officeRoute(userOffice(user)) : "office/", icon: "building", label: "Мій кабінет", on: route.indexOf("office/") === 0 } : null,
-    // Суд: судова влада й адміністратори — усі справи; інші — якщо мають власні справи
-    (typeof canManageCases === "function" && canManageCases(user)) || (typeof casesForUser === "function" && casesForUser(user).length)
-      ? { href: "cabinet/court/", icon: "scales", label: "Суд", on: route === "cabinet/court/" } : null,
+    // Судові справи ведуться на сайті кабінету суду; тут — лише «Мої справи» для сторін справ
+    typeof canManageCases === "function" && !canManageCases(user) && typeof casesForUser === "function" && casesForUser(user).length
+      ? { href: "cabinet/court/", icon: "scales", label: "Мої справи", on: route === "cabinet/court/" } : null,
     staff ? { href: "cabinet/all/", icon: "folder", label: "Реєстр документів", on: route === "cabinet/all/" || route === "cabinet/docs/" } : null,
     staff && canAdmin(user) ? { href: "cabinet/admin/", icon: "shield", label: "Адмін-панель", on: route === "cabinet/admin/" } : null
   ].filter(Boolean);
   const canCreate = staff && typeof hasPermission === "function" && ((user.roles || [])[0] === "governor" || hasPermission(user, "createDocs"));
+  // «Мій кабінет» — перший і виділений: окремий сайт свого кабінету
+  const ownOffice = staff && typeof officeRoute === "function" ? (typeof allOffices === "function" ? allOffices().find((o) => o.id === userOffice(user)) : null) : null;
+  // Повна адміністрація бачить і відкриває всі кабінети
+  const allOfficeLinks = typeof isFullAdmin === "function" && isFullAdmin(user) && typeof workspaceOffices === "function"
+    ? workspaceOffices().filter((o) => !ownOffice || o.id !== ownOffice.id) : [];
+  const officeIcon = (o) => {
+    const g = typeof GOV_STRUCTURE !== "undefined" ? GOV_STRUCTURE.find((x) => x.office.id === o.id) : null;
+    return siteEsc(o.icon || (g && g.office.icon) || "🏛️");
+  };
   const initial = siteEsc(String(user.username || "?").charAt(0).toUpperCase());
   const role = typeof isCitizen === "function" && isCitizen(user) ? "Громадянин штату" : (user.post || (typeof officeTitle === "function" ? officeTitle(user) : ""));
   side.innerHTML = `
@@ -177,10 +186,12 @@ function buildCabinetNav() {
       ${user.photo ? `<img src="${siteEsc(user.photo)}" alt="">` : `<span class="side-avatar">${initial}</span>`}
       <div><b>${siteEsc(user.username)}</b><small>${siteEsc(role)}</small></div>
     </div>
+    ${ownOffice ? `<a class="my-office-link" href="${pathTo(officeRoute(ownOffice.id))}"><span class="my-office-ico">${officeIcon(ownOffice)}</span><span><b>Мій кабінет</b><small>${siteEsc(ownOffice.name)}</small></span><span aria-hidden="true">→</span></a>` : ""}
     ${canCreate ? `<a class="create-doc-link${route === "cabinet/create/" ? " active" : ""}" href="${pathTo("cabinet/create/")}">${siteIcon("pen")}<span>Створити документ</span></a>` : ""}
     <nav class="side-links" aria-label="Кабінет">
       ${items.map((it) => `<a href="${pathTo(it.href)}"${it.on ? ' class="active" aria-current="page"' : ""}>${siteIcon(it.icon)}<span>${it.label}</span>${it.count ? `<span class="nav-badge">${it.count}</span>` : ""}</a>`).join("")}
-    </nav>`;
+    </nav>
+    ${allOfficeLinks.length ? `<div class="side-offices"><p>Усі кабінети</p>${allOfficeLinks.map((o) => `<a href="${pathTo(officeRoute(o.id))}"><span>${officeIcon(o)}</span><span>${siteEsc(o.name)}</span></a>`).join("")}</div>` : ""}`;
 }
 // Сторінки викликають це після дій (погодження тощо), щоб оновити лічильники
 function enhanceCabinetNavigation() {

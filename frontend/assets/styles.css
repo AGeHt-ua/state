@@ -1180,3 +1180,28 @@ label > input, label > select, label > textarea { margin-top: 5px; }
 :root[data-theme="dark"] .ws-card b, :root[data-theme="dark"] .ws-points b { color: var(--ink); }
 @media (max-width: 900px) { .ws-board { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) { .ws-board { grid-template-columns: 1fr; } }
+
+/* Бічне меню кабінету: «Мій кабінет» — перший і виділений; список усіх кабінетів для адміністрації */
+.my-office-link { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 12px 14px; border-radius: 12px; text-decoration: none;
+  background: linear-gradient(120deg, var(--navy-900, #10284a), var(--navy-700, #1d4373)); color: #fff !important; box-shadow: 0 8px 20px rgba(16, 40, 74, .25); border: 1px solid rgba(212, 166, 47, .55); }
+.my-office-link:hover { filter: brightness(1.08); }
+.my-office-link .my-office-ico { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 18px; background: rgba(255,255,255,.12); border: 1px solid var(--gold); flex: none; }
+.my-office-link b { display: block; font-size: 14.5px; }
+.my-office-link small { display: block; font-size: 11.5px; color: rgba(255,255,255,.72); line-height: 1.3; }
+.my-office-link > span:last-child { margin-left: auto; color: var(--gold); font-weight: 800; }
+.side-offices { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); display: grid; gap: 2px; }
+.side-offices p { margin: 0 0 4px 10px; font: 700 11px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.side-offices a { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 9px; text-decoration: none; color: var(--ink-2); font-size: 13.5px; }
+.side-offices a:hover { background: var(--surface-2); color: var(--navy-900); }
+.side-offices a span:first-child { width: 22px; text-align: center; }
+/* Судовий інтерфейс у сайті кабінету суду: заголовок дає сам сайт */
+.ws-content .court-page .appeals-head h2 { display: none; }
+/* Уточнення: загальне правило .side-nav a span { flex: 1 } не має розтягувати значки */
+.side-nav a.my-office-link { padding: 12px; gap: 10px; color: #fff; }
+.side-nav a.my-office-link:hover { background: linear-gradient(120deg, var(--navy-900, #10284a), var(--navy-700, #1d4373)); color: #fff; }
+.side-nav a.my-office-link span.my-office-ico { flex: 0 0 34px; }
+.side-nav a.my-office-link span:nth-child(2) { flex: 1 1 auto; min-width: 0; }
+.side-nav a.my-office-link span:last-child { flex: 0 0 auto; }
+.side-nav .side-offices a { padding: 7px 10px; }
+.side-nav .side-offices a span:first-child { flex: 0 0 22px; }
+.side-nav .side-offices a span:last-child { flex: 1 1 auto; line-height: 1.3; }

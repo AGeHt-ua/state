@@ -104,7 +104,8 @@ whenStateReady(async function () {
   const money = (n, cur) => (Number(n) || 0).toLocaleString("uk-UA") + " " + (cur || "$");
   const today = () => new Date().toISOString().slice(0, 10);
   const avatar = (u, cls) => u && u.photo ? `<img src="${attr(u.photo)}" alt="">` : `<span class="${cls || "ws-av"}">${esc(String((u && (u.name || u.login)) || "?").charAt(0).toUpperCase())}</span>`;
-  const ui = { section: SECTIONS.some((s) => s.id === location.hash.slice(1)) ? location.hash.slice(1) : "home",
+  let courtSel = location.hash.startsWith("#case=") ? decodeURIComponent(location.hash.slice(6)) : "";
+  const ui = { section: courtSel && officeId === "court" ? "cases" : SECTIONS.some((s) => s.id === location.hash.slice(1)) ? location.hash.slice(1) : "home",
     reportFilter: manager ? "review" : "mine", period: "month", from: "", to: "", open: "", docStatus: "all" };
   let noteFiles = null;
 
@@ -280,22 +281,9 @@ whenStateReady(async function () {
       </div>`;
   }
 
-  /* ---------- Суд: справи ---------- */
+  /* ---------- Суд: справи (повний судовий інтерфейс, assets/ws/court-ui.js) ---------- */
   function secCases() {
-    const cases = allCases();
-    const by = (s) => cases.filter((c) => c.status === s);
-    const row = (c) => `<a class="ws-item ws-item-head ws-link" href="${attr(pathTo("cabinet/court/#" + encodeURIComponent(c.id)))}">
-      <span><b>${esc(c.number)} · ${esc(c.title || "")}</b><small>${esc(c.kind || "")} · ${esc((c.plaintiff && c.plaintiff.name) || "—")} проти ${esc((c.defendant && c.defendant.name) || "—")}${c.judge ? " · суддя " + esc(nameOf(c.judge)) : ""}</small></span>
-      <span class="badge ${caseStatusClass(c.status)}">${esc(CASE_STATUSES[c.status] || c.status)}</span></a>`;
-    return `
-      <div class="ws-cards">
-        <div class="ws-card"><b>${by("new").length}</b><span>подано</span></div>
-        <div class="ws-card"><b>${by("open").length + by("hearing").length}</b><span>у провадженні</span></div>
-        <div class="ws-card"><b>${by("hearing").length}</b><span>призначено засідань</span></div>
-        <div class="ws-card"><b>${by("decided").length}</b><span>з рішенням</span></div>
-      </div>
-      <section class="card"><h3>Нові справи</h3><div class="ws-list">${by("new").map(row).join("") || `<div class="admin-empty">Нових справ немає.</div>`}</div></section>
-      <section class="card"><h3>У провадженні</h3><div class="ws-list">${by("open").concat(by("hearing")).map(row).join("") || `<div class="admin-empty">Справ у провадженні немає.</div>`}</div></section>`;
+    return `<div id="court-root"></div>`;
   }
 
   /* ---------- Документи кабінету ---------- */
@@ -416,9 +404,14 @@ whenStateReady(async function () {
     if (s === "reports" || s === "home") return `<button class="btn gold" type="button" data-new-report>+ Подати рапорт</button>`;
     if (s === "tasks" && manager) return `<button class="btn gold" type="button" data-new-task>+ Нове завдання</button>`;
     if (s === "proc") return `<button class="btn gold" type="button" data-new-proc>+ Передати справу до суду</button>`;
-    if (s === "cases") return `<a class="btn gold" href="${attr(pathTo("cabinet/court/"))}">Вести справи</a>`;
     if (s === "docs" && canCreateDocs) return `<a class="btn gold" href="${attr(pathTo("cabinet/create/"))}">+ Створити документ</a>`;
     return "";
+  }
+  function drawNav() {
+    const c = counts();
+    const badge = { reports: c.reports, tasks: c.tasks, cases: c.cases, appeals: c.appeals };
+    $("ws-nav").innerHTML = SECTIONS.map((s) => (s.id === "docs" ? `<div class="ws-nav-sep"></div>` : "") +
+      `<a href="#${s.id}" class="${s.id === ui.section ? "active" : ""}"${s.id === ui.section ? ' aria-current="page"' : ""}><span class="ws-ico">${s.icon}</span><span>${esc(s.label)}</span>${badge[s.id] ? `<span class="ws-count">${badge[s.id]}</span>` : ""}</a>`).join("");
   }
   function draw() {
     const c = counts();
@@ -428,10 +421,18 @@ whenStateReady(async function () {
     $("ws-title").textContent = (SECTIONS.find((s) => s.id === ui.section) || SECTIONS[0]).label;
     $("ws-actions").innerHTML = actions();
     $("ws-content").innerHTML = RENDER[ui.section]();
+    if (ui.section === "cases" && typeof mountCourtUI === "function") {
+      mountCourtUI($("court-root"), { selected: courtSel, hashPrefix: "case=", emptyHash: "#cases" });
+      courtSel = "";
+    }
     hydrateAttachments($("ws-content"));
     noteFiles = $("task-files") ? attachPicker($("task-files"), $("task-files-list")) : null;
   }
   window.addEventListener("hashchange", () => {
+    if (location.hash.startsWith("#case=") && officeId === "court") {
+      courtSel = decodeURIComponent(location.hash.slice(6));
+      ui.section = "cases"; draw(); return;
+    }
     const s = location.hash.slice(1);
     if (SECTIONS.some((x) => x.id === s) && s !== ui.section) { ui.section = s; ui.open = ui.pendingOpen || ""; ui.pendingOpen = ""; draw(); window.scrollTo(0, 0); }
   });
@@ -613,6 +614,8 @@ whenStateReady(async function () {
   });
 
   watchState(() => {
+    // Судовий інтерфейс оновлюється сам — тут лише лічильники меню
+    if (ui.section === "cases") { drawNav(); return; }
     if (document.activeElement && document.activeElement.closest && document.activeElement.closest("#ws-content form, .modal-backdrop")) return;
     draw();
   });
