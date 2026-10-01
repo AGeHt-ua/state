@@ -315,6 +315,41 @@ const num1 = (all17.find((a) => a.id === n1) || {}).number, num2 = (all17.find((
 check("номер звернення присвоює сервер, без повторів", /^ZV-\d{4}-\d{4}$/.test(num1 || "") && /^ZV-\d{4}-\d{4}$/.test(num2 || "") && num1 !== num2, num1 + " / " + num2);
 check("номер справи присвоює сервер", /^С-\d{4}-\d{4}$/.test((((await cases(TJ)).find((c) => c.id === caseId)) || {}).number || ""));
 
+// ---------- 18. Робочий простір кабінету ----------
+ip = "10.0.18.1";
+const ws = async (token) => ((await state(token)).state_ws || []);
+const repId = u("rep"), taskId = u("task");
+const report = { id: repId, kind: "report", office: "directors", author: people.staff, type: "Звіт про роботу", title: "Звіт", text: "Зроблено", status: "submitted", events: [] };
+check("працівник не подає рапорт одразу прийнятим", (await sync(T.staff, "state_ws", [Object.assign({}, report, { status: "accepted", points: 50 })])).status === 403);
+check("працівник подає рапорт", (await sync(T.staff, "state_ws", [report])).status === 200);
+check("громадянин не бачить кабінет", !(await ws(T.cit)).length);
+check("інший кабінет не бачить чужі рапорти", !(await ws(TJ)).some((w) => w.id === repId));
+check("громадянин не пише в кабінет", (await sync(T.cit, "state_ws", [{ id: u("x"), kind: "report", office: "directors", author: cit, status: "submitted" }])).status === 403);
+let rep = (await ws(T.head)).find((w) => w.id === repId);
+check("керівник бачить рапорт кабінету", !!rep);
+check("керівник приймає рапорт із балами", (await sync(T.head, "state_ws", [Object.assign({}, rep, { status: "accepted", points: 4, reviewer: people.head })])).status === 200);
+rep = (await ws(T.staff)).find((w) => w.id === repId);
+check("прийнятий рапорт автор уже не змінює", (await sync(T.staff, "state_ws", [Object.assign({}, rep, { status: "submitted", text: "інше" })])).status === 403);
+const task = { id: taskId, kind: "task", office: "directors", title: "Завдання", assignee: people.staff, points: 3, status: "new", events: [] };
+check("працівник не ставить завдання", (await sync(T.staff, "state_ws", [task])).status === 403);
+check("керівник ставить завдання", (await sync(T.head, "state_ws", [task])).status === 200);
+let tk = (await ws(T.staff)).find((w) => w.id === taskId);
+check("виконавець бере завдання в роботу", (await sync(T.staff, "state_ws", [Object.assign({}, tk, { status: "progress" })])).status === 200);
+tk = (await ws(T.staff)).find((w) => w.id === taskId);
+check("виконавець не змінює бали", (await sync(T.staff, "state_ws", [Object.assign({}, tk, { points: 99 })])).status === 403);
+check("виконавець не приймає сам себе", (await sync(T.staff, "state_ws", [Object.assign({}, tk, { status: "accepted" })])).status === 403);
+check("працівник не затверджує премії", (await sync(T.staff, "state_ws", [{ id: u("bon"), kind: "bonus", office: "directors", rows: [] }])).status === 403);
+check("керівник затверджує премії", (await sync(T.head, "state_ws", [{ id: u("bon2"), kind: "bonus", office: "directors", rows: [{ login: people.staff, points: 7, amount: 700 }] }])).status === 200);
+// Файли до рапорту бачить лише кабінет
+const wsFile = (await upload(T.staff, "ws:" + repId)).body.id;
+check("файл рапорту відкриває колега", (await getFile(wsFile, T.head)).status === 200);
+check("файл рапорту не відкриє інший кабінет", (await getFile(wsFile, TJ)).status === 403);
+// Передача завдання в інший кабінет
+tk = (await ws(T.head)).find((w) => w.id === taskId);
+check("працівник не передає завдання", (await sync(T.staff, "state_ws", [Object.assign({}, tk, { office: "court" })])).status === 403);
+check("керівник передає завдання в суд", (await sync(T.head, "state_ws", [Object.assign({}, tk, { office: "court", status: "new", assignee: "", transferredFrom: "directors" })])).status === 200);
+check("суд бачить передане завдання", (await ws(TJ)).some((w) => w.id === taskId) && !(await ws(T.staff)).some((w) => w.id === taskId));
+
 // ---------- 15. Вхід через Discord (підставний Discord на порту 9098; лише якщо Worker запущено з DISCORD_API_BASE) ----------
 if ((await get("/api/health")).body.discord) {
   const mock = await startMockDiscord();

@@ -487,6 +487,13 @@ whenStateReady(async function () {
       return refresh();
     }
     if (a === "new-office") return openOffice("");
+    if (a === "apply-structure") {
+      if (!confirm("Застосувати структуру уряду?\n\nБуде додано кабінети: " + GOV_STRUCTURE.map((g) => g.office.name).join(", ") + " — з посадами керівника, заступників і працівників. Наявні апарати й посади не видаляються, людей не переміщує.")) return;
+      const res = applyGovStructure(me);
+      if (!res.ok) { alert(res.error); return; }
+      toast("Структуру застосовано: додано " + res.added + ", оновлено " + res.updated);
+      return refresh();
+    }
     if (a === "delete-office") {
       const id = $("office-form").id.value;
       if (!confirm("Видалити апарат «" + officeName(id) + "» разом із його посадами?")) return;

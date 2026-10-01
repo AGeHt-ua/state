@@ -88,7 +88,8 @@ function saveApprovalRoute(route) {
 
 function approverPositionForOffice(office) {
   const positions = allPositions().filter((p) => p.office === office && (p.permissions || []).includes("approveDocs"))
-    .sort((a, b) => (b.level === "head") - (a.level === "head"));
+    // Спершу керівник кабінету (chief), потім інші посади рівня «head», потім заступники
+    .sort((a, b) => ((b.chief === true) - (a.chief === true)) || ((b.level === "head") - (a.level === "head")));
   return positions[0] ? "position:" + positions[0].id : "";
 }
 
@@ -1113,4 +1114,135 @@ function attachPicker(input, box) {
       return { ok: true, list: out };
     }
   };
+}
+
+/* ---------- Робочі простори кабінетів ----------
+   Кожен кабінет (суд, прокуратура, департаменти…) має свою сторінку cabinet/office/?o=<id>: рапорти, завдання, облік роботи й премії.
+   Заходять працівники кабінету й повні адміністратори; керують — керівник і заступники (посади рівня head або manager). */
+const WS_REPORT_TYPES = ["Звіт про роботу", "Рапорт про подію", "Рапорт про порушення", "Заява (відпустка, переведення)", "Інше"];
+const WS_REPORT_STATUSES = { submitted: "На розгляді", accepted: "Прийнято", returned: "Повернено", rejected: "Відхилено" };
+const WS_TASK_STATUSES = { new: "Нове", progress: "У роботі", done: "Виконано — на перевірці", accepted: "Прийнято", returned: "Повернено на доопрацювання" };
+const WS_DEFAULT_SETTINGS = {
+  weights: { report: 1, doc: 2, appealReply: 1, caseAction: 1 },  // бали за дію; завдання — за власними балами завдання
+  mode: "pool",       // pool — фонд ділиться пропорційно балам; rate — фіксована сума за бал
+  pool: 0,
+  rate: 0,
+  currency: "$"
+};
+
+function workspaceOffices() {
+  return allOffices().filter((o) => o.id !== "citizens");
+}
+function canEnterOffice(user, officeId) {
+  return !!user && (isFullAdmin(user) || (isStaff(user) && userOffice(user) === officeId));
+}
+function isOfficeManager(user, officeId) {
+  if (!user) return false;
+  if (isFullAdmin(user)) return true;
+  if (!isStaff(user) || userOffice(user) !== officeId) return false;
+  const p = positionById(user.positionId);
+  return !!p && (p.level === "head" || p.manager === true);
+}
+function officeMembers(officeId) {
+  return allUsers().filter((u) => isStaff(u) && userOffice(u) === officeId)
+    .sort((a, b) => ((positionById(a.positionId) || {}).order || 9) - ((positionById(b.positionId) || {}).order || 9) || String(a.name || a.login).localeCompare(String(b.name || b.login), "uk"));
+}
+function wsItems(officeId, kind) {
+  return loadLS("state_ws", []).filter((w) => w.office === officeId && (!kind || w.kind === kind))
+    .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+}
+function wsGet(id) {
+  return loadLS("state_ws", []).find((w) => w.id === id) || null;
+}
+function wsSettings(officeId) {
+  const row = wsGet("settings-" + officeId);
+  return Object.assign({}, WS_DEFAULT_SETTINGS, row || {}, { weights: Object.assign({}, WS_DEFAULT_SETTINGS.weights, (row && row.weights) || {}) });
+}
+// Зберегти запис кабінету; meta.event — подія (kind, text, attachments). Автора й час ставить сервер.
+function saveWs(item, meta = {}) {
+  const previous = item.id ? wsGet(item.id) : null;
+  const user = meta.user || currentUser();
+  const now = new Date().toISOString();
+  const next = Object.assign({}, previous || {}, item, {
+    id: item.id || ("ws-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+    updatedAt: now
+  });
+  const events = ((previous && previous.events) || item.events || []).slice();
+  if (meta.event) events.push(Object.assign({ at: now, by: user && user.login, byName: actorName(user) }, meta.event));
+  next.events = events;
+  const items = loadLS("state_ws", []).filter((x) => x.id !== next.id);
+  items.push(next);
+  saveLS("state_ws", items);
+  return wsGet(next.id) || next;
+}
+
+// Облік роботи за період: що зробив кожен працівник кабінету і скільки це балів
+function workStats(officeId, fromIso, toIso) {
+  const st = wsSettings(officeId);
+  const w = st.weights;
+  const inRange = (at) => at && String(at) >= fromIso && String(at) < toIso;
+  const members = officeMembers(officeId);
+  const rows = members.map((u) => ({ login: u.login, name: u.name || u.login, post: (positionById(u.positionId) || {}).title || u.post || "",
+    reports: 0, reportPoints: 0, tasks: 0, taskPoints: 0, docs: 0, appealReplies: 0, caseActions: 0, points: 0 }));
+  const by = {};
+  rows.forEach((r) => { by[r.login] = r; });
+  // Рапорти: прийняті в періоді; бали — виставлені керівником або типові
+  wsItems(officeId, "report").filter((r) => r.status === "accepted" && inRange(r.reviewedAt)).forEach((r) => {
+    const m = by[r.author]; if (!m) return;
+    m.reports += 1; m.reportPoints += Number(r.points != null && r.points !== "" ? r.points : w.report) || 0;
+  });
+  // Завдання: прийняті в періоді, бали завдання
+  wsItems(officeId, "task").filter((t) => t.status === "accepted" && inRange(t.acceptedAt)).forEach((t) => {
+    const m = by[t.assignee]; if (!m) return;
+    m.tasks += 1; m.taskPoints += Number(t.points) || 0;
+  });
+  // Документи: опубліковані в періоді, автор — працівник
+  allDocs().filter((d) => ["ok", "dead", "adopted"].includes(d.status) && inRange(d.publishedAt || d.approvedAt)).forEach((d) => {
+    const m = by[d.ownerLogin]; if (m) m.docs += 1;
+  });
+  // Відповіді на звернення
+  allAppeals().forEach((a) => (a.thread || []).forEach((msg) => {
+    const m = by[msg.by]; if (m && msg.by !== a.ownerLogin && inRange(msg.at)) m.appealReplies += 1;
+  }));
+  // Дії у судових справах (призначення, засідання, рішення)
+  if (typeof allCases === "function") allCases().forEach((c) => (c.events || []).forEach((e) => {
+    const m = by[e.by]; if (m && e.kind !== "note" && inRange(e.at)) m.caseActions += 1;
+  }));
+  rows.forEach((r) => {
+    r.points = r.reportPoints + r.taskPoints + r.docs * w.doc + r.appealReplies * w.appealReply + r.caseActions * w.caseAction;
+  });
+  const total = rows.reduce((s, r) => s + r.points, 0);
+  rows.forEach((r) => {
+    r.amount = st.mode === "rate" ? Math.round(r.points * (Number(st.rate) || 0)) : total ? Math.round((Number(st.pool) || 0) * r.points / total) : 0;
+  });
+  return { rows: rows.sort((a, b) => b.points - a.points), total, settings: st };
+}
+
+// Застосувати структуру уряду (GOV_STRUCTURE): додає відсутні кабінети й посади, наявним — назви й позначки керівника
+function applyGovStructure(byUser) {
+  if (!byUser || !hasPermission(byUser, "manageStructure")) return { ok: false, error: "Недостатньо прав." };
+  const officesNow = loadLS("state_offices", []);
+  const positionsNow = loadLS("state_positions", []);
+  let added = 0, updated = 0;
+  GOV_STRUCTURE.forEach(({ office, positions }) => {
+    if (office.id !== "governor") {
+      const had = officesNow.find((o) => o.id === office.id) || DEFAULT_OFFICES.find((o) => o.id === office.id);
+      saveOffice(Object.assign({}, had || {}, office));
+      had ? updated++ : added++;
+    }
+    positions.forEach((p) => {
+      if (p.id === "governor-chief") return;
+      const had = positionsNow.find((x) => x.id === p.id) || DEFAULT_POSITIONS.find((x) => x.id === p.id);
+      const flags = { chief: !!p.chief, manager: !!p.manager, order: p.order };
+      if (had) {
+        savePosition(Object.assign({}, had, { title: p.title }, flags));
+        updated++;
+      } else {
+        const level = p.level === "deputy" ? "custom" : p.level;
+        savePosition(Object.assign({ id: p.id, office: office.id, title: p.title, level, permissions: p.level === "deputy" ? DEPUTY_PERMISSIONS.slice() : undefined }, flags));
+        added++;
+      }
+    });
+  });
+  return { ok: true, added, updated };
 }

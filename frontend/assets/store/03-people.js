@@ -389,6 +389,7 @@ function saveOffice(office) {
     role: office.role || "official",
     canApprove: !!office.canApprove
   };
+  if (office.icon) row.icon = String(office.icon).slice(0, 4);
   if (office.approval) row.approval = { head: office.approval.head !== false, governor: office.approval.governor !== false };
   if (!row.id || !row.name) return null;
   const i = extra.findIndex((o) => o.id === row.id);
@@ -464,6 +465,8 @@ function savePosition(position) {
     level,
     permissions: level !== "custom" && !position.permissions ? ACCESS_LEVELS[level].permissions.slice() : (position.permissions || [])
   };
+  // Позначки структури: керівник кабінету (chief), керує робочим простором (manager), порядок у списку
+  ["chief", "manager", "order"].forEach((k) => { if (position[k] !== undefined) row[k] = position[k]; });
   if (!row.id || !row.title) return null;
   const extra = loadLS("state_positions", []);
   const i = extra.findIndex((p) => p.id === row.id);

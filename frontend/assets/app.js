@@ -18,6 +18,7 @@ const SITE_ICONS = {
   home: "M4 11 12 4l8 7v9h-5v-6H9v6H4z",
   bell: "M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0",
   mail: "M3.5 6h17v12h-17zM4 7l8 6 8-6",
+  building: "M4 20h16M6 20V9l6-4 6 4v11M10 20v-5h4v5M9 11h.01M15 11h.01",
   scales: "M12 4v16M7 20h10M5 7h14M5 7l-3 6a3 3 0 0 0 6 0zM19 7l-3 6a3 3 0 0 0 6 0z",
   folder: "M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z",
   shield: "M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z",
@@ -159,6 +160,9 @@ function buildCabinetNav() {
     { href: "cabinet/", icon: "home", label: "Огляд", on: route === "cabinet/" },
     { href: "cabinet/inbox/", icon: "bell", label: "Повідомлення", count: inboxCount, on: route === "cabinet/inbox/" },
     { href: "cabinet/appeals/", icon: "mail", label: staff ? "Звернення" : "Мої звернення", count: appealCount, on: route === "cabinet/appeals/" },
+    // Робочий простір свого кабінету (повні адміністратори — усі кабінети)
+    staff && typeof canEnterOffice === "function"
+      ? { href: "cabinet/office/", icon: "building", label: typeof isFullAdmin === "function" && isFullAdmin(user) ? "Кабінети" : "Мій кабінет", on: route === "cabinet/office/" } : null,
     // Суд: судова влада й адміністратори — усі справи; інші — якщо мають власні справи
     (typeof canManageCases === "function" && canManageCases(user)) || (typeof casesForUser === "function" && casesForUser(user).length)
       ? { href: "cabinet/court/", icon: "scales", label: "Суд", on: route === "cabinet/court/" } : null,

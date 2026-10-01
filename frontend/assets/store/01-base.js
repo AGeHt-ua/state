@@ -246,3 +246,54 @@ const SEED_DOCS = [
   }
 ];
 
+
+/* Структура уряду штату: кабінети й посади (керівник, заступники, працівники).
+   Керівник і заступники (manager) керують робочим простором кабінету; chief — керівник, який погоджує документи кабінету.
+   Застосовується кнопкою в адмін-панелі («Структура» → «Застосувати структуру уряду»): додає відсутнє, наявне не видаляє. */
+const GOV_STRUCTURE = [
+  { office: { id: "governor", name: "Кабінет Губернатора", role: "governor", canApprove: true, icon: "👑" }, positions: [
+    { id: "governor-chief", title: "Губернатор штату", level: "admin", chief: true, manager: true, order: 1 },
+    { id: "vitse-hubernator", title: "Віце-губернатор", manager: true, order: 2 }
+  ] },
+  { office: { id: "prosecutor", name: "Офіс Генерального прокурора", role: "prosecutor", canApprove: true, icon: "⚖" }, positions: [
+    { id: "prosecutor-chief", title: "Генеральний прокурор", level: "head", chief: true, manager: true, order: 1 },
+    { id: "prosecutor-deputy", title: "Заступник Генерального прокурора", level: "deputy", manager: true, order: 2 },
+    { id: "prosecutor-staff", title: "Прокурор", level: "staff", order: 3 }
+  ] },
+  { office: { id: "court", name: "Верховний Суд", role: "court", canApprove: true, icon: "⚖" }, positions: [
+    { id: "court-chief", title: "Верховний Суддя", level: "head", chief: true, manager: true, order: 1 },
+    { id: "court-staff", title: "Суддя", level: "staff", order: 3 }
+  ] },
+  { office: { id: "finance", name: "Департамент фінансів", role: "official", canApprove: true, icon: "💰" }, positions: [
+    { id: "finance-head", title: "Директор департаменту", level: "head", chief: true, manager: true, order: 1 },
+    { id: "finance-deputy", title: "Заступник директора", level: "deputy", manager: true, order: 2 },
+    { id: "finance-staff", title: "Співробітник департаменту", level: "staff", order: 3 }
+  ] },
+  { office: { id: "security", name: "Департамент внутрішньої безпеки", role: "official", canApprove: true, icon: "🛡️" }, positions: [
+    { id: "security-head", title: "Директор департаменту", level: "head", chief: true, manager: true, order: 1 },
+    { id: "security-deputy", title: "Заступник директора", level: "deputy", manager: true, order: 2 },
+    { id: "security-staff", title: "Співробітник департаменту", level: "staff", order: 3 }
+  ] },
+  { office: { id: "culture", name: "Департамент культури", role: "official", canApprove: true, icon: "🎭" }, positions: [
+    { id: "culture-head", title: "Директор департаменту", level: "head", chief: true, manager: true, order: 1 },
+    { id: "culture-deputy", title: "Заступник директора", level: "deputy", manager: true, order: 2 },
+    { id: "culture-staff", title: "Співробітник департаменту", level: "staff", order: 3 }
+  ] },
+  { office: { id: "health", name: "Департамент охорони здоров'я", role: "official", canApprove: true, icon: "🏥" }, positions: [
+    { id: "health-head", title: "Директор департаменту", level: "head", chief: true, manager: true, order: 1 },
+    { id: "health-deputy", title: "Заступник директора", level: "deputy", manager: true, order: 2 },
+    { id: "health-staff", title: "Співробітник департаменту", level: "staff", order: 3 }
+  ] },
+  { office: { id: "bar", name: "Колегія адвокатів", role: "official", canApprove: true, icon: "⚖" }, positions: [
+    { id: "bar-head", title: "Голова Колегії адвокатів", level: "head", chief: true, manager: true, order: 1 },
+    { id: "bar-deputy", title: "Заступник Голови", level: "deputy", manager: true, order: 2 },
+    { id: "bar-staff", title: "Адвокат", level: "staff", order: 3 }
+  ] },
+  { office: { id: "usss", name: "United States Secret Service • USSS", role: "official", canApprove: true, icon: "🦅" }, positions: [
+    { id: "usss-head", title: "Директор USSS", level: "head", chief: true, manager: true, order: 1 },
+    { id: "usss-deputy", title: "Заступник директора USSS", level: "deputy", manager: true, order: 2 },
+    { id: "usss-staff", title: "Агент USSS", level: "staff", order: 3 }
+  ] }
+];
+// Заступник: ті самі права, що в керівника (створює й погоджує документи), але погоджувачем кабінету за замовчуванням є керівник
+const DEPUTY_PERMISSIONS = ["createDocs", "approveDocs", "editOwnDocs"];

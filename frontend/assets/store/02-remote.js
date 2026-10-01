@@ -8,7 +8,7 @@
    а запис завершується до переходу на іншу сторінку. */
 const SHARED_KEYS = [
   "state_users", "state_offices", "state_positions", "state_approval_routes",
-  "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds", "state_doc_types", "state_cases"
+  "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds", "state_doc_types", "state_cases", "state_ws"
 ];
 const REMOTE = { url: String(window.STATE_WORKER_URL || "").trim().replace(/\/+$/, ""), cache: null, ok: false };
 

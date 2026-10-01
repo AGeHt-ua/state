@@ -108,10 +108,11 @@ export default {
    - апарати, посади, маршрути, типи документів — manageStructure / manageRoutes;
    - документи й фони — посадовці (governor / official / prosecutor / court);
    - звернення й заявки на зміну профілю — посадовці будь-які, інші — лише свої;
-   - судові справи — судова влада й повні адміністратори всі, сторони й автор справи — свої. */
+   - судові справи — судова влада й повні адміністратори всі, сторони й автор справи — свої;
+   - робочий простір кабінету (state_ws: рапорти, завдання, премії, налаштування) — лише працівники цього кабінету й повні адміністратори. */
 const COLLECTIONS = [
   "state_users", "state_offices", "state_positions", "state_approval_routes",
-  "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds", "state_doc_types", "state_cases"
+  "state_docs", "state_appeals", "state_profile_requests", "state_doc_backgrounds", "state_doc_types", "state_cases", "state_ws"
 ];
 const PUBLIC_USER_FIELDS = ["login", "name", "roles", "office", "positionId", "post", "photo", "congressMember"];
 const STAFF_ROLES = ["governor", "official", "prosecutor", "court"];
@@ -523,12 +524,17 @@ const ATTACH_PER_PARENT = 40;
 const ATTACH_ID_RE = /^[A-Za-z0-9_-]{16,48}$/;
 
 async function attachParentAccess(env, actor, parent) {
-  const m = String(parent || "").match(/^(appeal|case):([A-Za-z0-9_.:-]{1,128})$/);
+  const m = String(parent || "").match(/^(appeal|case|ws):([A-Za-z0-9_.:-]{1,128})$/);
   if (!m) return { ok: false };
   if (m[1] === "appeal") {
     const row = (await readRows(env, "state_appeals", [m[2]]))[m[2]];
     if (!row) return { ok: true, fresh: true };          // нове звернення: файл додають до першого повідомлення
     return { ok: actor.staff || row.ownerLogin === actor.login };
+  }
+  if (m[1] === "ws") {
+    const w = (await readRows(env, "state_ws", [m[2]]))[m[2]];
+    if (!w) return { ok: actor.staff || actor.full, fresh: true };
+    return { ok: wsMember(actor, w.office) };
   }
   const row = (await readRows(env, "state_cases", [m[2]]))[m[2]];
   if (!row) return { ok: actor.staff, fresh: true };
@@ -727,7 +733,7 @@ async function handleSync(request, env, ctx) {
     }
     const removes = (Array.isArray(op.remove) ? op.remove : []).map((raw) => String(raw || "").slice(0, 128)).filter(Boolean);
 
-    const partialOld = (coll === "state_docs" || coll === "state_appeals" || coll === "state_cases") && upserts.length ? await readRows(env, coll, upserts.map((u) => u.id)) : {};
+    const partialOld = (coll === "state_docs" || coll === "state_appeals" || coll === "state_cases" || coll === "state_ws") && upserts.length ? await readRows(env, coll, upserts.map((u) => u.id)) : {};
     upserts.filter((u) => coll === "state_docs" && u.partial).forEach((u) => {
       const old = partialOld[u.id];
       if (old) DOC_HEAVY_FIELDS.forEach((k) => { if (u.row[k] === undefined && old[k] !== undefined) u.row[k] = old[k]; });
@@ -760,6 +766,12 @@ async function handleSync(request, env, ctx) {
       if (coll === "state_appeals") {
         stampAppeal(u.row, partialOld[u.id], actor, nowIso);
         await verifyAttachments(env, actor, "appeal:" + u.id, u.row.thread, ((partialOld[u.id] || {}).thread || []).length);
+      }
+      if (coll === "state_ws") {
+        const o = partialOld[u.id] || {};
+        u.row.events = appendStamped(o.events, u.row.events, actor, nowIso).slice(-200);
+        if (!partialOld[u.id]) { u.row.createdAt = nowIso; u.row.createdBy = actor.login; }
+        await verifyAttachments(env, actor, "ws:" + u.id, u.row.events, (o.events || []).length);
       }
       if (coll === "state_cases") {
         const o = partialOld[u.id] || {};
@@ -818,6 +830,7 @@ async function checkWrite(env, actor, coll, upserts, removes) {
   if (coll === "state_doc_backgrounds") return actor.staff ? "" : noRights;
   if (coll === "state_docs") return checkDocsWrite(env, actor, upserts, removes);
   if (coll === "state_cases") return checkCasesWrite(env, actor, upserts, removes);
+  if (coll === "state_ws") return checkWsWrite(env, actor, upserts, removes);
 
   // Звернення й заявки на зміну профілю: посадовець (або адміністратор профілів) — будь-які, інші — лише свої
   const ownerField = coll === "state_appeals" ? "ownerLogin" : "login";
@@ -839,6 +852,68 @@ async function checkWrite(env, actor, coll, upserts, removes) {
     if (!(await hit(env, (coll === "state_appeals" ? "appeal:" : "profile:") + actor.login, limit, upserts.length))) {
       return "Забагато дій за короткий час. Спробуйте пізніше.";
     }
+  }
+  return "";
+}
+
+/* ---------- Робочий простір кабінету (state_ws) ----------
+   Записи: report (рапорт), task (завдання / справа), bonus (затверджені премії), settings (налаштування обліку).
+   Працівник кабінету подає й править свої рапорти, поки їх не розглянули; виконує призначені йому завдання.
+   Керівник кабінету (посада рівня «head» або позначена manager — голова й заступники) та повні адміністратори
+   розглядають рапорти, ставлять і приймають завдання, передають їх в інший кабінет, затверджують премії. */
+const WS_KINDS = ["report", "task", "bonus", "settings"];
+function wsMember(actor, office) {
+  return !!actor && (actor.full || (actor.staff && actor.profile.office === office));
+}
+async function wsManager(env, actor, office) {
+  if (!actor) return false;
+  if (actor.full) return true;
+  if (!actor.staff || actor.profile.office !== office) return false;
+  const p = await positionFor(env, actor.profile.positionId);
+  return !!p && (!p.office || p.office === office) && (p.level === "head" || p.manager === true);
+}
+async function checkWsWrite(env, actor, upserts, removes) {
+  const noRights = "Недостатньо прав для дії в кабінеті.";
+  if (!actor.staff && !actor.full) return noRights;
+  const existing = await readRows(env, "state_ws", upserts.map((u) => u.id).concat(removes));
+  for (const id of removes) {
+    const old = existing[id];
+    if (old && !(await wsManager(env, actor, old.office))) return noRights;
+  }
+  const same = (a, b, skip) => {
+    const keys = new Set(Object.keys(a || {}).concat(Object.keys(b || {})));
+    for (const k of keys) if (!skip.includes(k) && JSON.stringify(a[k] === undefined ? null : a[k]) !== JSON.stringify(b[k] === undefined ? null : b[k])) return false;
+    return true;
+  };
+  for (const { id, row } of upserts) {
+    if (!WS_KINDS.includes(row.kind) || !row.office) return "Невірний запис кабінету.";
+    if (JSON.stringify(row).length > MAX_APPEAL_ROW) return "Запис завеликий.";
+    const old = existing[id];
+    if (old && old.kind !== row.kind) return noRights;
+    // Передача завдання в інший кабінет — керівник кабінету, звідки передають
+    if (old && old.office !== row.office) {
+      if (row.kind !== "task" || !(await wsManager(env, actor, old.office))) return noRights;
+      continue;
+    }
+    if (!wsMember(actor, row.office)) return noRights;
+    const manager = await wsManager(env, actor, row.office);
+    if (manager) continue;
+    if (row.kind === "bonus" || row.kind === "settings") return noRights;
+    if (row.kind === "report") {
+      if (!old) {
+        if (row.author !== actor.login || row.status !== "submitted" || row.points || row.reviewer) return noRights;
+        continue;
+      }
+      // Автор править свій рапорт, поки його не прийняли й не відхилили; бали й рішення — лише керівник
+      if (old.author !== actor.login || !["submitted", "returned"].includes(old.status) || row.status !== "submitted") return noRights;
+      if (!same(old, row, ["title", "text", "type", "status", "events", "updatedAt"])) return noRights;
+      continue;
+    }
+    // Завдання: працівник лише рухає своє завдання (нове → у роботі → виконано) і пише в ньому
+    if (!old) return noRights;
+    if (old.assignee !== actor.login || !same(old, row, ["status", "events", "updatedAt"])) return noRights;
+    const flow = { new: ["new", "progress", "done"], progress: ["progress", "done"], done: ["done", "progress"], returned: ["progress", "done"] };
+    if (!(flow[old.status] || []).includes(row.status)) return noRights;
   }
   return "";
 }
@@ -1368,6 +1443,7 @@ async function readCollections(env, colls, actor, opts = {}) {
       AND updated_at > ?5
       AND (coll != 'state_appeals' OR ?1 = 1 OR json_extract(data, '$.ownerLogin') = ?2)
       AND (coll != 'state_profile_requests' OR ?3 = 1 OR json_extract(data, '$.login') = ?2)
+      AND (coll != 'state_ws' OR ?7 = 1 OR json_extract(data, '$.office') = ?8)
       AND (coll != 'state_cases' OR ?6 = 1 OR json_extract(data, '$.plaintiff.login') = ?2 OR json_extract(data, '$.defendant.login') = ?2 OR json_extract(data, '$.createdBy') = ?2)
       AND (coll != 'state_docs' OR ?1 = 1
         OR json_extract(data, '$.status') IN ('ok', 'dead')
@@ -1376,7 +1452,7 @@ async function readCollections(env, colls, actor, opts = {}) {
           OR json_extract(data, '$.type') IN (SELECT json_extract(t.data, '$.label') FROM rows t WHERE t.coll = 'state_doc_types' AND json_extract(t.data, '$.congress') = 1)))
         OR (json_extract(data, '$.publishHome') = 1 AND COALESCE(json_extract(data, '$.status'), '') NOT IN ('trash', 'rejected', 'deleted')))
     ORDER BY rowid`;
-  const { results } = await env.DB.prepare(sql).bind(full, me, reviewer, opts.base || "", since, isCourtManager(actor) ? 1 : 0).all();
+  const { results } = await env.DB.prepare(sql).bind(full, me, reviewer, opts.base || "", since, isCourtManager(actor) ? 1 : 0, actor && actor.full ? 1 : 0, actor && actor.staff ? String(actor.profile.office || "") : "\u0001").all();
   const parts = {};
   list.forEach((c) => { parts[c] = []; });
   let maxRev = since;
@@ -1530,7 +1606,7 @@ async function handleAudit(request, env, url) {
 // «Область видимості» відповіді: змінюється разом із правами — тоді браузер перезавантажує кеш повністю
 function scopeOf(actor) {
   if (!actor) return "anon";
-  return actor.login + ":" + (actor.staff ? "staff" : "public") + (actor.can(["approveProfiles"]) ? ":rev" : "") + (isCourtManager(actor) ? ":court" : "");
+  return actor.login + ":" + (actor.staff ? "staff" : "public") + (actor.can(["approveProfiles"]) ? ":rev" : "") + (isCourtManager(actor) ? ":court" : "") + (actor.staff ? ":o=" + (actor.profile.office || "") : "") + (actor.full ? ":full" : "");
 }
 
 // Зміни після версії since — для живого оновлення сторінок (голосування, повідомлення)
