@@ -47,8 +47,13 @@ whenStateReady(async function () {
       { id: "docs", icon: "📄", label: "Документи" },
       { id: "appeals", icon: "✉", label: "Звернення" },
       { id: "people", icon: "👥", label: "Склад" },
-      { id: "work", icon: "📊", label: "Облік і премії" }
+      { id: "work", icon: "📊", label: "Облік і звіти" }
     ]).concat(manager ? [{ id: "settings", icon: "⚙", label: "Налаштування" }] : []);
+  // Ланцюжок звітів: Мінфін перевіряє й підписує звіти всіх підрозділів, Губернатор погоджує премії
+  const payrollRole = manager && officeId === "finance" ? "finance" : manager && officeId === "governor" ? "governor" : "";
+  if (payrollRole) SECTIONS.splice(3, 0, payrollRole === "finance"
+    ? { id: "payrolls", icon: "🧾", label: "Звіти підрозділів" }
+    : { id: "payrolls", icon: "💰", label: "Премії на погодження" });
 
   /* ---------- Каркас сторінки ---------- */
   const others = workspaceOffices().filter((o) => o.id !== officeId && canEnterOffice(user, o.id));
@@ -106,7 +111,7 @@ whenStateReady(async function () {
   const avatar = (u, cls) => u && u.photo ? `<img src="${attr(u.photo)}" alt="">` : `<span class="${cls || "ws-av"}">${esc(String((u && (u.name || u.login)) || "?").charAt(0).toUpperCase())}</span>`;
   let courtSel = location.hash.startsWith("#case=") ? decodeURIComponent(location.hash.slice(6)) : "";
   const ui = { section: courtSel && officeId === "court" ? "cases" : SECTIONS.some((s) => s.id === location.hash.slice(1)) ? location.hash.slice(1) : "home",
-    reportFilter: manager ? "review" : "mine", period: "month", from: "", to: "", open: "", docStatus: "all" };
+    reportFilter: manager ? "review" : "mine", period: "week", payrollFilter: "", payrollOpen: "", from: "", to: "", open: "", docStatus: "all" };
   let noteFiles = null;
 
   function counts() {
@@ -116,7 +121,10 @@ whenStateReady(async function () {
       reports: manager ? reports.filter((r) => r.status === "submitted").length : reports.filter((r) => r.author === user.login && r.status === "returned").length,
       tasks: tasks.filter((t) => manager ? t.status === "done" : t.assignee === user.login && ["new", "returned"].includes(t.status)).length,
       cases: officeId === "court" ? allCases().filter((c) => c.status === "new").length : 0,
-      appeals: allAppeals().filter((a) => a.office === officeId && a.status === "waiting").length
+      appeals: allAppeals().filter((a) => a.office === officeId && a.status === "waiting").length,
+      payrolls: payrollRole === "finance" ? allPayrolls().filter((p) => p.status === "submitted").length
+        : payrollRole === "governor" ? allPayrolls().filter((p) => p.status === "signed").length : 0,
+      work: manager ? allPayrolls().filter((p) => p.office === officeId && p.status === "returned").length : 0
     };
   }
 
@@ -126,6 +134,8 @@ whenStateReady(async function () {
     if (ui.period === "week") {
       from = new Date(now.getFullYear(), now.getMonth(), now.getDate()); from.setDate(from.getDate() - ((from.getDay() + 6) % 7));
       to = new Date(from); to.setDate(to.getDate() + 7); label = "цей тиждень";
+    } else if (ui.period === "prevweek") {
+      const w = weekRange(-1); return { from: w.from, to: w.to, label: "тиждень " + w.label };
     } else if (ui.period === "prev") {
       from = new Date(now.getFullYear(), now.getMonth() - 1, 1); to = new Date(now.getFullYear(), now.getMonth(), 1); label = "минулий місяць";
     } else if (ui.period === "custom" && ui.from && ui.to) {
@@ -336,39 +346,133 @@ whenStateReady(async function () {
       `<div class="admin-empty">У кабінеті ще немає посад.</div>`;
   }
 
-  /* ---------- Облік і премії ---------- */
+  /* ---------- Облік і звіти ----------
+     Облік роботи за період; керівництво формує тижневий звіт із пропонованими преміями й подає його до Департаменту фінансів. */
   function secWork() {
     const p = period();
     const stats = workStats(officeId, p.from, p.to);
-    const cur = stats.settings.currency;
+    const g = payrollGlobal();
     const rows = manager ? stats.rows : stats.rows.filter((r) => r.login === user.login);
-    const bonuses = wsItems(officeId, "bonus");
+    const mine = allPayrolls().filter((x) => x.office === officeId);
+    const weeks = [weekRange(0), weekRange(-1)];
+    // Премії працівника з погоджених і виплачених звітів
+    const myBonuses = mine.filter((x) => ["approved", "paid"].includes(x.status)).map((x) => ({ x, r: (x.rows || []).find((r) => r.login === user.login) })).filter((v) => v.r);
     return `
       <div class="appeals-toolbar">
         <div class="seg" id="work-period">
-          ${[["week", "Цей тиждень"], ["month", "Цей місяць"], ["prev", "Минулий місяць"], ["custom", "Період…"]].map(([k, l]) => `<button type="button" data-p="${k}" class="${ui.period === k ? "active" : ""}">${l}</button>`).join("")}
+          ${[["week", "Цей тиждень"], ["prevweek", "Минулий тиждень"], ["month", "Цей місяць"], ["custom", "Період…"]].map(([k, l]) => `<button type="button" data-p="${k}" class="${ui.period === k ? "active" : ""}">${l}</button>`).join("")}
         </div>
         ${ui.period === "custom" ? `<span class="ws-range"><input type="date" id="work-from" value="${attr(ui.from)}"> — <input type="date" id="work-to" value="${attr(ui.to)}"></span>` : ""}
       </div>
       <section class="card">
         <h3>Облік роботи: ${esc(p.label)}</h3>
-        <p class="muted">${stats.settings.mode === "rate" ? "Премія = бали × " + esc(money(stats.settings.rate, cur)) : "Фонд " + esc(money(stats.settings.pool, cur)) + " ділиться пропорційно балам"} · усього балів: ${stats.total}</p>
+        <p class="muted">Бали: рапорти й завдання — як виставило керівництво, документи ${stats.settings.weights.doc} б., відповідь на звернення ${stats.settings.weights.appealReply} б., дія у справі ${stats.settings.weights.caseAction} б. · усього: ${stats.total}</p>
         <div class="table-scroll"><table class="ws-table">
-          <thead><tr><th>Працівник</th><th>Рапорти</th><th>Завдання</th><th>Документи</th><th>Відповіді</th><th>Справи</th><th>Бали</th><th>Премія</th></tr></thead>
+          <thead><tr><th>Працівник</th><th>Рапорти</th><th>Завдання</th><th>Документи</th><th>Відповіді</th><th>Справи</th><th>Бали</th></tr></thead>
           <tbody>${rows.map((r) => `<tr><td><b>${esc(r.name)}</b><small>${esc(r.post)}${r.post ? " · " : ""}@${esc(r.login)}</small></td>
             <td>${r.reports}${r.reportPoints ? ` <small>(${r.reportPoints} б.)</small>` : ""}</td><td>${r.tasks}${r.taskPoints ? ` <small>(${r.taskPoints} б.)</small>` : ""}</td>
-            <td>${r.docs}</td><td>${r.appealReplies}</td><td>${r.caseActions}</td><td><b>${r.points}</b></td><td><b>${esc(money(r.amount, cur))}</b></td></tr>`).join("") || `<tr><td colspan="8" class="muted">У кабінеті ще немає працівників.</td></tr>`}</tbody>
+            <td>${r.docs}</td><td>${r.appealReplies}</td><td>${r.caseActions}</td><td><b>${r.points}</b></td></tr>`).join("") || `<tr><td colspan="7" class="muted">У кабінеті ще немає працівників.</td></tr>`}</tbody>
         </table></div>
-        ${manager && stats.rows.length ? `<div class="form-actions"><button class="btn gold" type="button" data-approve-bonus>Затвердити премії за ${esc(p.label)}</button><span class="muted">Відомість зберігається в історії; працівники бачать свої суми.</span></div>` : ""}
       </section>
+      ${manager ? `
       <section class="card">
-        <h3>Затверджені премії</h3>
-        <div class="ws-list">${bonuses.length ? bonuses.map((b) => {
-          const mineRow = (b.rows || []).find((r) => r.login === user.login);
-          return `<details class="ws-bonus"><summary><b>${esc(b.period && b.period.label || "")}</b> · ${esc(money(b.totalAmount, b.currency))} · затвердив ${esc(nameOf(b.approvedBy))}, ${esc(formatDocWhen({ date: b.createdAt || b.updatedAt }))}${mineRow ? ` · <b>ваша премія: ${esc(money(mineRow.amount, b.currency))}</b>` : ""}</summary>
-            ${manager ? `<table class="ws-table"><tbody>${(b.rows || []).map((r) => `<tr><td>${esc(r.name)}</td><td>${r.points} б.</td><td><b>${esc(money(r.amount, b.currency))}</b></td></tr>`).join("")}</tbody></table>` : ""}</details>`;
-        }).join("") : `<div class="admin-empty">Премії ще не затверджувались.</div>`}</div>
+        <div class="section-head"><div><h3>Тижневий звіт до Департаменту фінансів</h3>
+          <p class="muted">Звіт про пророблену роботу з пропонованими преміями (до ${esc(money(g.maxBonus, g.currency))} на людину за тиждень). Мінфін перевіряє й підписує, Губернатор погоджує й виплачує.</p></div></div>
+        <div class="ws-list">${weeks.map((w) => {
+          const ex = wsGet(payrollId(officeId, w));
+          return `<div class="ws-item ws-item-head"><span><b>Тиждень ${esc(w.label)}</b><small>${ex ? esc(PAYROLL_STATUSES[ex.status] || ex.status) + " · " + esc(money(ex.totalAmount, g.currency)) : "звіт ще не сформовано"}</small></span>
+            ${ex ? `<button type="button" class="btn ghost" data-open-payroll="${attr(ex.id)}">Відкрити</button>` : `<button type="button" class="btn gold" data-new-payroll="${attr(w.key)}">Сформувати звіт</button>`}</div>`;
+        }).join("")}</div>
+      </section>` : ""}
+      ${ui.payrollOpen && wsGet(ui.payrollOpen) && wsGet(ui.payrollOpen).office === officeId ? payrollView(wsGet(ui.payrollOpen), "unit") : ""}
+      ${manager && mine.length ? `<section class="card"><h3>Усі звіти підрозділу</h3><div class="ws-list">${mine.map(payrollRow).join("")}</div></section>` : ""}
+      <section class="card">
+        <h3>Мої премії</h3>
+        ${myBonuses.length ? `<div class="table-scroll"><table class="ws-table"><thead><tr><th>Тиждень</th><th>Бали</th><th>Премія</th><th>Стан</th></tr></thead><tbody>${myBonuses.map(({ x, r }) => `<tr><td>${esc(x.period.label)}</td><td>${r.points}</td><td><b>${esc(money(r.amount, g.currency))}</b></td><td><span class="badge ${payrollStatusClass(x.status)}">${esc(PAYROLL_STATUSES[x.status])}</span></td></tr>`).join("")}</tbody></table></div>`
+          : `<p class="muted">Погоджених премій ще немає. Премія з'являється тут, коли Губернатор погодить звіт підрозділу.</p>`}
       </section>`;
+  }
+
+  /* ---------- Звіт (спільний вигляд для підрозділу, Мінфіну й Губернатора) ---------- */
+  function payrollRow(x) {
+    const unit = (allOffices().find((o) => o.id === x.office) || {}).name || x.office;
+    return `<button type="button" class="ws-item ws-item-head${ui.payrollOpen === x.id ? " is-open" : ""}" data-open-payroll="${attr(x.id)}">
+      <span><b>${esc(unit)} · тиждень ${esc(x.period && x.period.label)}</b><small>${(x.rows || []).length} працівників · ${esc(money(x.totalAmount, payrollGlobal().currency))}${x.submittedByName ? " · подав " + esc(x.submittedByName) : ""}</small></span>
+      <span class="badge ${payrollStatusClass(x.status)}">${esc(PAYROLL_STATUSES[x.status] || x.status)}</span></button>`;
+  }
+  function payrollView(x, mode) {
+    const g = payrollGlobal();
+    const unit = (allOffices().find((o) => o.id === x.office) || {}).name || x.office;
+    const editable = (mode === "unit" && ["draft", "returned"].includes(x.status)) || (mode === "finance" && x.status === "submitted");
+    const total = (x.rows || []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    const step = (label, who, at) => who ? `<li><b>${label}</b> — ${esc(who)}${at ? ", " + esc(formatDocWhen({ date: at })) : ""}</li>` : "";
+    return `
+      <section class="card payroll-card" id="payroll-view" data-payroll="${attr(x.id)}">
+        <div class="section-head">
+          <div><p class="eyebrow">${esc(unit)}</p><h3>Звіт за тиждень ${esc(x.period && x.period.label)}</h3></div>
+          <span class="badge ${payrollStatusClass(x.status)}">${esc(PAYROLL_STATUSES[x.status] || x.status)}</span>
+        </div>
+        <ol class="payroll-steps">
+          ${step("Подав підрозділ", x.submittedByName, x.submittedAt)}
+          ${step("Підписав Мінфін", x.signedByName, x.signedAt)}
+          ${step("Погодив Губернатор", x.approvedByName, x.approvedAt)}
+          ${step("Виплачено", x.paidByName, x.paidAt)}
+        </ol>
+        ${x.returnNote && ["returned", "draft"].includes(x.status) ? `<p class="notice danger">Мінфін повернув: ${esc(x.returnNote)}</p>` : ""}
+        ${x.govNote && x.status === "submitted" ? `<p class="notice">Губернатор повернув Мінфіну: ${esc(x.govNote)}</p>` : ""}
+        ${x.summary ? `<p class="ws-text"><b>Підсумок роботи підрозділу:</b> ${esc(x.summary).replace(/\n/g, "<br>")}</p>` : ""}
+        ${x.financeNote ? `<p class="ws-text"><b>Висновок Мінфіну:</b> ${esc(x.financeNote).replace(/\n/g, "<br>")}</p>` : ""}
+        <div class="table-scroll"><table class="ws-table">
+          <thead><tr><th>Працівник</th><th>Рапорти</th><th>Завдання</th><th>Документи</th><th>Відповіді</th><th>Справи</th><th>Бали</th><th>Премія, ${esc(g.currency)}</th></tr></thead>
+          <tbody>${(x.rows || []).map((r) => `<tr><td><b>${esc(r.name)}</b><small>${esc(r.post || "")}${r.post ? " · " : ""}@${esc(r.login)}</small></td>
+            <td>${r.reports}</td><td>${r.tasks}</td><td>${r.docs}</td><td>${r.appealReplies}</td><td>${r.caseActions}</td><td><b>${r.points}</b></td>
+            <td>${editable ? `<input type="number" class="payroll-amount" data-amount="${attr(r.login)}" min="0" max="${g.maxBonus}" step="1000" value="${attr(r.amount)}">` : `<b>${esc(money(r.amount, g.currency))}</b>`}</td></tr>`).join("")}</tbody>
+          <tfoot><tr><td colspan="7"><b>Разом</b> <small>межа — ${esc(money(g.maxBonus, g.currency))} на людину</small></td><td><b id="payroll-total">${esc(money(total, g.currency))}</b></td></tr></tfoot>
+        </table></div>
+        ${mode === "unit" && editable ? `<label>Підсумок роботи за тиждень<textarea id="payroll-summary" rows="3" placeholder="Що зроблено підрозділом, ключові результати, хто відзначився.">${esc(x.summary || "")}</textarea></label>` : ""}
+        ${mode === "finance" && x.status === "submitted" ? `<label>Висновок Мінфіну<textarea id="payroll-finance-note" rows="2" placeholder="Перевірено, суми відповідають обсягу роботи…">${esc(x.financeNote || "")}</textarea></label>` : ""}
+        <div class="form-actions payroll-actions">
+          ${mode === "unit" && editable ? `<button type="button" class="btn ghost" data-payroll-act="save">Зберегти чернетку</button>
+            <button type="button" class="btn ghost" data-payroll-act="refresh" title="Перерахувати рядки з обліку за цей тиждень">Оновити з обліку</button>
+            <button type="button" class="btn gold" data-payroll-act="submit">Подати до Департаменту фінансів</button>
+            ${x.status === "draft" ? `<button type="button" class="btn ghost danger" data-payroll-act="delete">Видалити чернетку</button>` : ""}` : ""}
+          ${mode === "finance" && x.status === "submitted" ? `<button type="button" class="btn gold" data-payroll-act="sign">Підписати й передати Губернатору</button>
+            <button type="button" class="btn ghost" data-payroll-act="finsave">Зберегти зміни</button>
+            <button type="button" class="btn ghost danger" data-payroll-act="return">Повернути підрозділу</button>` : ""}
+          ${mode === "governor" && x.status === "signed" ? `<button type="button" class="btn gold" data-payroll-act="approve">Погодити премії</button>
+            <button type="button" class="btn ghost danger" data-payroll-act="govreturn">Повернути до Мінфіну</button>` : ""}
+          ${mode === "governor" && x.status === "approved" ? `<button type="button" class="btn gold" data-payroll-act="paid">Позначити виплаченим</button>` : ""}
+          <button type="button" class="btn ghost" data-payroll-act="close">Закрити</button>
+        </div>
+      </section>`;
+  }
+
+  /* ---------- Мінфін / Губернатор: звіти всіх підрозділів ---------- */
+  function secPayrolls() {
+    const g = payrollGlobal();
+    const filters = payrollRole === "finance"
+      ? [["submitted", "На перевірці"], ["signed", "Передано Губернатору"], ["returned", "Повернено"], ["done", "Погоджено й виплачено"], ["all", "Усі"]]
+      : [["signed", "На погодженні"], ["approved", "До виплати"], ["paid", "Виплачено"], ["all", "Усі"]];
+    const f = ui.payrollFilter || filters[0][0];
+    let list = allPayrolls().filter((x) => x.status !== "draft");
+    if (payrollRole === "governor") list = list.filter((x) => ["signed", "approved", "paid"].includes(x.status));
+    if (f === "done") list = list.filter((x) => ["approved", "paid"].includes(x.status));
+    else if (f !== "all") list = list.filter((x) => x.status === f);
+    const open = ui.payrollOpen && wsGet(ui.payrollOpen);
+    const weekTotal = allPayrolls().filter((x) => x.period && x.period.key === weekRange(-1).key && ["signed", "approved", "paid"].includes(x.status)).reduce((sum, x) => sum + (x.totalAmount || 0), 0);
+    return `
+      <p class="muted" style="margin:0">${payrollRole === "finance"
+        ? "Звіти підрозділів про пророблену роботу. Перевірте облік і суми (межа — " + esc(money(g.maxBonus, g.currency)) + " на людину за тиждень), підпишіть і передайте Губернатору або поверніть на доопрацювання."
+        : "Звіти, підписані Департаментом фінансів. Погодьте премії — після виплати в грі позначте звіт виплаченим."}</p>
+      <div class="ws-cards">
+        <div class="ws-card"><b>${allPayrolls().filter((x) => x.status === "submitted").length}</b><span>на перевірці в Мінфіні</span></div>
+        <div class="ws-card"><b>${allPayrolls().filter((x) => x.status === "signed").length}</b><span>на погодженні в Губернатора</span></div>
+        <div class="ws-card"><b>${allPayrolls().filter((x) => x.status === "approved").length}</b><span>погоджено, до виплати</span></div>
+        <div class="ws-card"><b>${esc(money(weekTotal, g.currency))}</b><span>премій за минулий тиждень</span></div>
+      </div>
+      <div class="appeals-toolbar"><div class="seg" id="payroll-filter">${filters.map(([k, l]) => `<button type="button" data-pf="${k}" class="${f === k ? "active" : ""}">${l}</button>`).join("")}</div></div>
+      <div class="ws-list">${list.map(payrollRow).join("") || `<div class="admin-empty">Звітів за цим фільтром немає.</div>`}</div>
+      ${open && open.kind === "payroll" ? payrollView(open, payrollRole) : ""}`;
   }
 
   /* ---------- Налаштування (керівництво) ---------- */
@@ -393,11 +497,23 @@ whenStateReady(async function () {
           </div>
           <button class="btn gold" type="submit">Зберегти налаштування</button>
         </form>
-      </section>`;
+      </section>
+      ${payrollRole ? `
+      <section class="card">
+        <h3>Премії: загальні правила</h3>
+        <p class="muted">Діють для всіх підрозділів і організацій. Більшу суму сервер не прийме навіть у підробленому запиті.</p>
+        <form id="payroll-global" class="ws-settings">
+          <div class="form-grid">
+            <label>Максимальна премія на людину за тиждень<input type="number" name="maxBonus" min="1" step="1000" value="${attr(payrollGlobal().maxBonus)}"></label>
+            <label>Валюта<input name="currency" maxlength="4" value="${attr(payrollGlobal().currency)}"></label>
+          </div>
+          <button class="btn gold" type="submit">Зберегти</button>
+        </form>
+      </section>` : ""}`;
   }
 
   /* ---------- Малювання ---------- */
-  const RENDER = { home: secHome, reports: secReports, tasks: secTasks, proc: secProc, cases: secCases, docs: secDocs, appeals: secAppeals, people: secPeople, work: secWork, settings: secSettings };
+  const RENDER = { payrolls: secPayrolls, home: secHome, reports: secReports, tasks: secTasks, proc: secProc, cases: secCases, docs: secDocs, appeals: secAppeals, people: secPeople, work: secWork, settings: secSettings };
   const canCreateDocs = (user.roles || [])[0] === "governor" || hasPermission(user, "createDocs");
   function actions() {
     const s = ui.section;
@@ -409,13 +525,13 @@ whenStateReady(async function () {
   }
   function drawNav() {
     const c = counts();
-    const badge = { reports: c.reports, tasks: c.tasks, cases: c.cases, appeals: c.appeals };
+    const badge = { reports: c.reports, tasks: c.tasks, cases: c.cases, appeals: c.appeals, payrolls: c.payrolls, work: c.work };
     $("ws-nav").innerHTML = SECTIONS.map((s) => (s.id === "docs" ? `<div class="ws-nav-sep"></div>` : "") +
       `<a href="#${s.id}" class="${s.id === ui.section ? "active" : ""}"${s.id === ui.section ? ' aria-current="page"' : ""}><span class="ws-ico">${s.icon}</span><span>${esc(s.label)}</span>${badge[s.id] ? `<span class="ws-count">${badge[s.id]}</span>` : ""}</a>`).join("");
   }
   function draw() {
     const c = counts();
-    const badge = { reports: c.reports, tasks: c.tasks, cases: c.cases, appeals: c.appeals };
+    const badge = { reports: c.reports, tasks: c.tasks, cases: c.cases, appeals: c.appeals, payrolls: c.payrolls, work: c.work };
     $("ws-nav").innerHTML = SECTIONS.map((s, i) => (s.id === "docs" ? `<div class="ws-nav-sep"></div>` : "") +
       `<a href="#${s.id}" class="${s.id === ui.section ? "active" : ""}"${s.id === ui.section ? ' aria-current="page"' : ""}><span class="ws-ico">${s.icon}</span><span>${esc(s.label)}</span>${badge[s.id] ? `<span class="ws-count">${badge[s.id]}</span>` : ""}</a>`).join("");
     $("ws-title").textContent = (SECTIONS.find((s) => s.id === ui.section) || SECTIONS[0]).label;
@@ -485,22 +601,99 @@ whenStateReady(async function () {
       ui.open = "";
       return draw();
     }
-    if (pick("[data-approve-bonus]")) {
-      const p = period();
-      const stats = workStats(officeId, p.from, p.to);
-      const total = stats.rows.reduce((s, r) => s + r.amount, 0);
-      if (!confirm("Затвердити премії за " + p.label + "?\nУсього: " + money(total, stats.settings.currency) + ".")) return;
-      saveWs({ kind: "bonus", office: officeId, period: { from: p.from, to: p.to, label: p.label }, currency: stats.settings.currency, totalAmount: total,
-        rows: stats.rows.map((r) => ({ login: r.login, name: r.name, points: r.points, amount: r.amount })), approvedBy: user.login }, { user, event: { kind: "status", text: "Премії затверджено." } });
+    if ((b = pick("[data-pf]"))) { ui.payrollFilter = b.dataset.pf; ui.payrollOpen = ""; return draw(); }
+    if ((b = pick("[data-open-payroll]"))) { ui.payrollOpen = ui.payrollOpen === b.dataset.openPayroll ? "" : b.dataset.openPayroll; draw(); const v = $("payroll-view"); if (v) v.scrollIntoView({ block: "start" }); return; }
+    if ((b = pick("[data-new-payroll]"))) {
+      const w = [weekRange(0), weekRange(-1)].find((x) => x.key === b.dataset.newPayroll);
+      if (!w) return;
+      const saved = saveWs({ id: payrollId(officeId, w), kind: "payroll", office: officeId, period: { key: w.key, from: w.from, to: w.to, label: w.label },
+        rows: buildPayrollRows(officeId, w), status: "draft", summary: "" }, { user, event: { kind: "status", text: "Звіт сформовано з обліку роботи." } });
+      ui.payrollOpen = saved.id;
+      draw();
+      const v = $("payroll-view"); if (v) v.scrollIntoView({ block: "start" });
+      return;
+    }
+    if ((b = pick("[data-payroll-act]"))) return payrollAction(b.dataset.payrollAct);
+  });
+  // Суми в звіті: не більше межі, разом — наживо
+  content.addEventListener("input", (e) => {
+    if (!e.target.matches(".payroll-amount")) return;
+    const g = payrollGlobal();
+    let total = 0;
+    content.querySelectorAll(".payroll-amount").forEach((i) => { total += Math.min(g.maxBonus, Math.max(0, Math.floor(Number(i.value) || 0))); });
+    const t = $("payroll-total"); if (t) t.textContent = money(total, g.currency);
+    e.target.classList.toggle("is-over", Number(e.target.value) > g.maxBonus);
+  });
+  function payrollAmounts(x) {
+    const g = payrollGlobal();
+    return (x.rows || []).map((r) => {
+      const i = content.querySelector('.payroll-amount[data-amount="' + CSS.escape(r.login) + '"]');
+      return Object.assign({}, r, { amount: i ? Math.min(g.maxBonus, Math.max(0, Math.floor(Number(i.value) || 0))) : r.amount });
+    });
+  }
+  function payrollAction(act) {
+    const view = $("payroll-view");
+    const x = view && wsGet(view.dataset.payroll);
+    if (act === "close") { ui.payrollOpen = ""; return draw(); }
+    if (!x) return;
+    const g = payrollGlobal();
+    const over = Array.from(content.querySelectorAll(".payroll-amount")).some((i) => Number(i.value) > g.maxBonus);
+    if (over && !confirm("Деякі суми більші за межу " + money(g.maxBonus, g.currency) + " — їх буде зменшено до межі. Продовжити?")) return;
+    const summary = $("payroll-summary") ? $("payroll-summary").value.trim() : x.summary;
+    const financeNote = $("payroll-finance-note") ? $("payroll-finance-note").value.trim() : x.financeNote;
+    const save = (patch, text) => { saveWs(Object.assign({}, x, patch), { user, event: { kind: "status", text } }); draw(); };
+    if (act === "save") return save({ rows: payrollAmounts(x), summary }, "Чернетку збережено.");
+    if (act === "refresh") {
+      if (!confirm("Перерахувати рядки з обліку за цей тиждень? Ручні зміни сум буде замінено.")) return;
+      return save({ rows: buildPayrollRows(officeId, { from: x.period.from, to: x.period.to }), summary }, "Рядки оновлено з обліку.");
+    }
+    if (act === "submit") {
+      if (!confirm("Подати звіт за тиждень " + x.period.label + " до Департаменту фінансів?")) return;
+      return save({ rows: payrollAmounts(x), summary, status: "submitted", returnNote: "" }, "Звіт подано до Департаменту фінансів.");
+    }
+    if (act === "delete") {
+      if (!confirm("Видалити чернетку звіту?")) return;
+      saveLS("state_ws", loadLS("state_ws", []).filter((w) => w.id !== x.id));
+      ui.payrollOpen = "";
       return draw();
     }
-  });
+    if (act === "finsave") return save({ rows: payrollAmounts(x), financeNote }, "Мінфін змінив суми.");
+    if (act === "sign") {
+      if (!confirm("Підписати звіт і передати Губернатору на погодження?")) return;
+      return save({ rows: payrollAmounts(x), financeNote, status: "signed" }, "Підписано Мінфіном і передано Губернатору.");
+    }
+    if (act === "return") {
+      const note = prompt("Що доопрацювати підрозділу?");
+      if (!note || !note.trim()) return;
+      return save({ status: "returned", returnNote: note.trim(), financeNote }, "Мінфін повернув на доопрацювання: " + note.trim());
+    }
+    if (act === "approve") {
+      if (!confirm("Погодити премії підрозділу на " + money(x.totalAmount, g.currency) + "?")) return;
+      return save({ status: "approved" }, "Губернатор погодив премії.");
+    }
+    if (act === "govreturn") {
+      const note = prompt("Що перевірити Мінфіну?");
+      if (!note || !note.trim()) return;
+      return save({ status: "submitted", govNote: note.trim() }, "Губернатор повернув до Мінфіну: " + note.trim());
+    }
+    if (act === "paid") {
+      if (!confirm("Позначити премії виплаченими в грі?")) return;
+      return save({ status: "paid" }, "Премії виплачено.");
+    }
+  }
   content.addEventListener("change", (e) => {
     if (e.target.id === "work-from" || e.target.id === "work-to") { ui.from = $("work-from").value; ui.to = $("work-to").value; if (ui.from && ui.to) draw(); }
   });
   content.addEventListener("submit", async (e) => {
     e.preventDefault();
     const form = e.target;
+    if (form.id === "payroll-global") {
+      const d = new FormData(form);
+      const max = Math.floor(Number(d.get("maxBonus")) || 0);
+      if (max <= 0) { alert("Вкажіть межу премії більше нуля."); return; }
+      saveWs({ id: "payroll-global", kind: "global", office: "finance", maxBonus: max, currency: String(d.get("currency") || "$").trim().slice(0, 4) || "$" }, { user });
+      return draw();
+    }
     if (form.id === "ws-settings") {
       const d = new FormData(form);
       const num = (k) => Math.max(0, Number(d.get(k)) || 0);

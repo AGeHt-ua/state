@@ -96,3 +96,13 @@ body.ws-app {
   .ws-content { padding: 16px; }
   .ws-grid-2 { grid-template-columns: 1fr; }
 }
+
+/* Тижневі звіти й премії */
+.payroll-card { border-top: 3px solid var(--ws-accent); }
+.payroll-steps { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 6px; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+.payroll-steps li b { color: var(--ink-2); }
+.payroll-steps li::before { content: "✓ "; color: #1f8f55; font-weight: 800; }
+.payroll-amount { width: 130px; text-align: right; font-variant-numeric: tabular-nums; }
+.payroll-amount.is-over { border-color: #e5484d; background: #fde2e1; }
+.ws-table tfoot td { border-top: 2px solid var(--line-strong); border-bottom: 0; }
+.payroll-actions { flex-wrap: wrap; }

@@ -350,6 +350,43 @@ check("працівник не передає завдання", (await sync(T.s
 check("керівник передає завдання в суд", (await sync(T.head, "state_ws", [Object.assign({}, tk, { office: "court", status: "new", assignee: "", transferredFrom: "directors" })])).status === 200);
 check("суд бачить передане завдання", (await ws(TJ)).some((w) => w.id === taskId) && !(await ws(T.staff)).some((w) => w.id === taskId));
 
+// ---------- 19. Тижневі звіти: підрозділ → Мінфін → Губернатор ----------
+ip = "10.0.19.1";
+const finLogin = u("fin");
+await register(finLogin);
+{
+  check("посада директора Мінфіну", (await sync(admin, "state_positions", [{ id: "finance-head", office: "finance", title: "Директор департаменту", level: "head", permissions: ["createDocs", "approveDocs", "editOwnDocs"], manager: true, chief: true }])).status === 200);
+  check("кабінет Мінфіну", (await sync(admin, "state_offices", [{ id: "finance", name: "Департамент фінансів", role: "official", canApprove: true }])).status === 200);
+  const all = (await state(admin)).state_users;
+  check("директора Мінфіну призначено", (await sync(admin, "state_users", [Object.assign({}, all.find((x) => x.login === finLogin), { roles: ["official"], office: "finance", positionId: "finance-head" })])).status === 200);
+}
+const TF = await login(finLogin, pwd(finLogin));
+const payId = "payroll-directors-" + RUN;
+const payRow = (amount, extra = {}) => Object.assign({ id: payId, kind: "payroll", office: "directors", period: { key: RUN, label: "тест" },
+  rows: [{ login: people.staff, name: "Staff", points: 7, amount }], status: "draft", summary: "Тиждень" }, extra);
+check("працівник не формує звіт підрозділу", (await sync(T.staff, "state_ws", [payRow(1000)])).status === 403);
+check("премія понад 500 000 не проходить", (await sync(T.head, "state_ws", [payRow(600000)])).status === 403);
+check("керівник формує звіт", (await sync(T.head, "state_ws", [payRow(400000)])).status === 200);
+let pay = (await ws(T.head)).find((w) => w.id === payId);
+check("керівник подає звіт до Мінфіну", (await sync(T.head, "state_ws", [Object.assign({}, pay, { status: "submitted" })])).status === 200);
+check("інший кабінет звіту не бачить", !(await ws(TJ)).some((w) => w.id === payId));
+pay = (await ws(TF)).find((w) => w.id === payId);
+check("Мінфін бачить звіти підрозділів", !!pay && pay.submittedBy === people.head);
+check("підрозділ не підписує сам", (await sync(T.head, "state_ws", [Object.assign({}, pay, { status: "signed" })])).status === 403);
+check("Мінфін не переписує підсумок підрозділу", (await sync(TF, "state_ws", [Object.assign({}, pay, { summary: "інше" })])).status === 403);
+check("Мінфін змінює суму й підписує", (await sync(TF, "state_ws", [Object.assign({}, pay, { status: "signed", rows: [Object.assign({}, pay.rows[0], { amount: 350000 })] })])).status === 200);
+pay = (await ws(admin)).find((w) => w.id === payId);
+check("підпис Мінфіну ставить сервер", pay.signedBy === finLogin && pay.totalAmount === 350000);
+check("Мінфін не погоджує замість Губернатора", (await sync(TF, "state_ws", [Object.assign({}, pay, { status: "approved" })])).status === 403);
+check("Губернатор погоджує", (await sync(admin, "state_ws", [Object.assign({}, pay, { status: "approved" })])).status === 200);
+pay = (await ws(admin)).find((w) => w.id === payId);
+check("Губернатор позначає виплачено", (await sync(admin, "state_ws", [Object.assign({}, pay, { status: "paid" })])).status === 200);
+// Межа премії
+check("працівник не змінює межу премії", (await sync(T.staff, "state_ws", [{ id: "payroll-global", kind: "global", office: "finance", maxBonus: 9999999 }])).status === 403);
+check("Мінфін змінює межу премії", (await sync(TF, "state_ws", [{ id: "payroll-global", kind: "global", office: "finance", maxBonus: 300000, currency: "$" }])).status === 200);
+check("межу бачать усі посадовці", (await ws(TJ)).some((w) => w.id === "payroll-global" && w.maxBonus === 300000));
+check("нова межа діє", (await sync(T.head, "state_ws", [payRow(350000, { id: payId + "b", period: { key: RUN + "b", label: "тест2" } })])).status === 403);
+
 // ---------- 15. Вхід через Discord (підставний Discord на порту 9098; лише якщо Worker запущено з DISCORD_API_BASE) ----------
 if ((await get("/api/health")).body.discord) {
   const mock = await startMockDiscord();

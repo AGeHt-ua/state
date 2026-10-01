@@ -30,15 +30,15 @@ const OFFICE_BY_ROLE = {
 const OFFICE_NAMES = {
   governor: "Кабінет Губернатора",
   directors: "Кабінет Директорів Департаменту",
-  prosecutor: "Кабінет Прокуратури",
-  court: "Кабінет Судової влади"
+  prosecutor: "Офіс Генерального прокурора",
+  court: "Верховний Суд"
 };
 
 const DEFAULT_OFFICES = [
   { id: "governor", name: "Кабінет Губернатора", role: "governor", canApprove: true },
   { id: "directors", name: "Кабінет Директорів Департаменту", role: "official", canApprove: true },
-  { id: "prosecutor", name: "Кабінет Прокуратури", role: "prosecutor", canApprove: true },
-  { id: "court", name: "Кабінет Судової влади", role: "court", canApprove: true }
+  { id: "prosecutor", name: "Офіс Генерального прокурора", role: "prosecutor", canApprove: true },
+  { id: "court", name: "Верховний Суд", role: "court", canApprove: true }
 ];
 
 const PERMISSION_LABELS = {

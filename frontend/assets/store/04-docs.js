@@ -1255,3 +1255,50 @@ function officeRoute(id) {
 function officeUrl(id) {
   return pathTo(officeRoute(id));
 }
+
+/* ---------- Тижневі звіти й премії ----------
+   Підрозділ формує звіт за тиждень (пн–нд) з обліку роботи → Департамент фінансів перевіряє й підписує → Губернатор погоджує → виплата.
+   Межа премії однієї людини за тиждень — wsGet("payroll-global").maxBonus (типово 500 000). */
+const PAYROLL_STATUSES = {
+  draft: "Чернетка",
+  submitted: "На перевірці в Мінфіні",
+  returned: "Повернено на доопрацювання",
+  signed: "Підписано Мінфіном — на погодженні в Губернатора",
+  approved: "Погоджено — до виплати",
+  paid: "Виплачено"
+};
+const PAYROLL_DEFAULT = { maxBonus: 500000, currency: "$" };
+function payrollGlobal() {
+  return Object.assign({}, PAYROLL_DEFAULT, wsGet("payroll-global") || {});
+}
+function payrollStatusClass(s) {
+  return s === "paid" || s === "approved" ? "ok" : s === "returned" ? "dead" : "draft";
+}
+// Тиждень (пн 00:00 — наступний пн 00:00); offset: 0 — цей, -1 — минулий
+function weekRange(offset) {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  from.setDate(from.getDate() - ((from.getDay() + 6) % 7) + 7 * (offset || 0));
+  const to = new Date(from); to.setDate(to.getDate() + 7);
+  const last = new Date(to); last.setDate(last.getDate() - 1);
+  const p = (n) => String(n).padStart(2, "0");
+  const key = from.getFullYear() + "-" + p(from.getMonth() + 1) + "-" + p(from.getDate());
+  return { from: from.toISOString(), to: to.toISOString(), key,
+    label: p(from.getDate()) + "." + p(from.getMonth() + 1) + "–" + p(last.getDate()) + "." + p(last.getMonth() + 1) + "." + last.getFullYear() };
+}
+function allPayrolls() {
+  return loadLS("state_ws", []).filter((w) => w.kind === "payroll")
+    .sort((a, b) => String((b.period && b.period.key) || "").localeCompare(String((a.period && a.period.key) || "")) || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+}
+function payrollId(officeId, week) {
+  return "payroll-" + officeId + "-" + week.key;
+}
+// Рядки звіту з обліку роботи за тиждень; пропонована премія — за формулою кабінету, але не більше межі
+function buildPayrollRows(officeId, week) {
+  const max = payrollGlobal().maxBonus;
+  return workStats(officeId, week.from, week.to).rows.map((r) => ({
+    login: r.login, name: r.name, post: r.post,
+    reports: r.reports, tasks: r.tasks, docs: r.docs, appealReplies: r.appealReplies, caseActions: r.caseActions,
+    points: r.points, amount: Math.min(max, Math.max(0, Math.round(r.amount || 0)))
+  }));
+}

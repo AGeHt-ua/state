@@ -18,20 +18,25 @@ async function api(method, path, body, token) {
 }
 const apiLogin = async (login, password) => (await api("POST", "/api/auth", { login, password })).token;
 
-const people = { head: "uihead" + RUN, staff: "uistaff" + RUN, cit: "uicit" + RUN, mgr: "uimgr" + RUN, judge: "uijudge" + RUN };
+const people = { head: "uihead" + RUN, staff: "uistaff" + RUN, cit: "uicit" + RUN, mgr: "uimgr" + RUN, judge: "uijudge" + RUN, fin: "uifin" + RUN };
 
 test.beforeAll(async () => {
   for (const [k, l] of Object.entries(people)) {
     await api("POST", "/api/register", { login: l, password: pwd(l), name: "UI " + k, accountType: k === "cit" ? "citizen" : "official", statId: "1", contact: "c", post: "x" });
   }
   const admin = await apiLogin("admin", ADMIN_PASSWORD);
+  // Департамент фінансів із посадою директора (керує кабінетом) — якщо його ще немає в базі
+  const st0 = (await api("GET", "/api/state", undefined, admin)).data;
+  if (!st0.state_offices.some((o) => o.id === "finance")) await api("POST", "/api/sync", { ops: [{ coll: "state_offices", upsert: [{ id: "finance", name: "Департамент фінансів", role: "official", canApprove: true }] }] }, admin);
+  if (!st0.state_positions.some((p) => p.id === "finance-head")) await api("POST", "/api/sync", { ops: [{ coll: "state_positions", upsert: [{ id: "finance-head", office: "finance", title: "Директор департаменту", level: "head", permissions: ["createDocs", "approveDocs", "editOwnDocs"], manager: true, chief: true }] }] }, admin);
   const users = (await api("GET", "/api/state", undefined, admin)).data.state_users;
   const role = (l, patch) => Object.assign({}, users.find((x) => x.login === l), { roles: ["official"], office: "directors" }, patch);
   const res = await api("POST", "/api/sync", { ops: [{ coll: "state_users", upsert: [
     role(people.head, { positionId: "director" }),
     role(people.staff, { positionId: "directors-staff" }),
     role(people.mgr, { positionId: "directors-staff", extraPermissions: ["managePeople"] }),
-    role(people.judge, { office: "court", positionId: "court-staff" })
+    role(people.judge, { office: "court", positionId: "court-staff" }),
+    role(people.fin, { office: "finance", positionId: "finance-head" })
   ] }] }, admin);
   expect(res.ok, res.error).toBeTruthy();
 });
@@ -539,4 +544,44 @@ test("меню порталу: «Мій кабінет» першим, адмі�
   await expect(page.locator('#ws-nav a[href="#cases"]')).toBeVisible();
   await page.locator(".ws-me-actions a", { hasText: "Портал" }).click();
   await page.waitForURL((url) => url.pathname.endsWith("/") && !url.pathname.includes("office"));
+});
+
+test("премії: звіт підрозділу → Мінфін підписує → Губернатор погоджує й виплачує → працівник бачить премію", async ({ browser }) => {
+  const open = async (login, password) => { const ctx = await browser.newContext(); const p = await ctx.newPage(); p.on("dialog", (d) => d.accept()); await uiLogin(p, login, password); return { ctx, p }; };
+  // 1. Керівник підрозділу формує й подає тижневий звіт
+  const head = await open(people.head, pwd(people.head));
+  await head.p.goto("/office/directors/#work");
+  await head.p.locator("[data-new-payroll]").first().click();
+  await expect(head.p.locator("#payroll-view")).toBeVisible();
+  await head.p.locator('.payroll-amount[data-amount="' + people.staff + '"]').fill("250000");
+  await head.p.locator("#payroll-summary").fill("Тиждень UI " + RUN);
+  await head.p.locator('[data-payroll-act="submit"]').click();
+  await expect(head.p.locator("#payroll-view .badge").first()).toContainText("На перевірці в Мінфіні");
+  await head.ctx.close();
+
+  // 2. Директор Мінфіну зменшує суму й підписує
+  const fin = await open(people.fin, pwd(people.fin));
+  await fin.p.goto("/office/finance/#payrolls");
+  await fin.p.locator(".ws-item", { hasText: "Кабінет Директорів Департаменту" }).first().click();
+  await expect(fin.p.locator("#payroll-view")).toContainText("Тиждень UI " + RUN);
+  await fin.p.locator('.payroll-amount[data-amount="' + people.staff + '"]').fill("200000");
+  await fin.p.locator('[data-payroll-act="sign"]').click();
+  await expect(fin.p.locator("#payroll-view .badge").first()).toContainText("Підписано Мінфіном");
+  await fin.ctx.close();
+
+  // 3. Губернатор погоджує й позначає виплаченим
+  const gov = await open("admin", ADMIN_PASSWORD);
+  await gov.p.goto("/office/governor/#payrolls");
+  await gov.p.locator(".ws-item", { hasText: "Кабінет Директорів Департаменту" }).first().click();
+  await gov.p.locator('[data-payroll-act="approve"]').click();
+  await expect(gov.p.locator("#payroll-view .badge").first()).toContainText("Погоджено");
+  await gov.p.locator('[data-payroll-act="paid"]').click();
+  await expect(gov.p.locator("#payroll-view .badge").first()).toContainText("Виплачено");
+  await gov.ctx.close();
+
+  // 4. Працівник бачить свою премію
+  const staff = await open(people.staff, pwd(people.staff));
+  await staff.p.goto("/office/directors/#work");
+  await expect(staff.p.locator(".card", { hasText: "Мої премії" })).toContainText(/200\s000/);
+  await staff.ctx.close();
 });

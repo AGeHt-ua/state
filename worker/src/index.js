@@ -771,6 +771,14 @@ async function handleSync(request, env, ctx) {
         const o = partialOld[u.id] || {};
         u.row.events = appendStamped(o.events, u.row.events, actor, nowIso).slice(-200);
         if (!partialOld[u.id]) { u.row.createdAt = nowIso; u.row.createdBy = actor.login; }
+        if (u.row.kind === "payroll" && u.row.status !== o.status) {
+          const name = actor.profile.name || actor.login;
+          if (u.row.status === "submitted" && o.status !== "signed") { u.row.submittedBy = actor.login; u.row.submittedByName = name; u.row.submittedAt = nowIso; }
+          if (u.row.status === "signed") { u.row.signedBy = actor.login; u.row.signedByName = name; u.row.signedAt = nowIso; }
+          if (u.row.status === "approved") { u.row.approvedBy = actor.login; u.row.approvedByName = name; u.row.approvedAt = nowIso; }
+          if (u.row.status === "paid") { u.row.paidBy = actor.login; u.row.paidByName = name; u.row.paidAt = nowIso; }
+        }
+        if (u.row.kind === "payroll") u.row.totalAmount = (u.row.rows || []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
         await verifyAttachments(env, actor, "ws:" + u.id, u.row.events, (o.events || []).length);
       }
       if (coll === "state_cases") {
@@ -861,7 +869,44 @@ async function checkWrite(env, actor, coll, upserts, removes) {
    Працівник кабінету подає й править свої рапорти, поки їх не розглянули; виконує призначені йому завдання.
    Керівник кабінету (посада рівня «head» або позначена manager — голова й заступники) та повні адміністратори
    розглядають рапорти, ставлять і приймають завдання, передають їх в інший кабінет, затверджують премії. */
-const WS_KINDS = ["report", "task", "bonus", "settings"];
+const WS_KINDS = ["report", "task", "bonus", "settings", "payroll", "global"];
+/* Тижневі звіти й премії (kind: "payroll"): підрозділ → Департамент фінансів → Кабінет Губернатора → виплата.
+   draft/returned (підрозділ править) → submitted (Мінфін перевіряє, може змінити суми) → signed (підписано Мінфіном)
+   → approved (погоджено Губернатором) → paid (виплачено в грі). Мінфін може повернути підрозділу (returned),
+   Губернатор — Мінфіну (submitted). Премія однієї людини за тиждень — не більше межі з запису "payroll-global". */
+const PAYROLL_FINANCE = "finance";
+const PAYROLL_GOVERNOR = "governor";
+const PAYROLL_DEFAULT_MAX = 500000;
+async function payrollMax(env) {
+  const row = (await readRows(env, "state_ws", ["payroll-global"]))["payroll-global"];
+  const n = row && Number(row.maxBonus);
+  return n > 0 ? n : PAYROLL_DEFAULT_MAX;
+}
+async function checkPayroll(env, actor, old, row, same) {
+  const max = await payrollMax(env);
+  const rows = Array.isArray(row.rows) ? row.rows : [];
+  if (rows.length > 200) return "Забагато рядків у звіті.";
+  for (const r of rows) {
+    const a = Number(r && r.amount);
+    if (!Number.isFinite(a) || a < 0 || Math.floor(a) !== a) return "Сума премії має бути цілим невід'ємним числом.";
+    if (a > max) return "Премія однієї людини за тиждень — не більше " + max.toLocaleString("uk-UA") + ".";
+  }
+  if (actor.full) return "";
+  const noRights = "Недостатньо прав для дії зі звітом.";
+  const unit = await wsManager(env, actor, row.office);
+  const fin = await wsManager(env, actor, PAYROLL_FINANCE);
+  const gov = await wsManager(env, actor, PAYROLL_GOVERNOR);
+  if (!old) return unit && ["draft", "submitted"].includes(row.status) ? "" : noRights;
+  if (old.office !== row.office || JSON.stringify(old.period || null) !== JSON.stringify(row.period || null)) return noRights;
+  const st = old.status;
+  if (unit && ["draft", "returned"].includes(st) && ["draft", "submitted"].includes(row.status)) return "";
+  if (fin && st === "submitted" && ["submitted", "signed", "returned"].includes(row.status) &&
+      same(old, row, ["rows", "status", "financeNote", "returnNote", "totalAmount", "signedBy", "signedAt", "events", "updatedAt"])) return "";
+  if (gov && st === "signed" && ["approved", "submitted"].includes(row.status) &&
+      same(old, row, ["status", "govNote", "approvedBy", "approvedAt", "events", "updatedAt"])) return "";
+  if (gov && st === "approved" && row.status === "paid" && same(old, row, ["status", "paidBy", "paidAt", "events", "updatedAt"])) return "";
+  return noRights;
+}
 function wsMember(actor, office) {
   return !!actor && (actor.full || (actor.staff && actor.profile.office === office));
 }
@@ -890,6 +935,18 @@ async function checkWsWrite(env, actor, upserts, removes) {
     if (JSON.stringify(row).length > MAX_APPEAL_ROW) return "Запис завеликий.";
     const old = existing[id];
     if (old && old.kind !== row.kind) return noRights;
+    if (row.kind === "payroll") {
+      const err = await checkPayroll(env, actor, old, row, same);
+      if (err) return err;
+      continue;
+    }
+    if (row.kind === "global") {
+      // Межа премії й валюта — Губернатор, директор Мінфіну або повна адміністрація
+      if (id !== "payroll-global" || !(actor.full || (await wsManager(env, actor, PAYROLL_GOVERNOR)) || (await wsManager(env, actor, PAYROLL_FINANCE)))) return noRights;
+      const max = Number(row.maxBonus);
+      if (!Number.isFinite(max) || max <= 0 || max > 1e9) return "Невірна межа премії.";
+      continue;
+    }
     // Передача завдання в інший кабінет — керівник кабінету, звідки передають
     if (old && old.office !== row.office) {
       if (row.kind !== "task" || !(await wsManager(env, actor, old.office))) return noRights;
@@ -1443,7 +1500,9 @@ async function readCollections(env, colls, actor, opts = {}) {
       AND updated_at > ?5
       AND (coll != 'state_appeals' OR ?1 = 1 OR json_extract(data, '$.ownerLogin') = ?2)
       AND (coll != 'state_profile_requests' OR ?3 = 1 OR json_extract(data, '$.login') = ?2)
-      AND (coll != 'state_ws' OR ?7 = 1 OR json_extract(data, '$.office') = ?8)
+      AND (coll != 'state_ws' OR ?7 = 1 OR json_extract(data, '$.office') = ?8
+        OR (json_extract(data, '$.kind') = 'payroll' AND ?8 IN ('finance', 'governor'))
+        OR (json_extract(data, '$.kind') = 'global' AND ?8 != '\u0001'))
       AND (coll != 'state_cases' OR ?6 = 1 OR json_extract(data, '$.plaintiff.login') = ?2 OR json_extract(data, '$.defendant.login') = ?2 OR json_extract(data, '$.createdBy') = ?2)
       AND (coll != 'state_docs' OR ?1 = 1
         OR json_extract(data, '$.status') IN ('ok', 'dead')
@@ -1484,6 +1543,34 @@ async function sideEffects(env, actor, coll, upserts, removes, now, notices = []
   const out = [];
   const ids = upserts.map((u) => u.id).concat(removes);
   if (!ids.length) return out;
+  if (coll === "state_ws") {
+    const payrolls = upserts.filter((u) => u.row.kind === "payroll");
+    if (payrolls.length) {
+      const before = await readRows(env, "state_ws", payrolls.map((u) => u.id));
+      const names = await readRows(env, "state_offices", payrolls.map((u) => u.row.office));
+      const link = (office) => env.FRONTEND_URL ? "\n" + env.FRONTEND_URL + "office/" + office + "/" : "";
+      const money = (n) => (Number(n) || 0).toLocaleString("uk-UA") + " $";
+      for (const { id, row } of payrolls) {
+        const o = before[id] || {};
+        if (row.status === o.status) continue;
+        const unit = (names[row.office] && names[row.office].name) || row.office;
+        const label = (row.period && row.period.label) || "";
+        const total = (row.rows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const text = {
+          submitted: o.status === "signed" ? "↩️ Губернатор повернув Мінфіну звіт «" + unit + "» (" + label + ")" : "📊 Звіт «" + unit + "» за " + label + " подано до Департаменту фінансів: " + money(total) + link(PAYROLL_FINANCE),
+          returned: "↩️ Мінфін повернув звіт «" + unit + "» (" + label + ") на доопрацювання" + link(row.office),
+          signed: "✍️ Мінфін підписав звіт «" + unit + "» (" + label + ") і передав Губернатору: " + money(total) + link(PAYROLL_GOVERNOR),
+          approved: "✅ Губернатор погодив премії «" + unit + "» за " + label + ": " + money(total),
+          paid: "💰 Премії «" + unit + "» за " + label + " виплачено: " + money(total)
+        }[row.status];
+        if (text) notices.push(text);
+        if (["submitted", "signed", "approved", "paid", "returned"].includes(row.status)) {
+          out.push(auditStatement(env, actor, "Звіт підрозділу: " + ({ submitted: "подано", returned: "повернено", signed: "підписано Мінфіном", approved: "погоджено Губернатором", paid: "виплачено" })[row.status], unit + " · " + label, money(total)));
+        }
+      }
+    }
+    return out;
+  }
   if (coll === "state_cases") {
     const before = await readRows(env, "state_cases", upserts.map((u) => u.id));
     const link = (id) => env.FRONTEND_URL ? "\n" + env.FRONTEND_URL + "cabinet/court/#" + encodeURIComponent(id) : "";
