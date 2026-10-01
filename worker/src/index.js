@@ -403,7 +403,8 @@ async function handleDiscordAvatar(request, env) {
   if (!acc) return json({ error: "Discord не прив'язано. Прив'яжіть його в розділі «Discord» нижче." }, 404);
   const row = await env.DB.prepare("SELECT data FROM rows WHERE coll = 'user_discord' AND id = ?").bind(login).first();
   const hash = row ? JSON.parse(row.data).avatar : "";
-  if (!row) return json({ error: "Аватар ще не отримано: увійдіть через Discord один раз (або прив'яжіть Discord заново)." }, 404);
+  // Discord прив'язано до появи цієї функції — хеша аватара ще немає: потрібне разове підтвердження в Discord
+  if (!row) return json({ error: "Потрібно один раз підтвердити Discord, щоб отримати аватар.", code: "refresh" }, 404);
   // DISCORD_CDN_BASE — лише для автотестів (підставний Discord)
   const cdn = (env.DISCORD_CDN_BASE || "https://cdn.discordapp.com").replace(/\/+$/, "");
   const url = hash

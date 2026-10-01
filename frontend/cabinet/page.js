@@ -101,6 +101,15 @@ whenStateReady(async function () {
       photoMsg.textContent = "Отримуємо аватар з Discord…";
       const res = await fetchDiscordAvatar();
       btn.disabled = false;
+      if (!res.ok && res.code === "refresh") {
+        // Аватар ще не відомий серверу: один раз підтверджуємо Discord і повертаємось сюди — аватар підставиться сам
+        if (!confirm("Discord попросить один раз підтвердити доступ — після цього аватар підставиться автоматично. Продовжити?")) { photoMsg.textContent = ""; return; }
+        const link = discordLinkCode();
+        if (!link.ok) { photoMsg.style.color = "#8a2b2b"; photoMsg.textContent = link.error; return; }
+        try { localStorage.setItem("state_avatar_after_link", "1"); } catch { /* приватний режим */ }
+        location.href = discordStartUrl("link", link.code);
+        return;
+      }
       if (!res.ok) { photoMsg.style.color = "#8a2b2b"; photoMsg.textContent = res.error; return; }
       shrinkImage(res.blob, 256, (url) => photoChosen(url, "Аватар з Discord підставлено."));
     });
@@ -190,7 +199,14 @@ whenStateReady(async function () {
     }
     // Повернення з Discord після прив'язки
     const back = new URLSearchParams(location.hash.slice(1));
-    if (back.has("discord") || back.has("discord_error")) {
+    let avatarAfter = false;
+    try { avatarAfter = localStorage.getItem("state_avatar_after_link") === "1"; localStorage.removeItem("state_avatar_after_link"); } catch { /* приватний режим */ }
+    if (avatarAfter && back.has("discord")) {
+      // Повернулись із підтвердження заради аватара — одразу підставляємо його у вікні профілю
+      history.replaceState(null, "", location.pathname + location.search);
+      document.getElementById("btn-edit-profile").click();
+      document.getElementById("profile-photo-discord").click();
+    } else if (back.has("discord") || back.has("discord_error")) {
       history.replaceState(null, "", location.pathname + location.search);
       document.getElementById("btn-edit-profile").click();
       dDetails.hidden = false;

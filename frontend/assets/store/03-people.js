@@ -172,7 +172,7 @@ async function fetchDiscordAvatar() {
     const r = await fetch(REMOTE.url + "/api/discord/avatar", { headers: { Authorization: "Bearer " + apiToken() } });
     if (!r.ok) {
       const data = await r.json().catch(() => ({}));
-      return { ok: false, error: data.error || "Не вдалося отримати аватар з Discord." };
+      return { ok: false, error: data.error || "Не вдалося отримати аватар з Discord.", code: data.code || "" };
     }
     return { ok: true, blob: await r.blob() };
   } catch (err) {

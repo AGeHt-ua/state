@@ -3082,6 +3082,7 @@ whenStateReady(function () {
       const mod = e.ctrlKey || e.metaKey;
       if (e.key === 'Escape') { closeMenu(); ['tplModal', 'apModal', 'openModal', 'previewModal', 'helpModal', 'mkModal'].forEach((id) => { $(id).hidden = true; }); if (!$('fldPop').hidden) closeFieldPop(); if (!$('findBox').hidden) closeFind(); }
       if (e.key === 'F1') { e.preventDefault(); $('helpModal').hidden = false; return; }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'M' || e.key === 'm' || e.code === 'KeyM')) { e.preventDefault(); openMarkup(); return; }
       if (!mod) return;
       const k = e.key.toLowerCase();
       if (k === 's') { e.preventDefault(); persist(true); }

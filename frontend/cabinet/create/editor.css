@@ -657,3 +657,7 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 :root[data-theme="dark"] .mk-help-table td { border-color: #2e3a4f; }
 @media (max-width: 760px) { .mk-grid { grid-template-columns: 1fr; } #mkSrc { min-height: 220px; } }
 .mk-preview .fld.empty { display: inline; color: #7a869a; font-style: italic; }
+
+/* Кнопка «</> Код» на верхній панелі — швидкий доступ до вставки розмітки */
+.tb-code { margin-left: 6px; height: 26px; padding: 0 10px; border: 1px solid rgba(255,255,255,.35); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font: 600 12px Consolas, "Courier New", monospace; cursor: pointer; white-space: nowrap; }
+.tb-code:hover { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.6); }

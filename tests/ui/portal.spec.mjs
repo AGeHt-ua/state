@@ -325,3 +325,36 @@ test("звернення: громадянин подає, апарат відп
   await expect(cit.locator("#appeal-detail .badge")).toContainText("Відповідь надана");
   await citCtx.close();
 });
+
+test("редактор: кнопка «</> Код» і Ctrl+Shift+M відкривають вставку розмітки", async ({ page }) => {
+  await uiLogin(page, people.head, pwd(people.head));
+  await page.goto("/cabinet/create/");
+  await page.locator(".tb-code").click();
+  await expect(page.locator("#mkModal")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#mkModal")).toBeHidden();
+  await page.locator("#editor").click();
+  await page.keyboard.press("Control+Shift+M");
+  await expect(page.locator("#mkModal")).toBeVisible();
+});
+
+test("профіль: аватар з Discord підставляється в попередній перегляд", async ({ page }) => {
+  const mock = await startMockDiscord();
+  try {
+    mock.state.nextId = "77" + Date.now();
+    page.on("dialog", (d) => d.accept());
+    await uiLogin(page, people.mgr, pwd(people.mgr));
+    await page.locator("#btn-edit-profile").click();
+    await page.locator("#discord-details summary").click();
+    await page.locator("#discord-link").click();
+    await page.waitForURL(/\/cabinet\/$/);
+    await page.locator("#profile-modal .modal-close").click();
+    await page.locator("#btn-edit-profile").click();
+    await expect(page.locator("#profile-photo-discord")).toBeVisible();
+    await page.locator("#profile-photo-discord").click();
+    await expect(page.locator("#profile-photo-preview img")).toHaveCount(1);
+    await expect(page.locator("#profile-photo-msg")).toContainText("Аватар з Discord");
+  } finally {
+    await mock.close();
+  }
+});
