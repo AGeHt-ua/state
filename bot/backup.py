@@ -36,7 +36,7 @@ async def make_backup(reason: str) -> tuple[str, int]:
         lines = [style.kv("АРХІВ", gz.name, "white", True), style.kv("ПІДСТАВА", reason, "white"),
                  style.kv("РОЗМІР", f"{size / 1024:.0f} КБ", "cyan"), style.kv("ОСОБОВИЙ СКЛАД", f"{users['n']} осіб", "white"),
                  style.rule(),
-                 style.kv("СТАН", "ЗБЕРЕЖЕНО В DISCORD І НА ХОСТИНГУ" if fits else "ЛИШЕ НА ХОСТИНГУ (завеликий)", "green" if fits else "gold", True)]
+                 style.kv("СТАН", "ЗБЕРЕЖЕНО: DISCORD + ХОСТИНГ" if fits else "ЛИШЕ ХОСТИНГ (завеликий)", "green" if fits else "gold", True)]
         e = style.document("РЕЗЕРВНА КОПІЯ БАЗИ ЄІС «СОВА»", 0x5FB37A if fits else 0xD9A23D, desc=style.block(*lines),
                            footer=f"Зберігається {config.BACKUP_KEEP_DAYS} діб · відновлення: /сова відновити")
         if fits:
