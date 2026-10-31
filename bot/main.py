@@ -36,9 +36,10 @@ class Sova(commands.Bot):
         asyncio.create_task(tunnel.run())
 
     async def on_ready(self):
-        g = self.get_guild(config.GUILD_ID)
+        g = core.guild()
         if not g:
-            log.error("Бот не бачить сервер GUILD_ID=%s. Запросіть бота на сервер СБУ.", config.GUILD_ID)
+            log.error("Не визначено сервер СБУ (бот на %s серверах, GUILD_ID=%s). Запросіть бота на сервер СБУ або вкажіть GUILD_ID.",
+                      len(self.guilds), config.GUILD_ID)
             return
         try:
             await core.ensure_channels(g)

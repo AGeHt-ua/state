@@ -131,7 +131,12 @@ _roles_cache: dict[str, tuple[float, set[int] | None]] = {}
 
 
 def guild() -> discord.Guild | None:
-    return bot.get_guild(config.GUILD_ID) if bot else None
+    """Сервер СБУ: з GUILD_ID, а якщо його не задано — єдиний сервер, де є бот."""
+    if not bot:
+        return None
+    if config.GUILD_ID:
+        return bot.get_guild(config.GUILD_ID)
+    return bot.guilds[0] if len(bot.guilds) == 1 else None
 
 
 async def member_of(discord_id: str | int) -> discord.Member | None:
