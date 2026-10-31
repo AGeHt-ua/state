@@ -44,6 +44,7 @@ CATEGORY_NAME = env("CATEGORY_NAME", "СОВА · кабінет")
 # rap:promo, rap:vac, rap:dismiss, rap:transfer (окремі канали для типів рапортів), audit, files, backups.
 CHANNELS = {
     "rap:promo": 1563888686800568361,   # Рапорт на підвищення
+    "rap:dismiss": 1563867645193887744, # Рапорт на звільнення
     "audit": 1564895460869677097,       # Кадровий аудит
 }
 try:
