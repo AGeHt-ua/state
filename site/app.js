@@ -309,7 +309,7 @@ async function vAudit() {
 }
 
 /* ---------------- кадри: анкети кандидатів (ВВБ → ВКПП) і заявки на допуск ---------------- */
-const CST = { vvb: ["chip wait", "Перевірка ВВБ"], vkpp: ["chip wait", "Очікує ВКПП"], ok: ["chip ok", "Прийнято"], rej: ["chip bad", "Відмовлено"] };
+const CST = { vvb: ["chip wait", "Перевірка ВВБ"], vkpp: ["chip wait", "Очікує ВКПП"], ok: ["chip ok", "Погоджено · зв'язатись"], rej: ["chip bad", "Відмовлено"] };
 const candChip = (c) => `<span class="${CST[c.status][0]}">${CST[c.status][1]}</span>`;
 const docNo = (p, n) => `${p}-${String(n).padStart(4, "0")}`;
 
@@ -337,9 +337,9 @@ function candCard(c, r) {
     <dl class="kv">${c.extra ? candExtra(c.extra) : ""}<dt>Вік / онлайн</dt><dd>${esc(c.age || "—")}${c.extra && c.extra.online ? " · " + esc(c.extra.online) : ""}</dd><dt>Досвід</dt><dd>${esc(c.exp || "—")}</dd>
       <dt>Мотивація</dt><dd>${esc(c.motive || "—")}</dd><dt>Подано</dt><dd class="num">${fmtDT(c.t)}</dd>
       ${c.vvb_t ? `<dt>ВВБ</dt><dd>${c.status === "rej" && !c.vkpp_t ? "відмовлено" : "погоджено"} · ${esc(c.vvbName || "—")} · ${fmtDT(c.vvb_t)}</dd>` : ""}
-      ${c.vkpp_t ? `<dt>ВКПП</dt><dd>${c.status === "ok" ? "прийнято" : "відмовлено"} · ${esc(c.vkppName || "—")} · ${fmtDT(c.vkpp_t)}</dd>` : ""}
+      ${c.vkpp_t ? `<dt>Discord</dt><dd class="mono">${esc(c.discord_name || "—")}</dd><dt>ВКПП</dt><dd>${c.status === "ok" ? "погоджено" : "відмовлено"} · ${esc(c.vkppName || "—")} · ${fmtDT(c.vkpp_t)}</dd>` : ""}
       ${c.note ? `<dt>Причина</dt><dd>${esc(c.note)}</dd>` : ""}</dl>
-    ${mine ? `<div class="acts"><button class="btn ok" data-a="cand" data-id="${c.id}" data-d="ok">${c.status === "vvb" ? "Погодити й передати до ВКПП" : "Прийняти на службу"}</button>
+    ${mine ? `<div class="acts"><button class="btn ok" data-a="cand" data-id="${c.id}" data-d="ok">${c.status === "vvb" ? "Погодити й передати до ВКПП" : "Погодити зарахування"}</button>
       <button class="btn bad" data-a="cand" data-id="${c.id}" data-d="rej">Відмовити</button></div>` : ""}</article>`;
 }
 
@@ -348,8 +348,8 @@ async function vHr() {
   const r = d.rights;
   const t = tab("hr", "cand");
   const head = tabsBar("hr", [["cand", "Анкети кандидатів", d.cand.length], ...(r.vkpp ? [["access", "Заявки на допуск", d.access.length]] : []), ["done", "Архів рішень"]], "cand");
-  const stage = r.vvb && r.vkpp ? "ВВБ перевіряє анкети, ВКПП приймає на службу." : r.vvb ? "Ви перевіряєте анкети як ВВБ: погоджена анкета йде до ВКПП." : "Ви ухвалюєте рішення про прийом як ВКПП.";
-  const note = `<p class="note">${stage} Усі рішення бот дублює в Discord: картки оновлюються, кандидат отримує повідомлення в особисті.</p>`;
+  const stage = r.vvb && r.vkpp ? "ВВБ перевіряє анкети, ВКПП приймає на службу." : r.vvb ? "Ви перевіряєте анкети як ВВБ: погоджена анкета йде до ВКПП." : "Ви погоджуєте зарахування як ВКПП: після погодження зв'яжіться з кандидатом у Discord і запросіть на сервер, там він оформить допуск і отримає «Стажера».";
+  const note = `<p class="note">${stage} Усі рішення бот дублює в Discord: картки в каналах оновлюються.</p>`;
   if (t === "access") {
     if (!d.access.length) return head + note + '<div class="empty">Немає заявок на допуск.</div>';
     return head + note + `<div class="card"><div class="tbl-wrap"><table class="t"><thead><tr><th>Заявка</th><th>Ім'я</th><th>Static ID</th><th>Подано</th><th class="r">Рішення</th></tr></thead><tbody>

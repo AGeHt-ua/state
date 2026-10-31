@@ -695,6 +695,7 @@ async def request_access(member: discord.Member, sid: int, name: str) -> int:
         raise Fail("Заявку вже подано й вона очікує підтвердження. Код доступу надійде в особисті повідомлення.")
     rid = await db.run("INSERT INTO access_requests(discord_id,sid,name,t) VALUES(?,?,?,?)", str(member.id), sid, name[:60], now_ms())
     req = await db.one("SELECT * FROM access_requests WHERE id=?", rid)
+    req["cand_id"] = await approved_candidate(sid)
     ch = await channel("access")
     if ch:
         msg = await ch.send(embed=access_embed(req, member), view=access_view(rid))
@@ -702,6 +703,12 @@ async def request_access(member: discord.Member, sid: int, name: str) -> int:
     else:
         log.warning("Канал заявок на допуск не знайдено — заявку №%s збережено без картки", rid)
     return rid
+
+
+async def approved_candidate(sid: int) -> int | None:
+    """Номер анкети кандидата з цим Static ID, яку погодили ВВБ і ВКПП (якщо є)."""
+    row = await db.one("SELECT id FROM candidates WHERE sid=? AND status='ok' ORDER BY id DESC", sid)
+    return row["id"] if row else None
 
 
 def can_approve_access(member: discord.Member) -> bool:
@@ -724,6 +731,8 @@ def access_embed(req: dict, member: discord.Member | None) -> discord.Embed:
                               "green" if a["ok"] else "gray"))
         age = (discord.utils.utcnow() - member.created_at).days
         lines.append(style.kv("АКАУНТ DISCORD", f"{age} дн." + ("  ⚠ новий" if age < 14 else ""), "red" if age < 14 else "white"))
+    if req.get("cand_id"):
+        lines.append(style.kv("АНКЕТА", f"АНК-{req['cand_id']:04d} · погоджено ВВБ і ВКПП", "green", True))
     lines += [style.kv("ПОДАНО", style.when(req["t"]), "gray"), style.rule()]
     if req["status"] == "wait":
         lines.append(style.kv("РЕЗОЛЮЦІЯ", "очікує рішення ВКПП", "gold", True))
@@ -775,14 +784,19 @@ async def decide_access(req_id: int, reviewer: discord.Member, decision: str) ->
         if not member:
             decision, note = "rej", "Людина вже не на сервері."
         else:
+            # Кандидат, чию анкету погодили ВВБ і ВКПП, при оформленні допуску отримує ще й звання «Стажер»
+            cand = await approved_candidate(req["sid"])
             try:
-                _, pw = await register(member, req["sid"], req["name"], reviewer)
+                _, pw = await register(member, req["sid"], req["name"], reviewer, extra_roles=(RANK_ROLES[0],) if cand else ())
+                if cand:
+                    await db.run("UPDATE candidates SET discord_id=? WHERE id=?", str(member.id), cand)
             except Fail as e:
                 decision, note = "rej", str(e)
     await db.run("UPDATE access_requests SET status=?, reviewer=?, reviewed=? WHERE id=?",
                  "ok" if decision == "ok" else "rej", str(reviewer.id), now_ms(), req_id)
     req = await db.one("SELECT * FROM access_requests WHERE id=?", req_id)
     req["reviewer_name"] = reviewer.display_name
+    req["cand_id"] = await approved_candidate(req["sid"])
     if req["ch_id"] and req["msg_id"]:
         try:
             ch = bot.get_channel(int(req["ch_id"])) or await bot.fetch_channel(int(req["ch_id"]))

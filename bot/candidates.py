@@ -17,7 +17,7 @@ log = logging.getLogger("sova.cand")
 STAGE = {  # статус: (напис, колір ANSI, колір embed)
     "vvb": ("ПЕРЕВІРКА ВВБ", "gold", 0xD9A23D),
     "vkpp": ("ПОГОДЖЕНО ВВБ · ОЧІКУЄ ВКПП", "cyan", 0x6F9FD6),
-    "ok": ("ПРИЙНЯТО НА СЛУЖБУ", "green", 0x5FB37A),
+    "ok": ("ПОГОДЖЕНО ВКПП · ЗАПРОСИТИ НА СЕРВЕР", "green", 0x5FB37A),
     "rej": ("ВІДМОВЛЕНО", "red", 0xD4605A),
 }
 
@@ -111,7 +111,7 @@ async def submit_form(username: str, b: dict, photo: tuple[bytes, str] | None) -
         raise Fail("Розпишіть мотивацію детальніше (щонайменше 20 символів).")
     extra["photo_name"] = f"photo.{ext}"
     fid = await core.store_file(data, extra["photo_name"], f"image/{'jpeg' if ext == 'jpg' else ext}", 0)
-    return await submit(await find_member(username), int(sid), name, str(b.get("age") or "").strip(), str(b.get("exp") or "").strip(),
+    return await submit(None, int(sid), name, str(b.get("age") or "").strip(), str(b.get("exp") or "").strip(),
                         motive, username=username, extra=extra, photo=fid)
 
 
@@ -179,14 +179,14 @@ async def card(c: dict, member: discord.Member | None) -> discord.Embed:
         lines.append(style.kv("ВВБ", f"{'погоджено' if c['status'] != 'rej' or c['vkpp_t'] else 'відмовлено'} · {await _name(c['vvb_by'])}",
                               "green" if c["status"] != "rej" or c["vkpp_t"] else "red"))
     if c["vkpp_t"]:
-        lines.append(style.kv("ВКПП", f"{'прийнято' if c['status'] == 'ok' else 'відмовлено'} · {await _name(c['vkpp_by'])}",
+        lines.append(style.kv("ВКПП", f"{'погоджено' if c['status'] == 'ok' else 'відмовлено'} · {await _name(c['vkpp_by'])}",
                               "green" if c["status"] == "ok" else "red"))
     lines.append(style.kv("СТАН", label, color, True))
     if c["note"]:
         lines += [style.kv("ПРИЧИНА" if i == 0 else "", p, "white") for i, p in enumerate(style.wrap(c["note"], 28))]
     footer = {"vvb": "Перевірка Відділом внутрішньої безпеки", "vkpp": "Рішення Відділу кадрів та підготовки персоналу"}.get(c["status"], "Розгляд завершено")
-    who = f"<@{c['discord_id']}>" if c["discord_id"] else f"@{c.get('discord_name') or '?'} · ⚠ не знайдено на сервері"
-    e = style.document("АНКЕТА КАНДИДАТА НА СЛУЖБУ", ecolor, desc=f"Discord: {who}\n" + style.block(*lines),
+    who = f"<@{c['discord_id']}>" if c["discord_id"] else f"`{c.get('discord_name') or '—'}`"
+    e = style.document("АНКЕТА КАНДИДАТА НА СЛУЖБУ", ecolor, desc=f"Discord для зв'язку: {who}\n" + style.block(*lines),
                        no=style.doc_no("АНК", c["id"]), footer=footer)
     if x:  # довгі тексти — окремими полями, щоб не перевищити ліміт опису Discord
         for title, val in (("⚖️ Судимості та адмінпорушення", "\n".join(v for v in (x.get("record_note"), x.get("admin_note")) if v)),
@@ -265,41 +265,27 @@ async def decide(cid: int, reviewer: discord.Member, decision: str, note: str = 
         raise Fail("Перевіряти анкети кандидатів може лише ВВБ або керівництво СБУ.")
     if stage == "vkpp" and not core.can_approve_access(reviewer):
         raise Fail("Приймати кандидатів на службу може лише ВКПП або керівництво СБУ.")
-    member = await core.member_of(c["discord_id"]) if c["discord_id"] else None
-    if not member and c.get("discord_name"):
-        member = await find_member(c["discord_name"])
-        if member:
-            await db.run("UPDATE candidates SET discord_id=? WHERE id=?", str(member.id), cid)
+    # Анкета не прив'язана до Discord-сервера: кандидату ніхто нічого не надсилає.
+    # Після погодження ВКПП саме зв'язується з кандидатом і запрошує на сервер, а там він оформлює допуск («Отримати допуск»).
     t = now_ms()
     col = "vvb" if stage == "vvb" else "vkpp"
-    pw = None
-    if decision == "ok" and not member and stage == "vkpp":
-        raise Fail("Кандидата немає на Discord-сервері СБУ, тож видати ролі неможливо. Нехай приєднається до сервера, потім спробуйте ще раз.")
-    if decision == "ok" and stage == "vkpp":
-        try:
-            _, pw = await core.register(member, c["sid"], c["name"], reviewer, extra_roles=(RANK_ROLES[0],))
-        except Fail as e:
-            decision, note = "rej", str(e)
     new = ("vkpp" if stage == "vvb" else "ok") if decision == "ok" else "rej"
     await db.run(f"UPDATE candidates SET status=?, {col}_by=?, {col}_t=?, note=? WHERE id=?", new, str(reviewer.id), t, note[:300] or None, cid)
     c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
-    await _refresh(c, member)
+    await _refresh(c, None)
 
     if new == "vkpp":
         ch = await core.channel("access")
         if ch:
             f = await photo_file(c)
-            msg = await ch.send(embed=await card(c, member), view=view(cid, "vkpp"), **({"file": f} if f else {}))
+            msg = await ch.send(embed=await card(c, None), view=view(cid, "vkpp"), **({"file": f} if f else {}))
             await db.run("UPDATE candidates SET vkpp_ch=?, vkpp_msg=? WHERE id=?", str(ch.id), str(msg.id), cid)
-        await _dm(member, embed=_notice(c, "Анкету перевірено Відділом внутрішньої безпеки та передано до ВКПП. Очікуйте рішення про прийом."))
         return "Анкету погоджено й передано до ВКПП."
     if new == "ok":
-        sent = await _dm(member, embed=core.credentials_embed(c["sid"], pw, c["name"], title="ВАС ПРИЙНЯТО НА СЛУЖБУ ДО СБУ"),
-                         view=style.site_view())
-        return "Кандидата прийнято: видано ролі «СБУ» і «Стажер», допуск оформлено" + (", код надіслано в особисті." if sent else
-               ", але особисті закриті — нехай натисне «Відновити код доступу».")
+        await db.audit(0, "Кандидата допущено до зарахування", c["sid"], f"{c['name']} · АНК-{cid:04d} · ВКПП: {reviewer.display_name}")
+        return (f"Зарахування погоджено. Зв'яжіться з кандидатом (Discord: {c.get('discord_name') or '—'}) і запросіть на сервер. "
+                f"Коли він натисне «Отримати допуск» зі Static ID №{c['sid']}, бот видасть і роль «Стажер».")
     await db.audit(0, "Відмова кандидату", c["sid"], f"{'ВВБ' if stage == 'vvb' else 'ВКПП'} · {reviewer.display_name}" + (f" · {note}" if note else ""))
-    await _dm(member, embed=core.rejection_embed(c["name"], note))
     return "Кандидату відмовлено."
 
 
@@ -327,7 +313,7 @@ class ReasonModal(discord.ui.Modal, title="Відмова кандидату"):
 
 class CandButton(discord.ui.DynamicItem[discord.ui.Button], template=r"sova:cand:(?P<id>\d+):(?P<s>vvb|vkpp):(?P<d>ok|rej)"):
     def __init__(self, cid: int, stage: str, decision: str):
-        label = ("Погодити й передати до ВКПП" if stage == "vvb" else "Прийняти на службу") if decision == "ok" else "Відмовити"
+        label = ("Погодити й передати до ВКПП" if stage == "vvb" else "Погодити зарахування") if decision == "ok" else "Відмовити"
         super().__init__(discord.ui.Button(label=label, emoji="✅" if decision == "ok" else "⛔",
                                            style=discord.ButtonStyle.success if decision == "ok" else discord.ButtonStyle.danger,
                                            custom_id=f"sova:cand:{cid}:{stage}:{decision}"))

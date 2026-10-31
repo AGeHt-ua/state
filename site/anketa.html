@@ -9,8 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="sova.css?v=3">
-<link rel="stylesheet" href="fx.css?v=3">
+<link rel="stylesheet" href="sova.css?v=4">
+<link rel="stylesheet" href="fx.css?v=4">
 <style>
   .login-card.wide{max-width:760px;text-align:left;justify-items:stretch}
   .login-card.wide>.top{display:grid;justify-items:center;text-align:center;gap:10px}
@@ -56,7 +56,7 @@
     <div class="fx-ring"><img src="sbu-logo.webp" alt="Емблема Служби безпеки штату NG" width="110" height="110"></div>
     <div class="eyebrow">Служба безпеки штату NG · набір на службу</div>
     <h1 class="fx-glitch">АНКЕТА КАНДИДАТА</h1>
-    <div class="stages"><span><b>01</b> Анкета</span><span><b>02</b> Перевірка ВВБ</span><span><b>03</b> Рішення ВКПП</span><span><b>04</b> Стажування</span></div>
+    <div class="stages"><span><b>01</b> Анкета</span><span><b>02</b> Перевірка ВВБ</span><span><b>03</b> Рішення ВКПП</span><span><b>04</b> Зв'язок ВКПП</span></div>
   </div>
 
   <form class="ank" id="f" autocomplete="on" novalidate>
@@ -133,11 +133,11 @@
     <fieldset>
       <legend><b>VI</b>OOC</legend>
       <div class="three">
-        <label class="f"><span>Нік у Discord</span><input class="i mono" name="discord" required maxlength="40" placeholder="agent.smith"></label>
+        <label class="f"><span>Discord для зв'язку</span><input class="i mono" name="discord" required maxlength="40" placeholder="agent.smith"></label>
         <label class="f"><span>Ваш вік (OOC)</span><input class="i" name="age" required maxlength="20" placeholder="19"></label>
         <label class="f"><span>Онлайн на день</span><input class="i" name="online" maxlength="60" placeholder="4–5 год, вечір"></label>
       </div>
-      <small>Ви маєте бути на Discord-сервері «Служба Безпеки NG»: туди надійде рішення, ролі й код доступу.</small>
+      <small>Якщо анкету погодять, співробітник ВКПП напише вам у Discord за цим ніком. Перевірте, що ніком можна вас знайти й що вам можна писати.</small>
       <div class="chk">
         <label><input type="checkbox" name="warn"> Маю активний Warn</label>
         <label><input type="checkbox" name="fired_1d"> Звільнився з держструктури менше доби тому</label>
@@ -150,7 +150,7 @@
     </div>
     <p class="err" id="err" hidden></p>
     <button class="btn gold" type="submit" id="btn">Подати анкету</button>
-    <p class="fine">Анкету перевірить Відділ внутрішньої безпеки, потім рішення ухвалить ВКПП. Рішення бот «Сова» надішле в особисті повідомлення Discord, тож тримайте їх відкритими. Надання неправдивих даних є підставою для відмови.</p>
+    <p class="fine">Анкету перевірить Відділ внутрішньої безпеки, потім рішення ухвалить ВКПП. Якщо анкету погодять, ВКПП зв'яжеться з вами в Discord і запросить на співбесіду. Надання неправдивих даних є підставою для відмови.</p>
   </form>
 </div></div></div>
 <script>
@@ -207,8 +207,7 @@
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Помилка " + r.status);
       f.outerHTML = `<div class="done"><div class="eyebrow">Анкету зареєстровано</div><div class="no">${esc(d.no)}</div>
-        <p>Анкету передано на перевірку <b>Відділу внутрішньої безпеки</b>. Рішення надійде в особисті повідомлення Discord від бота «Сова».</p>
-        ${d.found ? "" : '<p class="note warn">Вашого ніку не знайдено на сервері «Служба Безпеки NG». Приєднайтеся до сервера, інакше ви не отримаєте рішення й ролі.</p>'}</div>`;
+        <p>Анкету передано на перевірку <b>Відділу внутрішньої безпеки</b>. Якщо її погодять, співробітник <b>ВКПП</b> зв'яжеться з вами в Discord. Збережіть номер анкети.</p></div>`;
       scrollTo({ top: 0, behavior: "smooth" });
     } catch (x) {
       fail(x.message);
