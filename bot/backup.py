@@ -11,6 +11,7 @@ import discord
 
 import config
 import core
+import style
 from db import db
 
 log = logging.getLogger("sova.backup")
@@ -30,10 +31,18 @@ async def make_backup(reason: str) -> tuple[str, int]:
     size = gz.stat().st_size
     ch = await core.channel("backups")
     if ch:
-        if size <= config.MAX_UPLOAD_MB * 1024 * 1024:
-            await ch.send(f"Бекап бази · {reason} · {size / 1024:.0f} КБ", file=discord.File(gz))
+        fits = size <= config.MAX_UPLOAD_MB * 1024 * 1024
+        users = await db.one("SELECT COUNT(*) AS n FROM users WHERE status!='dismissed'")
+        lines = [style.kv("АРХІВ", gz.name, "white", True), style.kv("ПІДСТАВА", reason, "white"),
+                 style.kv("РОЗМІР", f"{size / 1024:.0f} КБ", "cyan"), style.kv("ОСОБОВИЙ СКЛАД", f"{users['n']} осіб", "white"),
+                 style.rule(),
+                 style.kv("СТАН", "ЗБЕРЕЖЕНО В DISCORD І НА ХОСТИНГУ" if fits else "ЛИШЕ НА ХОСТИНГУ (завеликий)", "green" if fits else "gold", True)]
+        e = style.document("РЕЗЕРВНА КОПІЯ БАЗИ ЄІС «СОВА»", 0x5FB37A if fits else 0xD9A23D, desc=style.block(*lines),
+                           footer=f"Зберігається {config.BACKUP_KEEP_DAYS} діб · відновлення: /сова відновити")
+        if fits:
+            await ch.send(embed=e, file=discord.File(gz))
         else:
-            await ch.send(f"Бекап {gz.name} ({size / 1048576:.1f} МБ) завеликий для Discord — збережено лише на хостингу.")
+            await ch.send(embed=e)
     prune_local()
     log.info("Бекап %s (%s)", gz.name, reason)
     return gz.name, size

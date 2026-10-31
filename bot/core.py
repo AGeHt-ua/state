@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 import discord
 
 import config
+import style
 from db import db, now_ms
 from roles import (ALL_SBU_ROLES, DEPTS, OPS_DEPTS, PRESS_ROLE, RANK_ROLES, RANKS, SBU_ROLE,
                    nickname, rank_name, resolve, roles_for)
@@ -344,54 +345,101 @@ def who(u: dict | None) -> str:
     return f"{u['name']} · №{u['sid']}" if u else "—"
 
 
-STATUS = {"wait": ("🟡 На перевірці", 0xD9A23D), "ok": ("🟢 Підтверджено", 0x5FB37A), "rej": ("🔴 Відхилено", 0xD4605A)}
+async def resolution(status: str, reviewer_sid: int | None, reviewed: int | None, ok_word: str = "ПОГОДЖЕНО") -> list[str]:
+    """Рядки резолюції під документом."""
+    if status == "wait":
+        return [style.kv("РЕЗОЛЮЦІЯ", "очікує розгляду", "gold", True)]
+    rev = await user(reviewer_sid) if reviewer_sid else None
+    word, color = (ok_word, "green") if status == "ok" else ("ВІДМОВЛЕНО", "red")
+    lines = [style.kv("РЕЗОЛЮЦІЯ", word, color, True)]
+    if rev:
+        lines.append(style.kv("", f"{rank_name(rev['rank'])} {rev['name']}", "white"))
+    lines.append(style.kv("", style.when(reviewed), "gray"))
+    return lines
 
 
 async def act_embed(a: dict) -> discord.Embed:
-    author = await user(a["by_sid"])
-    c = await coef()
-    st, color = STATUS[a["status"]]
-    e = discord.Embed(title=f"Звіт №{a['id']} · {ACTS[a['type']][0]}", color=DEPTS.get(a["dept"], {}).get("color", color) if a["status"] == "wait" else color)
-    e.add_field(name="Співробітник", value=f"{who(author)}\n{rank_name(author['rank']) if author else ''}")
-    e.add_field(name="Кількість · бали", value=f"{a['qty']} · {c.get(a['type'], 0) * a['qty']} б.")
-    e.add_field(name="Час", value=f"<t:{a['t'] // 1000}:f>")
+    author = await user(a["by_sid"]) or {"name": "—", "sid": a["by_sid"], "rank": 1}
+    pts = (await coef()).get(a["type"], 0) * a["qty"]
+    _, _, color = style.STATUS[a["status"]]
+    dept = DEPTS.get(a["dept"], DEPTS["lead"])
     arts = json.loads(a["arts"] or "[]")
+    lines = [
+        style.kv("ПІДРОЗДІЛ", f"{dept['s']} · {dept['n']}", "gold"),
+        style.kv("СПІВРОБІТНИК", f"{rank_name(author['rank'])} {author['name']}", "white", True),
+        style.kv("ЖЕТОН", f"№{author['sid']}", "cyan"),
+        style.rule(),
+        style.kv("ДІЯ", ACTS[a["type"]][0] + (f" ×{a['qty']}" if a["qty"] > 1 else ""), "white", True),
+        style.kv("ЧАС", style.when(a["t"]), "white"),
+    ]
     if arts:
-        e.add_field(name="Статті КК", value=", ".join(arts))
+        lines.append(style.kv("СТАТТІ КК", ", ".join(arts), "red", True))
     if a["subj"]:
-        e.add_field(name="Фігурант", value=a["subj"][:200])
+        lines.append(style.kv("ФІГУРАНТ", a["subj"][:60], "white"))
+    lines.append(style.kv("БАЛИ", f"{pts}", "gold", True))
+    lines.append(style.rule())
+    lines += await resolution(a["status"], a["reviewer"], a["reviewed"], "ПІДТВЕРДЖЕНО")
+    desc = style.block(*lines)
+    extra = []
     if a["evidence"]:
-        e.add_field(name="Доказ", value=f"[Відкат]({a['evidence']})", inline=False)
+        extra.append(f"📎 **Відкат:** [відкрити запис]({a['evidence']})")
+    files = json.loads(a["files"] or "[]")
+    if files:
+        extra.append(f"🗂 **Додано файлів:** {len(files)} — у кабінеті ЄІС")
     if a["note"]:
-        e.add_field(name="Коментар", value=a["note"][:900], inline=False)
-    footer = st
-    if a["reviewer"]:
-        footer += f" · {who(await user(a['reviewer']))}"
-    e.set_footer(text=f"{footer} · {DEPTS.get(a['dept'], {}).get('s', '')}")
-    return e
+        extra.append("> " + a["note"][:900].replace("\n", "\n> "))
+    if extra:
+        desc += "\n" + "\n".join(extra)
+    return style.document(f"СЛУЖБОВИЙ ЗВІТ · {ACTS[a['type']][0]}", color if a["status"] != "wait" else dept["color"],
+                          desc=desc, no=style.doc_no("ЗВТ", a["id"]), footer=style.STATUS[a["status"]][0])
+
+
+RAP_HEAD = {"promo": "на підвищення у званні", "vac": "на відпустку", "dismiss": "на звільнення зі служби", "transfer": "на переведення"}
+
+
+def rap_text(r: dict, data: dict) -> str:
+    if r["type"] == "promo":
+        return (f"Прошу присвоїти мені чергове спеціальне звання «{rank_name(data['to'])}» у зв'язку з виконанням "
+                f"вимог щодо вислуги. Дисциплінарних стягнень не маю. За поточний тиждень набрано {data.get('points', 0)} "
+                f"балів, за минулий — {data.get('points_prev', 0)}.")
+    if r["type"] == "vac":
+        return (f"Прошу надати мені планову відпустку тривалістю {data.get('days')} діб з {data.get('from') or 'дати погодження'}"
+                + (f". Причина: {data['reason']}" if data.get("reason") else "")
+                + ". Службове посвідчення, табельну зброю та спецзасоби зобов'язуюсь здати на склад.")
+    if r["type"] == "dismiss":
+        return ("Прошу звільнити мене зі служби в Службі безпеки штату NG за власним бажанням. "
+                + (data.get("reason", "") + " " if data.get("reason") else "")
+                + "Жетон, посвідчення, табельну зброю та спорядження зобов'язуюсь здати.")
+    if r["type"] == "transfer":
+        return (f"Прошу перевести мене з підрозділу {DEPTS[r['dept']]['s']} до підрозділу {DEPTS[data['to']]['s']} "
+                f"({DEPTS[data['to']]['n']})" + (f". Обґрунтування: {data['reason']}" if data.get("reason") else "") + ".")
+    return data.get("reason", "")
 
 
 async def rap_embed(r: dict) -> discord.Embed:
-    author = await user(r["by_sid"])
+    author = await user(r["by_sid"]) or {"name": "—", "sid": r["by_sid"], "rank": 1}
     data = json.loads(r["data"] or "{}")
-    st, color = STATUS[r["status"]]
-    e = discord.Embed(title=f"Рапорт №{r['id']} · {RAP_TYPES[r['type']]}", color=0xC9A05A if r["status"] == "wait" else color)
-    e.add_field(name="Співробітник", value=f"{who(author)}\n{rank_name(author['rank']) if author else ''} · {DEPTS.get(r['dept'], {}).get('s', '')}")
-    if r["type"] == "promo":
-        e.add_field(name="Підвищення", value=f"{rank_name(data['to'] - 1)} → **{rank_name(data['to'])}**")
-        if data.get("points") is not None:
-            e.add_field(name="Бали: цей / минулий тиждень", value=f"{data['points']} / {data.get('points_prev', 0)}")
-    elif r["type"] == "vac":
-        e.add_field(name="Відпустка", value=f"{data.get('days')} діб з {data.get('from', '—')}")
-    elif r["type"] == "transfer":
-        e.add_field(name="Переведення", value=f"{DEPTS[r['dept']]['s']} → **{DEPTS[data['to']]['s']}**")
-    if data.get("reason"):
-        e.add_field(name="Обґрунтування", value=data["reason"][:900], inline=False)
-    footer = st if r["status"] != "ok" else "🟢 Погоджено"
-    if r["reviewer"]:
-        footer += f" · {who(await user(r['reviewer']))}"
-    e.set_footer(text=footer)
-    return e
+    _, _, color = style.STATUS[r["status"]]
+    dept = DEPTS.get(r["dept"], DEPTS["lead"])
+    pad = " " * 18
+    lines = [
+        pad + style.c("Голові Служби безпеки", "white"),
+        pad + style.c("штату NG", "white"),
+        pad + style.c(f"від: {rank_name(author['rank'])}", "gray"),
+        pad + style.c(f"{dept['s']} {author['name']}", "white", True),
+        pad + style.c(f"жетон №{author['sid']}", "cyan"),
+        "",
+        " " * 17 + style.c("Р А П О Р Т", "gold", True),
+        style.c(f"{RAP_HEAD.get(r['type'], ''):^44}", "gray"),
+        "",
+        *[style.c(line, "white") for line in style.wrap(rap_text(r, data))],
+        "",
+        style.c(f"{style.when(r['t'])}", "gray") + " " * 14 + style.c(f"/{author['name']}/", "white"),
+        style.rule(),
+        *await resolution(r["status"], r["reviewer"], r["reviewed"]),
+    ]
+    return style.document(f"РАПОРТ · {RAP_TYPES[r['type']].replace('Рапорт ', '')}", color if r["status"] != "wait" else 0xC9A05A,
+                          desc=style.block(*lines), no=style.doc_no("РАП", r["id"]), footer=style.STATUS[r["status"]][0])
 
 
 class ActButton(discord.ui.DynamicItem[discord.ui.Button], template=r"sova:act:(?P<id>\d+):(?P<d>ok|rej)"):
@@ -581,11 +629,60 @@ async def apply_rap(actor: dict, r: dict):
     await post_audit(actor, r["type"], u)
 
 
-async def post_audit(actor: dict, kind: str, u: dict):
+AUDIT_COLORS = {"Підвищення": 0x5FB37A, "Переведення": 0x6F9FD6, "Звільнення (ПСЖ)": 0xD4605A, "Відпустка": 0x6F9FD6,
+                "Вийшов із сервера": 0xD4605A, "Оформлено допуск до ЄІС": 0xC9A05A, "Зміна персональних даних": 0xD9A23D}
+
+
+def audit_embed(row: dict, u: dict | None, actor: dict | None = None) -> discord.Embed:
+    """Запис кадрового аудиту як службовий документ (п. 1.11 Загальних правил держорганізацій)."""
+    lines = [
+        style.kv("ДІЯ", row["action"].upper(), "gold", True),
+        style.kv("СПІВРОБІТНИК", f"{rank_name(u['rank'])} {u['name']}" if u else f"№{row['target']}", "white", True),
+    ]
+    if u:
+        lines.append(style.kv("ЖЕТОН · ВІДДІЛ", f"№{u['sid']} · {DEPTS.get(u['dept'], DEPTS['lead'])['s']}", "cyan"))
+    lines += [style.rule()] + [style.kv("ПОДРОБИЦІ" if i == 0 else "", part, "white") for i, part in enumerate(style.wrap(row["details"] or "—", 28))]
+    lines += [style.rule(), style.kv("ПІДСТАВА", (f"{rank_name(actor['rank'])} {actor['name']}" if actor else "ЄІС «Сова», автоматично"), "gray"),
+              style.kv("ДАТА", style.when(row["t"]), "gray")]
+    return style.document("КАДРОВИЙ АУДИТ", AUDIT_COLORS.get(row["action"], 0x8C96A5), desc=style.block(*lines),
+                          no=style.doc_no("АУД", row["id"]), footer="Журнал кадрового обліку СБУ")
+
+
+async def send_audit(u: dict | None, actor: dict | None = None):
+    """Надсилає останній запис аудиту в канал кадрового аудиту."""
     ch = await channel("audit")
     row = await db.one("SELECT * FROM audit ORDER BY id DESC LIMIT 1")
     if ch and row:
-        await ch.send(f"**{row['action']}** · {who(u)} · {row['details']}\nРішення: {who(actor)}")
+        await ch.send(embed=audit_embed(row, u, actor))
+
+
+async def post_audit(actor: dict, kind: str, u: dict):
+    await send_audit(u, actor)
+
+
+def credentials_embed(sid: int, code: str, name: str, *, title: str = "ДОПУСК ДО ЄІС «СОВА» ОФОРМЛЕНО", warn: str | None = None) -> discord.Embed:
+    """Службове посвідчення з кодом доступу (особисті повідомлення та приховані відповіді)."""
+    lines = [
+        style.kv("ВЛАСНИК", name, "white", True),
+        style.kv("НОМЕР ЖЕТОНА", f"№{sid}", "cyan", True),
+        style.kv("КОД ДОСТУПУ", code, "gold", True),
+        style.rule(),
+        style.c("Код доступу є службовою таємницею.", "red"),
+        style.c("Не передавайте його нікому, зокрема", "gray"),
+        style.c("колегам і керівництву.", "gray"),
+    ]
+    desc = style.block(*lines) + f"\nВхід до кабінету: **{config.SITE_URL}**"
+    if warn:
+        desc += f"\n\n⚠️ {warn}"
+    return style.document(title, 0xC9A05A, desc=desc, footer="Положення про захист службової інформації СБУ")
+
+
+def rejection_embed(name: str, note: str = "") -> discord.Embed:
+    lines = [style.kv("ЗАЯВНИК", name, "white", True), style.kv("РІШЕННЯ", "У ДОПУСКУ ВІДМОВЛЕНО", "red", True)]
+    if note:
+        lines += [style.rule()] + [style.kv("ПРИЧИНА" if i == 0 else "", p, "white") for i, p in enumerate(style.wrap(note, 28))]
+    lines += [style.rule(), style.c("Для з'ясування звертайтесь до ВКПП.", "gray")]
+    return style.document("ВІДМОВА У ДОПУСКУ ДО ЄІС «СОВА»", 0xD4605A, desc=style.block(*lines), footer="Відділ кадрів та підготовки персоналу")
 
 
 # ---------------------------------------------------------------- самостійна реєстрація
@@ -618,18 +715,27 @@ def can_approve_access(member: discord.Member) -> bool:
 
 
 def access_embed(req: dict, member: discord.Member | None) -> discord.Embed:
-    st = {"wait": ("🟡 Очікує підтвердження ВКПП", 0xD9A23D), "ok": ("🟢 Допуск видано", 0x5FB37A), "rej": ("🔴 Відмовлено", 0xD4605A)}[req["status"]]
-    e = discord.Embed(title=f"Заявка на допуск до ЄІС «Сова» №{req['id']}", color=st[1])
-    e.add_field(name="Discord", value=f"<@{req['discord_id']}>")
-    e.add_field(name="Номер жетона", value=f"`{req['sid']}`")
-    e.add_field(name="Ім'я та прізвище", value=req["name"])
+    _, _, color = style.STATUS[req["status"]]
+    lines = [
+        style.kv("ЗАЯВНИК", req["name"], "white", True),
+        style.kv("НОМЕР ЖЕТОНА", f"№{req['sid']}", "cyan", True),
+    ]
     if member:
         a = resolve({r.id for r in member.roles})
-        e.add_field(name="Поточні ролі", value=f"{rank_name(a['rank'])} · {DEPTS[a['dept']]['s']}" if a["ok"] else a["why"], inline=False)
-        e.add_field(name="Акаунт Discord створено", value=f"<t:{int(member.created_at.timestamp())}:D>")
-    e.add_field(name="Подано", value=f"<t:{req['t'] // 1000}:f>")
-    e.set_footer(text=st[0] + (f" · розглянув {req['reviewer_name']}" if req.get("reviewer_name") else ""))
-    return e
+        lines.append(style.kv("СЛУЖБОВИЙ СТАТУС", f"{rank_name(a['rank'])} · {DEPTS[a['dept']]['s']}" if a["ok"] else "не у складі СБУ",
+                              "green" if a["ok"] else "gray"))
+        age = (discord.utils.utcnow() - member.created_at).days
+        lines.append(style.kv("АКАУНТ DISCORD", f"{age} дн." + ("  ⚠ новий" if age < 14 else ""), "red" if age < 14 else "white"))
+    lines += [style.kv("ПОДАНО", style.when(req["t"]), "gray"), style.rule()]
+    if req["status"] == "wait":
+        lines.append(style.kv("РЕЗОЛЮЦІЯ", "очікує рішення ВКПП", "gold", True))
+    else:
+        lines.append(style.kv("РЕЗОЛЮЦІЯ", "ДОПУСК НАДАНО" if req["status"] == "ok" else "ВІДМОВЛЕНО", "green" if req["status"] == "ok" else "red", True))
+        if req.get("reviewer_name"):
+            lines.append(style.kv("", req["reviewer_name"], "white"))
+        lines.append(style.kv("", style.when(req["reviewed"]), "gray"))
+    return style.document("ЗАЯВКА НА ДОПУСК ДО ЄІС «СОВА»", color, desc=f"Discord: <@{req['discord_id']}>\n" + style.block(*lines),
+                          no=style.doc_no("ЗД", req["id"]), footer="Перевірка ВКПП перед наданням допуску")
 
 
 class AccessButton(discord.ui.DynamicItem[discord.ui.Button], template=r"sova:acc:(?P<id>\d+):(?P<d>ok|rej)"):
@@ -689,8 +795,8 @@ async def decide_access(req_id: int, reviewer: discord.Member, decision: str) ->
     if decision == "ok":
         sent = False
         try:
-            await member.send(f"**Допуск до ЄІС «Сова» підтверджено**\nСайт: {config.SITE_URL}\nНомер жетона: `{req['sid']}`\n"
-                              f"Код доступу: `{pw}`\nКод доступу є службовою таємницею — не передавайте його нікому.")
+            await member.send(embed=credentials_embed(req["sid"], pw, req["name"], title="ДОПУСК ДО ЄІС «СОВА» ПІДТВЕРДЖЕНО"),
+                              view=style.site_view())
             sent = True
         except discord.Forbidden:
             pass
@@ -698,7 +804,7 @@ async def decide_access(req_id: int, reviewer: discord.Member, decision: str) ->
                 "Допуск видано, але особисті повідомлення закриті. Нехай людина натисне «Відновити код доступу» в панелі.")
     if member:
         try:
-            await member.send("У видачі допуску до ЄІС «Сова» відмовлено." + (f" {note}" if note else "") + " Зверніться до ВКПП.")
+            await member.send(embed=rejection_embed(req["name"], note))
         except discord.Forbidden:
             pass
     return "Заявку відхилено." + (f" Причина: {note}" if note else "")
@@ -726,8 +832,10 @@ async def register(member: discord.Member, sid: int, name: str, reviewer: discor
     approver = await db.one("SELECT sid FROM users WHERE discord_id=?", str(reviewer.id)) if reviewer else None
     await db.audit(approver["sid"] if approver else 0, "Оформлено допуск до ЄІС", sid,
                    f"{'підтвердив ' + reviewer.display_name if reviewer else 'через Discord'} · {rank_name(rank) if a['ok'] else 'без ролей СБУ'}")
+    new_u = {"sid": sid, "name": name[:60], "rank": rank, "dept": dept, "discord_id": str(member.id)}
     if a["ok"]:
-        await set_nick({"sid": sid, "name": name[:60], "rank": rank, "discord_id": str(member.id)}, member)
+        await set_nick(new_u, member)
+    await send_audit(new_u, await user(approver["sid"]) if approver else None)
     return a, pw
 
 
@@ -740,9 +848,7 @@ async def change_name(member: discord.Member, name: str) -> dict:
     await db.run("UPDATE users SET name=? WHERE sid=?", name[:60], u["sid"])
     u["name"] = name[:60]
     await db.audit(0, "Зміна персональних даних", u["sid"], f"{old} → {u['name']}")
-    ch = await channel("audit")
-    if ch:
-        await ch.send(f"**Зміна персональних даних** · №{u['sid']} · {old} → **{u['name']}**")
+    await send_audit(u)
     await set_nick(u, member)
     return u
 
@@ -765,10 +871,8 @@ async def member_left(member: discord.Member):
     if not u:
         return
     await db.run("DELETE FROM sessions WHERE sid=?", u["sid"])
-    await db.audit(0, "Вийшов із сервера", u["sid"], "доступ до кабінету закрито")
-    ch = await channel("audit")
-    if ch:
-        await ch.send(f"**Вийшов із сервера** · {who(u)} · {rank_name(u['rank'])} · доступ до кабінету закрито")
+    await db.audit(0, "Вийшов із сервера", u["sid"], "доступ до кабінету закрито автоматично")
+    await send_audit(u)
 
 
 # ---------------------------------------------------------------- файли

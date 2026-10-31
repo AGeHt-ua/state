@@ -5,6 +5,7 @@ from discord import app_commands
 import backup
 import config
 import core
+import style
 from core import Fail
 from db import db, now_ms
 from roles import DEPTS, nickname, rank_name, resolve
@@ -26,10 +27,10 @@ async def reply_error(interaction: discord.Interaction, e: Fail):
         await interaction.response.send_message(str(e), ephemeral=True)
 
 
-async def send_credentials(member: discord.Member, sid: int, password: str) -> bool:
+async def send_credentials(member: discord.Member, sid: int, password: str, name: str | None = None,
+                           title: str = "ДОПУСК ДО ЄІС «СОВА» ОФОРМЛЕНО") -> bool:
     try:
-        await member.send(f"**Допуск до ЄІС «Сова» оформлено**\nСайт: {config.SITE_URL}\nНомер жетона: `{sid}`\nКод доступу: `{password}`\n"
-                          "Код доступу є службовою таємницею — не передавайте його нікому. Вхід можливий лише з ролями СБУ на сервері.")
+        await member.send(embed=core.credentials_embed(sid, password, name or member.display_name, title=title), view=style.site_view())
         return True
     except discord.Forbidden:
         return False
@@ -62,11 +63,11 @@ class Access(app_commands.Group):
                            f"{rank_name(a['rank'])} · {DEPTS[a['dept']]['s']}")
             await db.run("DELETE FROM sessions WHERE sid=?", static_id)
             await core.set_nick({"sid": static_id, "name": імя[:60], "rank": a["rank"], "discord_id": str(учасник.id)}, учасник)
-            dm = await send_credentials(учасник, static_id, pw)
+            dm = await send_credentials(учасник, static_id, pw, імя)
             await interaction.response.send_message(
-                f"Доступ для {учасник.mention}: №{static_id}, {rank_name(a['rank'])}, {DEPTS[a['dept']]['s']}.\n"
-                + ("Код доступу надіслано в особисті повідомлення." if dm else f"Особисті повідомлення закриті. Код доступу: `{pw}` — передайте особисто."),
-                ephemeral=True)
+                f"Допуск для {учасник.mention}: №{static_id}, {rank_name(a['rank'])}, {DEPTS[a['dept']]['s']}.\n"
+                + ("Код доступу надіслано в особисті повідомлення." if dm else "Особисті повідомлення закриті — передайте код особисто:"),
+                embed=None if dm else core.credentials_embed(static_id, pw, імя), ephemeral=True)
         except Fail as e:
             await reply_error(interaction, e)
 
@@ -81,8 +82,10 @@ class Access(app_commands.Group):
             await db.run("UPDATE users SET pw_hash=?, pw_set=? WHERE sid=?", core.hash_password(pw), now_ms(), u["sid"])
             await db.run("DELETE FROM sessions WHERE sid=?", u["sid"])
             await db.audit(head["sid"], "Новий код доступу", u["sid"], "попередні входи завершено")
-            dm = await send_credentials(учасник, u["sid"], pw)
-            await interaction.response.send_message("Новий код доступу надіслано в особисті." if dm else f"Код доступу: `{pw}` — передайте особисто.", ephemeral=True)
+            dm = await send_credentials(учасник, u["sid"], pw, u["name"], title="НОВИЙ КОД ДОСТУПУ ДО ЄІС «СОВА»")
+            await interaction.response.send_message("Новий код доступу надіслано в особисті." if dm else "Особисті закриті — передайте код особисто:",
+                                                    embed=None if dm else core.credentials_embed(u["sid"], pw, u["name"], title="НОВИЙ КОД ДОСТУПУ"),
+                                                    ephemeral=True)
         except Fail as e:
             await reply_error(interaction, e)
 
@@ -96,14 +99,21 @@ class Admin(app_commands.Group):
         try:
             u = await core.actor_from_discord(interaction.user)
             pc = await core.promo_check(u)
-            e = discord.Embed(title=f"{u['name']} · №{u['sid']}", color=DEPTS[u["dept"]]["color"])
-            e.add_field(name="Звання", value=rank_name(u["rank"]))
-            e.add_field(name="Відділ", value=DEPTS[u["dept"]]["n"])
-            e.add_field(name="Бали: цей / минулий тиждень", value=f"{await core.week_points(u['sid'])} / {await core.week_points(u['sid'], 1)}")
+            dept = DEPTS[u["dept"]]
+            lines = [
+                style.kv("СПІВРОБІТНИК", u["name"], "white", True),
+                style.kv("ЗВАННЯ", rank_name(u["rank"]), "gold", True),
+                style.kv("ПІДРОЗДІЛ", f"{dept['s']} · {dept['n']}", "white"),
+                style.kv("ЖЕТОН", f"№{u['sid']}", "cyan"),
+                style.rule(),
+                style.kv("БАЛИ ТИЖНЯ", f"{await core.week_points(u['sid'])}  (минулий: {await core.week_points(u['sid'], 1)})", "gold", True),
+            ]
             if pc:
-                e.add_field(name=f"До звання «{pc['name']}»", value="\n".join(("✅ " if i["ok"] else "❌ ") + i["t"] for i in pc["items"]), inline=False)
-            e.add_field(name="Кабінет", value=config.SITE_URL, inline=False)
-            await interaction.response.send_message(embed=e, ephemeral=True)
+                lines += [style.rule(), style.c(f"До звання «{pc['name']}»:", "white", True)]
+                lines += [style.c(("✔ " if i["ok"] else "✖ ") + t, "green" if i["ok"] else ("gold" if i.get("soft") else "red"))
+                          for i in pc["items"] for t in style.wrap(i["t"], 42)[:2]]
+            e = style.document("ОСОБОВА СПРАВА", dept["color"], desc=style.block(*lines), no=f"№{u['sid']}", footer="ЄІС «Сова»")
+            await interaction.response.send_message(embed=e, view=style.site_view(), ephemeral=True)
         except Fail as e:
             await reply_error(interaction, e)
 
@@ -157,13 +167,10 @@ class Admin(app_commands.Group):
 
 
 # ---------------------------------------------------------------- кнопка «Отримати допуск»
-def credentials_text(sid: int, pw: str, a: dict) -> str:
-    text = (f"**Допуск до ЄІС «Сова» оформлено**\nСайт: {config.SITE_URL}\nНомер жетона: `{sid}`\nКод доступу: `{pw}`\n"
-            "Код доступу є службовою таємницею. Це повідомлення бачите лише ви.")
-    if not a.get("ok"):
-        text += (f"\n\n⚠️ Допуск оформлено, але система поки не пустить: {a.get('why', 'немає ролей СБУ')}. "
-                 "Щойно вас зарахують до складу СБУ — вхід відкриється сам.")
-    return text
+def credentials_card(u: dict, pw: str, a: dict) -> discord.Embed:
+    warn = None if a.get("ok") else (f"Система поки не пустить: {a.get('why', 'немає ролей СБУ')}. "
+                                     "Щойно вас зарахують до складу СБУ — вхід відкриється сам.")
+    return core.credentials_embed(u["sid"], pw, u["name"], title="НОВИЙ КОД ДОСТУПУ ДО ЄІС «СОВА»", warn=warn)
 
 
 async def guild_member(interaction: discord.Interaction) -> discord.Member | None:
@@ -179,7 +186,8 @@ async def do_reset(interaction: discord.Interaction):
         if not member:
             raise Fail("Спершу приєднайтеся до сервера «Служба Безпеки NG».")
         u, pw = await core.reset_own_password(member)
-        await interaction.response.send_message(credentials_text(u["sid"], pw, resolve({r.id for r in member.roles})), ephemeral=True)
+        await interaction.response.send_message(embed=credentials_card(u, pw, resolve({r.id for r in member.roles})),
+                                                view=style.site_view(), ephemeral=True)
     except Fail as e:
         await interaction.response.send_message(str(e), ephemeral=True)
 
@@ -197,10 +205,15 @@ class RegisterModal(discord.ui.Modal, title="Оформлення допуску
             raw = str(self.sid.value).strip()
             if not raw.isdigit():
                 raise Fail("Static ID — лише цифри.")
-            rid = await core.request_access(self.member, int(raw), str(self.name.value).strip())
+            name = str(self.name.value).strip()
+            rid = await core.request_access(self.member, int(raw), name)
+            lines = [style.kv("ЗАЯВНИК", name, "white", True), style.kv("НОМЕР ЖЕТОНА", f"№{raw}", "cyan", True),
+                     style.kv("СТАТУС", "ПЕРЕДАНО НА ПЕРЕВІРКУ ВКПП", "gold", True), style.rule(),
+                     style.c("Після підтвердження код доступу надійде", "gray"), style.c("вам в особисті повідомлення. Тримайте", "gray"),
+                     style.c("особисті від учасників сервера відкритими.", "gray")]
             await interaction.response.send_message(
-                f"Заявку на допуск №{rid} подано. Після підтвердження ВКПП код доступу надійде вам в особисті повідомлення.\n"
-                "Тримайте особисті повідомлення від учасників сервера відкритими.", ephemeral=True)
+                embed=style.document("ЗАЯВКУ НА ДОПУСК ЗАРЕЄСТРОВАНО", 0xD9A23D, desc=style.block(*lines), no=style.doc_no("ЗД", rid)),
+                ephemeral=True)
         except Fail as e:
             await interaction.response.send_message(str(e), ephemeral=True, view=ResetView())
 
