@@ -124,6 +124,11 @@ class DB:
         await self.conn.execute("PRAGMA journal_mode=WAL")
         await self.conn.execute("PRAGMA foreign_keys=ON")
         await self.conn.executescript(SCHEMA)
+        for sql in ("ALTER TABLE candidates ADD COLUMN discord_name TEXT",):
+            try:
+                await self.conn.execute(sql)
+            except Exception:
+                pass  # колонка вже є
         await self.conn.commit()
 
     async def close(self):

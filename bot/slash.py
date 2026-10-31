@@ -223,15 +223,6 @@ class ResetView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
 
-    @discord.ui.button(label="Анкета кандидата", style=discord.ButtonStyle.primary, emoji="📝", custom_id="sova:candidate")
-    async def candidate(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = await guild_member(interaction)
-        if not member:
-            return await interaction.response.send_message("Спершу приєднайтеся до сервера «Служба Безпеки NG».", ephemeral=True)
-        if await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id)):
-            return await interaction.response.send_message("Ви вже у складі СБУ й маєте допуск до «Сови».", ephemeral=True)
-        await interaction.response.send_modal(candidates.CandidateModal(member))
-
     @discord.ui.button(label="Відновити код доступу", style=discord.ButtonStyle.secondary)
     async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
         await do_reset(interaction)
@@ -241,6 +232,7 @@ class RegisterView(discord.ui.View):
     """Постійна кнопка (працює і після перезапуску бота)."""
     def __init__(self):
         super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(label="Анкета кандидата", emoji="📝", url=config.SITE_URL.rstrip("/") + "/site/anketa.html"))
 
     @discord.ui.button(label="Отримати допуск", style=discord.ButtonStyle.success, emoji="🦉", custom_id="sova:register")
     async def create(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -288,7 +280,7 @@ def welcome_embed(member: discord.abc.User | None = None) -> discord.Embed:
                       + "Єдина інформаційна система «Сова» — службовий кабінет співробітника СБУ: звіти про діяльність, "
                       "рапорти, кейс-файли, бали й премії.")
     e.add_field(name="📝  Хочете вступити до СБУ?", inline=False, value=(
-        "Натисніть **«Анкета кандидата»** і заповніть анкету. Її перевірить **Відділ внутрішньої безпеки**, "
+        "Натисніть **«Анкета кандидата»** і заповніть анкету на сайті. Її перевірить **Відділ внутрішньої безпеки**, "
         "після погодження рішення про прийом ухвалює **ВКПП**. Якщо вас приймуть, бот видасть ролі й надішле код доступу."))
     e.add_field(name="📋  Вже служите в СБУ? Оформіть допуск", inline=False, value=(
         "**1.** Натисніть **«Отримати допуск»** під цим повідомленням.\n"

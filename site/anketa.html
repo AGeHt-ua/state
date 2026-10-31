@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Анкета кандидата · СБУ штату NG</title>
+<meta name="description" content="Анкета кандидата на службу до Служби безпеки штату NG">
+<link rel="icon" href="sbu-logo.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="sova.css?v=2">
+<link rel="stylesheet" href="fx.css?v=2">
+<style>
+  .login-card.wide{max-width:640px;text-align:left;justify-items:stretch}
+  .login-card.wide>.top{display:grid;justify-items:center;text-align:center;gap:10px}
+  .login-card.wide .fx-ring{width:132px;height:132px}
+  .login-card.wide img{width:110px;height:110px}
+  .ank{display:grid;gap:14px}
+  .ank .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .ank small{color:var(--dim);font-size:12px}
+  .ank textarea.i{min-height:96px;resize:vertical}
+  .stages{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;font:11px var(--mono);letter-spacing:.08em;color:var(--muted)}
+  .stages span{border:1px solid var(--line2);padding:4px 8px}
+  .stages b{color:var(--gold2);font-weight:500}
+  .done{display:grid;gap:12px;text-align:center;justify-items:center}
+  .done .no{font:28px var(--display);color:var(--gold2);letter-spacing:.06em}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line2);border-top-color:var(--gold);border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (max-width:560px){.ank .two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="app"><div class="login"><div class="login-card wide">
+  <span class="fx-grif">ДСК</span>
+  <div class="top">
+    <div class="fx-ring"><img src="sbu-logo.webp" alt="Емблема Служби безпеки штату NG" width="110" height="110"></div>
+    <div class="eyebrow">Служба безпеки штату NG · набір на службу</div>
+    <h1 class="fx-glitch">АНКЕТА КАНДИДАТА</h1>
+    <div class="stages"><span><b>01</b> Анкета</span><span><b>02</b> Перевірка ВВБ</span><span><b>03</b> Рішення ВКПП</span><span><b>04</b> Ролі й допуск</span></div>
+  </div>
+  <form class="ank" id="f" autocomplete="on">
+    <div class="two">
+      <label class="f"><span>Ім'я та прізвище персонажа (IC)</span><input class="i" name="name" required minlength="3" maxlength="60" placeholder="Name Surname"></label>
+      <label class="f"><span>Static ID</span><input class="i mono" name="sid" required inputmode="numeric" pattern="\d{1,8}" maxlength="8" placeholder="3481"></label>
+    </div>
+    <div class="two">
+      <label class="f"><span>Нік у Discord (username)</span><input class="i mono" name="discord" required maxlength="40" placeholder="agent.smith"><small>Ви маєте бути на сервері «Служба Безпеки NG»</small></label>
+      <label class="f"><span>Вік (OOC) і середній онлайн</span><input class="i" name="age" required maxlength="60" placeholder="19 років, 4–5 год на день"></label>
+    </div>
+    <label class="f"><span>Досвід у державних структурах</span><textarea class="i" name="exp" required maxlength="500" placeholder="Де служили, звання, причина звільнення. Якщо досвіду немає — так і напишіть."></textarea></label>
+    <label class="f"><span>Чому ви хочете служити в СБУ?</span><textarea class="i" name="motive" required minlength="20" maxlength="800"></textarea></label>
+    <label class="f" style="display:flex;gap:10px;align-items:flex-start;flex-direction:row"><input type="checkbox" required style="margin-top:4px"><span>Підтверджую, що ознайомлений із законодавством штату NG і правилами сервера, а вказані дані правдиві.</span></label>
+    <p class="err" id="err" hidden></p>
+    <button class="btn gold" type="submit" id="btn">Подати анкету</button>
+    <p class="fine">Анкету розгляне Відділ внутрішньої безпеки, потім ВКПП. Рішення бот «Сова» надішле вам в особисті повідомлення Discord, тож тримайте їх відкритими.</p>
+  </form>
+</div></div></div>
+<script>
+(() => {
+  const API = (new URLSearchParams(location.search).get("api") || "https://sova.d-f-12339.workers.dev").replace(/\/$/, "");
+  const f = document.getElementById("f"), btn = document.getElementById("btn"), err = document.getElementById("err");
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    err.hidden = true;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span> Надсилаю…';
+    const data = Object.fromEntries(new FormData(f));
+    try {
+      let r;
+      try {
+        r = await fetch(API + "/api/public/candidate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      } catch (x) { throw new Error("Немає зв'язку з ботом «Сова». Спробуйте за хвилину."); }
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Помилка " + r.status);
+      f.outerHTML = `<div class="done"><div class="eyebrow">Анкету зареєстровано</div><div class="no">${esc(d.no)}</div>
+        <p>Анкету передано на перевірку <b>Відділу внутрішньої безпеки</b>. Рішення надійде в особисті повідомлення Discord від бота «Сова».</p>
+        ${d.found ? "" : '<p class="note warn">Вашого ніку не знайдено на сервері «Служба Безпеки NG». Приєднайтеся до сервера, інакше ви не отримаєте рішення й ролі.</p>'}</div>`;
+    } catch (x) {
+      err.textContent = x.message;
+      err.hidden = false;
+      btn.disabled = false;
+      btn.textContent = "Подати анкету";
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -239,6 +239,31 @@ async def audit(request):
     return web.json_response([{**r, "actorUser": people.get(r["actor"]), "targetUser": people.get(r["target"])} for r in rows])
 
 
+# ---------------------------------------------------------------- публічна анкета кандидата (без входу)
+_cand_hits: dict[str, list[float]] = {}
+
+
+@routes.post("/api/public/candidate")
+async def public_candidate(request):
+    ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.remote or "?"
+    now = time.time()
+    for key, cap in ((ip, 3), ("*", 40)):  # не більше 3 анкет з однієї адреси й 40 загалом за годину
+        hits = [t for t in _cand_hits.get(key, []) if now - t < 3600]
+        if len(hits) >= cap:
+            raise Fail("Забагато анкет. Спробуйте пізніше.", 429)
+        _cand_hits[key] = hits
+    b = await body(request)
+    sid = str(b.get("sid") or "").strip()
+    if not sid.isdigit() or len(sid) > 8:
+        raise Fail("Static ID — лише цифри.")
+    cid = await candidates.submit_public(str(b.get("discord") or ""), int(sid), str(b.get("name") or "").strip(),
+                                         str(b.get("age") or "").strip(), str(b.get("exp") or "").strip(), str(b.get("motive") or "").strip())
+    for key in (ip, "*"):
+        _cand_hits[key].append(now)
+    c = await db.one("SELECT discord_id FROM candidates WHERE id=?", cid)
+    return web.json_response({"no": f"АНК-{cid:04d}", "found": bool(c["discord_id"])}, status=201)
+
+
 # ---------------------------------------------------------------- кадри: анкети кандидатів і заявки на допуск
 def hr_rights(u: dict) -> dict:
     return {"vvb": u["rank"] >= 13 or core.has_dept_role(u, "vvb"), "vkpp": u["rank"] >= 14 or core.has_dept_role(u, "vkpp")}
