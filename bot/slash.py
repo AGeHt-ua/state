@@ -228,11 +228,11 @@ class RegisterView(discord.ui.View):
             return await interaction.response.send_message("Допуск уже оформлено. Загубили код доступу?", ephemeral=True, view=ResetView())
         await interaction.response.send_modal(RegisterModal(member))
 
-    @discord.ui.button(label="Відновити код доступу", style=discord.ButtonStyle.secondary, custom_id="sova:resetpw")
+    @discord.ui.button(label="Відновити код доступу", style=discord.ButtonStyle.secondary, emoji="🔑", custom_id="sova:resetpw")
     async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
         await do_reset(interaction)
 
-    @discord.ui.button(label="Змінити дані", style=discord.ButtonStyle.secondary, custom_id="sova:rename")
+    @discord.ui.button(label="Змінити дані", style=discord.ButtonStyle.secondary, emoji="✏️", custom_id="sova:rename")
     async def rename(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = await guild_member(interaction)
         u = await db.one("SELECT * FROM users WHERE discord_id=?", str(member.id)) if member else None
@@ -260,14 +260,24 @@ class NameModal(discord.ui.Modal, title="Зміна персональних д�
 
 
 def welcome_embed(member: discord.abc.User | None = None) -> discord.Embed:
-    e = discord.Embed(title="Служба безпеки штату NG · ЄІС «Сова»", color=0xC9A05A,
+    e = discord.Embed(title="🦉  ЄІС «Сова» · оформлення допуску", color=0xC9A05A, url=config.SITE_URL,
                       description=(f"Вітаємо, {member.mention}. Ви прибули до Служби безпеки штату NG.\n\n" if member else "")
-                      + "Для роботи в Єдиній інформаційній системі «Сова» оформіть **допуск**: натисніть **«Отримати допуск»** "
-                      "і вкажіть номер жетона та ім'я. Заявку розгляне ВКПП — після підтвердження код доступу надійде в особисті повідомлення.\n\n"
-                      "Звання й підрозділ система бере з вашого службового статусу на сервері. "
-                      "Допуск діє, доки ви перебуваєте у складі СБУ: при звільненні чи виході із сервера його буде анульовано автоматично.")
-    e.add_field(name="ЄІС «Сова»", value=config.SITE_URL)
-    e.set_footer(text="Код доступу є службовою таємницею (Положення про захист службової інформації СБУ)")
+                      + "Єдина інформаційна система «Сова» — службовий кабінет співробітника СБУ: звіти про діяльність, "
+                      "рапорти, кейс-файли, бали й премії.")
+    e.add_field(name="📋  Як оформити допуск", inline=False, value=(
+        "**1.** Натисніть **«Отримати допуск»** під цим повідомленням.\n"
+        "**2.** Вкажіть **номер жетона** (ваш Static ID) та **ім'я й прізвище** персонажа.\n"
+        "**3.** Заявку розгляне **ВКПП**. Після підтвердження бот надішле вам **код доступу** в особисті повідомлення.\n"
+        f"**4.** Увійдіть до кабінету: {config.SITE_URL}"))
+    e.add_field(name="⚠️  Важливо", inline=False, value=(
+        "• Відкрийте особисті повідомлення від учасників сервера, інакше код не надійде.\n"
+        "• Звання й підрозділ підтягуються з ваших ролей автоматично, нікнейм бот поставить сам.\n"
+        "• Допуск діє, доки ви у складі СБУ: при звільненні чи виході із сервера його анулюють."))
+    e.add_field(name="🔑  Вже маєте допуск?", inline=False, value=(
+        "**«Відновити код доступу»** — новий код, якщо загубили старий.\n"
+        "**«Змінити дані»** — нове ім'я персонажа (зміна фіксується в кадровому аудиті)."))
+    e.set_image(url=config.SITE_URL.rstrip("/") + "/site/access-panel.png")
+    e.set_footer(text="Код доступу є службовою таємницею · Положення про захист службової інформації СБУ")
     return e
 
 
