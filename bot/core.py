@@ -594,7 +594,14 @@ async def register(member: discord.Member, sid: int, name: str) -> tuple[dict, s
         raise Fail(f"Допуск уже оформлено на жетон №{own['sid']}. Загубили код доступу — натисніть «Відновити код доступу».")
     if await db.one("SELECT sid FROM users WHERE sid=?", sid):
         raise Fail("На цей номер жетона вже оформлено допуск іншій особі. Якщо це ваш номер — зверніться до Голови СБУ.")
-    a = resolve({r.id for r in member.roles})
+    give = [r for r in (member.guild.get_role(rid) for rid in config.JOIN_ROLES) if r and r not in member.roles]
+    if give:
+        try:
+            await member.add_roles(*give, reason="Сова: оформлено допуск до ЄІС")
+        except discord.Forbidden:
+            log.warning("Не можу видати ролі %s — роль бота має бути вище цих ролей", member)
+    _roles_cache.pop(str(member.id), None)
+    a = resolve({r.id for r in member.roles} | {r.id for r in give})
     rank, dept = (a["rank"], a["dept"]) if a["ok"] else (1, "academy")
     pw = new_password()
     t = now_ms()

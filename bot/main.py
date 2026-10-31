@@ -62,12 +62,6 @@ class Sova(commands.Bot):
         g = core.guild()
         if not g or member.guild.id != g.id or member.bot:
             return
-        roles = [r for r in (g.get_role(rid) for rid in config.JOIN_ROLES) if r]
-        if roles:
-            try:
-                await member.add_roles(*roles, reason="Сова: ролі новачка")
-            except discord.Forbidden:
-                log.warning("Не можу видати ролі новачку %s — роль бота має бути вище цих ролей", member)
         embed, view = slash.welcome_embed(member), slash.RegisterView()
         ch = await core.channel("welcome")
         try:
