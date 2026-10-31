@@ -139,11 +139,13 @@ def guild() -> discord.Guild | None:
     return bot.guilds[0] if len(bot.guilds) == 1 else None
 
 
-async def member_of(discord_id: str | int) -> discord.Member | None:
+async def member_of(discord_id: str | int, fresh: bool = False) -> discord.Member | None:
+    """Учасник сервера СБУ. fresh=True — завжди свіжі дані з Discord: без Server Members Intent
+    бот не отримує подій про зміну ролей, і його локальна копія учасника застаріває."""
     g = guild()
     if not g:
         raise Fail("Бот ще не підключився до Discord. Спробуйте за хвилину.", 503)
-    m = g.get_member(int(discord_id))
+    m = None if fresh else g.get_member(int(discord_id))
     if m:
         return m
     try:
@@ -156,7 +158,7 @@ async def member_roles(discord_id: str, fresh: bool = False) -> set[int] | None:
     hit = _roles_cache.get(discord_id)
     if hit and not fresh and time.time() - hit[0] < 60:
         return hit[1]
-    m = await member_of(discord_id)
+    m = await member_of(discord_id, fresh=True)
     roles = {r.id for r in m.roles} if m else None
     _roles_cache[discord_id] = (time.time(), roles)
     return roles
