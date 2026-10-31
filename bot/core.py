@@ -252,7 +252,7 @@ CHANNEL_KEYS = list(DEPTS) + ["audit", "files", "backups"]
 
 async def channel(key: str) -> discord.TextChannel | None:
     ids = await db.get_setting("channels", {})
-    cid = ids.get(key)
+    cid = config.CHANNELS.get(key) or ids.get(key)
     if not cid:
         return None
     ch = bot.get_channel(int(cid))
@@ -284,6 +284,10 @@ async def ensure_channels(g: discord.Guild):
     see = discord.PermissionOverwrite(view_channel=True, read_message_history=True, send_messages=False)
     names = {k: v["channel"] for k, v in DEPTS.items()} | {"audit": "сова-кадровий-аудит", "files": "сова-сховище-файлів", "backups": "сова-бекапи"}
     for key in CHANNEL_KEYS:
+        if key in config.CHANNELS:  # наявний канал сервера, нічого не створюємо
+            if not g.get_channel(config.CHANNELS[key]):
+                log.warning("Канал %s (%s) не знайдено або бот його не бачить", key, config.CHANNELS[key])
+            continue
         existing = g.get_channel(int(ids[key])) if ids.get(key) else None
         if existing:
             continue
@@ -432,7 +436,8 @@ async def button_decision(interaction: discord.Interaction, kind: str, rid: int,
 
 
 async def post_card(kind: str, row: dict):
-    ch = await channel(row["dept"]) or await channel("lead")
+    special = f"rap:{row['type']}" if kind == "rap" else None
+    ch = (await channel(special) if special in config.CHANNELS else None) or await channel(row["dept"]) or await channel("lead")
     if not ch:
         return
     embed = await (act_embed(row) if kind == "act" else rap_embed(row))

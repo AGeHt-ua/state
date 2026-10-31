@@ -38,3 +38,16 @@ MAX_UPLOAD_MB = float(env("MAX_UPLOAD_MB", "10"))
 
 # Назва категорії, у якій бот створює свої канали
 CATEGORY_NAME = env("CATEGORY_NAME", "СОВА · кабінет")
+
+# Наявні канали сервера СБУ. Для решти ключів бот створює власні канали в категорії вище.
+# Ключі: lead, orv, vvb, atc, alpha, deb, vkpp, academy, press (звіти й рапорти відділу),
+# rap:promo, rap:vac, rap:dismiss, rap:transfer (окремі канали для типів рапортів), audit, files, backups.
+CHANNELS = {
+    "rap:promo": 1563888686800568361,   # Рапорт на підвищення
+    "audit": 1564895460869677097,       # Кадровий аудит
+}
+try:
+    import json as _json
+    CHANNELS.update({k: int(v) for k, v in _json.loads(env("CHANNELS_JSON", "{}")).items()})
+except ValueError:
+    pass
