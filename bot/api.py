@@ -252,12 +252,23 @@ async def public_candidate(request):
         if len(hits) >= cap:
             raise Fail("Забагато анкет. Спробуйте пізніше.", 429)
         _cand_hits[key] = hits
-    b = await body(request)
-    sid = str(b.get("sid") or "").strip()
-    if not sid.isdigit() or len(sid) > 8:
-        raise Fail("Static ID — лише цифри.")
-    cid = await candidates.submit_public(str(b.get("discord") or ""), int(sid), str(b.get("name") or "").strip(),
-                                         str(b.get("age") or "").strip(), str(b.get("exp") or "").strip(), str(b.get("motive") or "").strip())
+    # multipart: поле data (JSON анкети) і photo (фото персонажа, до 5 МБ)
+    b, photo = {}, None
+    reader = await request.multipart()
+    while (part := await reader.next()) is not None:
+        if part.name == "data":
+            try:
+                b = json.loads(await part.text())
+            except ValueError:
+                raise Fail("Пошкоджені дані анкети.")
+        elif part.name == "photo":
+            data = bytearray()
+            while chunk := await part.read_chunk(64 * 1024):
+                data.extend(chunk)
+                if len(data) > 5 * 1024 * 1024:
+                    raise Fail("Фото більше за 5 МБ.", 413)
+            photo = (bytes(data), part.filename or "photo")
+    cid = await candidates.submit_form(str(b.get("discord") or ""), b, photo)
     for key in (ip, "*"):
         _cand_hits[key].append(now)
     c = await db.one("SELECT discord_id FROM candidates WHERE id=?", cid)
@@ -309,6 +320,11 @@ async def hr_list(request):
     nm = await names([c["vvb_by"] for c in cand + done] + [c["vkpp_by"] for c in cand + done] + [a["reviewer"] for a in acc_done])
     for c in cand + done:
         c["vvbName"], c["vkppName"] = nm.get(c["vvb_by"]), nm.get(c["vkpp_by"])
+        c["extra"] = json.loads(c.get("extra") or "null")
+        try:
+            c["photoUrl"] = await core.file_url(c["photo"]) if c.get("photo") else None
+        except Fail:
+            c["photoUrl"] = None
     for a in acc_done:
         a["reviewerName"] = nm.get(a["reviewer"])
     return web.json_response({"rights": r, "cand": cand, "candDone": done, "access": acc, "accessDone": acc_done})

@@ -313,11 +313,28 @@ const CST = { vvb: ["chip wait", "Перевірка ВВБ"], vkpp: ["chip wait
 const candChip = (c) => `<span class="${CST[c.status][0]}">${CST[c.status][1]}</span>`;
 const docNo = (p, n) => `${p}-${String(n).padStart(4, "0")}`;
 
+const CDOCS = { passport: "Паспорт", med: "Медична карта", military: "Військовий квиток", idcard: "Посвідчення особи" };
+const CDRIVE = { A: "A", B: "B", CD: "C/D", water: "водний", air: "повітряний" };
+const CLICS = { weapon: "на зброю", hunt: "на полювання", fish: "на рибальство" };
+const CHOUSE = { none: "немає", flat: "квартира", house: "будинок", rent: "орендоване" };
+function candExtra(x) {
+  const docs = ["passport", "med", "military", "idcard"].filter((k) => k !== "idcard" || x.docs.includes(k))
+    .map((k) => `<span class="chip ${x.docs.includes(k) ? "ok" : "bad"}">${CDOCS[k]}</span>`).join(" ");
+  const flags = [x.record && "судимості", x.wanted && "у розшуку", x.warn && "активний Warn", x.fired_1d && "звільнення < 1 доби"].filter(Boolean);
+  return `<dt>Дата народження</dt><dd>${esc(x.birth || "—")}${x.phone ? " · тел. " + esc(x.phone) : ""}</dd>
+    <dt>Документи</dt><dd>${docs}</dd>
+    <dt>Посв. водія / ліцензії</dt><dd>${esc(x.drive.map((d) => CDRIVE[d]).join(", ") || "немає")} · ${esc(x.lics.map((l) => CLICS[l]).join(", ") || "ліцензій немає")}</dd>
+    <dt>Майно</dt><dd>Житло: ${esc(CHOUSE[x.housing] || "—")}${x.housing_note ? " (" + esc(x.housing_note) + ")" : ""} · Транспорт: ${esc(x.cars || "немає")} · Бізнес: ${esc(x.business || "немає")}</dd>
+    <dt>Правова історія</dt><dd>${flags.length ? flags.map((f) => `<span class="chip bad">${f}</span>`).join(" ") : '<span class="chip ok">Чисто</span>'}
+      ${x.record_note ? "<div>" + esc(x.record_note) + "</div>" : ""}${x.admin_note ? '<div class="muted">Адмін.: ' + esc(x.admin_note) + "</div>" : ""}</dd>`;
+}
+
 function candCard(c, r) {
   const mine = (c.status === "vvb" && r.vvb) || (c.status === "vkpp" && r.vkpp);
   return `<article class="card"><header><h3>${esc(c.name)} <span class="muted mono small">№${c.sid}</span></h3><span class="sp"></span>
     <span class="mono small muted">${docNo("АНК", c.id)}</span>${candChip(c)}</header>
-    <dl class="kv"><dt>Вік / онлайн</dt><dd>${esc(c.age || "—")}</dd><dt>Досвід</dt><dd>${esc(c.exp || "—")}</dd>
+    ${c.photoUrl ? `<img class="cand-photo" src="${esc(c.photoUrl)}" alt="Фото кандидата" loading="lazy">` : ""}
+    <dl class="kv">${c.extra ? candExtra(c.extra) : ""}<dt>Вік / онлайн</dt><dd>${esc(c.age || "—")}${c.extra && c.extra.online ? " · " + esc(c.extra.online) : ""}</dd><dt>Досвід</dt><dd>${esc(c.exp || "—")}</dd>
       <dt>Мотивація</dt><dd>${esc(c.motive || "—")}</dd><dt>Подано</dt><dd class="num">${fmtDT(c.t)}</dd>
       ${c.vvb_t ? `<dt>ВВБ</dt><dd>${c.status === "rej" && !c.vkpp_t ? "відмовлено" : "погоджено"} · ${esc(c.vvbName || "—")} · ${fmtDT(c.vvb_t)}</dd>` : ""}
       ${c.vkpp_t ? `<dt>ВКПП</dt><dd>${c.status === "ok" ? "прийнято" : "відмовлено"} · ${esc(c.vkppName || "—")} · ${fmtDT(c.vkpp_t)}</dd>` : ""}

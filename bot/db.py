@@ -124,7 +124,8 @@ class DB:
         await self.conn.execute("PRAGMA journal_mode=WAL")
         await self.conn.execute("PRAGMA foreign_keys=ON")
         await self.conn.executescript(SCHEMA)
-        for sql in ("ALTER TABLE candidates ADD COLUMN discord_name TEXT",):
+        for sql in ("ALTER TABLE candidates ADD COLUMN discord_name TEXT", "ALTER TABLE candidates ADD COLUMN extra TEXT",
+                    "ALTER TABLE candidates ADD COLUMN photo TEXT"):
             try:
                 await self.conn.execute(sql)
             except Exception:

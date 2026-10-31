@@ -121,3 +121,5 @@ table.t tr:hover td:first-child{box-shadow:inset 2px 0 0 var(--gold)}
 /* кадри */
 .card>dl.kv+.acts{margin-top:14px}
 .view>.card+.card{margin-top:14px}
+.cand-photo{float:right;width:120px;height:150px;object-fit:cover;border:1px solid var(--gold);margin:0 0 10px 14px}
+@media (max-width:560px){.cand-photo{float:none;display:block;margin:0 auto 12px}}

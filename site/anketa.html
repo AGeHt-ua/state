@@ -9,17 +9,35 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="sova.css?v=2">
-<link rel="stylesheet" href="fx.css?v=2">
+<link rel="stylesheet" href="sova.css?v=3">
+<link rel="stylesheet" href="fx.css?v=3">
 <style>
-  .login-card.wide{max-width:640px;text-align:left;justify-items:stretch}
+  .login-card.wide{max-width:760px;text-align:left;justify-items:stretch}
   .login-card.wide>.top{display:grid;justify-items:center;text-align:center;gap:10px}
   .login-card.wide .fx-ring{width:132px;height:132px}
-  .login-card.wide img{width:110px;height:110px}
-  .ank{display:grid;gap:14px}
+  .login-card.wide .top img{width:110px;height:110px}
+  .ank{display:grid;gap:22px}
+  .ank fieldset{border:1px solid var(--line);margin:0;padding:16px 16px 18px;display:grid;gap:14px;background:rgba(10,13,19,.5);position:relative}
+  .ank legend{font:500 11px var(--mono);letter-spacing:.16em;color:var(--gold);padding:0 8px;text-transform:uppercase}
+  .ank legend b{color:var(--gold2);font-weight:500;margin-right:6px}
   .ank .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .ank .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
   .ank small{color:var(--dim);font-size:12px}
-  .ank textarea.i{min-height:96px;resize:vertical}
+  .ank textarea.i{min-height:84px;resize:vertical}
+  .chk{display:flex;flex-wrap:wrap;gap:8px}
+  .chk label{display:flex;align-items:center;gap:8px;border:1px solid var(--line2);padding:7px 11px;cursor:pointer;font-size:13.5px;background:var(--bg2);transition:border-color .15s,background .15s}
+  .chk label:has(input:checked){border-color:var(--gold);background:var(--gold-soft)}
+  .chk label.req::after{content:"обов'язково";font:10px var(--mono);color:var(--bad);letter-spacing:.06em}
+  .chk label.req:has(input:checked)::after{content:"✔";color:var(--ok)}
+  .sub{font:500 12px var(--body);color:var(--muted)}
+  .photo{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:center}
+  .photo .pv{width:150px;height:190px;border:1px dashed var(--line2);display:grid;place-items:center;background:var(--bg2) center/cover no-repeat;color:var(--dim);font:11px var(--mono);text-align:center;cursor:pointer;position:relative}
+  .photo .pv::after{content:"ФОТО\A3×4";white-space:pre}
+  .photo .pv.has::after{content:"";}
+  .photo .pv.has{border-style:solid;border-color:var(--gold)}
+  .yn{display:flex;gap:8px}
+  .yn label{flex:1;justify-content:center}
+  .warnbox{border-left:3px solid var(--bad);background:var(--bad-soft);padding:10px 12px;font-size:13px}
   .stages{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;font:11px var(--mono);letter-spacing:.08em;color:var(--muted)}
   .stages span{border:1px solid var(--line2);padding:4px 8px}
   .stages b{color:var(--gold2);font-weight:500}
@@ -27,7 +45,8 @@
   .done .no{font:28px var(--display);color:var(--gold2);letter-spacing:.06em}
   .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line2);border-top-color:var(--gold);border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
   @keyframes sp{to{transform:rotate(360deg)}}
-  @media (max-width:560px){.ank .two{grid-template-columns:1fr}}
+  [hidden]{display:none!important}
+  @media (max-width:620px){.ank .two,.ank .three{grid-template-columns:1fr}.photo{grid-template-columns:1fr;justify-items:center}}
 </style>
 </head>
 <body>
@@ -37,49 +56,162 @@
     <div class="fx-ring"><img src="sbu-logo.webp" alt="Емблема Служби безпеки штату NG" width="110" height="110"></div>
     <div class="eyebrow">Служба безпеки штату NG · набір на службу</div>
     <h1 class="fx-glitch">АНКЕТА КАНДИДАТА</h1>
-    <div class="stages"><span><b>01</b> Анкета</span><span><b>02</b> Перевірка ВВБ</span><span><b>03</b> Рішення ВКПП</span><span><b>04</b> Ролі й допуск</span></div>
+    <div class="stages"><span><b>01</b> Анкета</span><span><b>02</b> Перевірка ВВБ</span><span><b>03</b> Рішення ВКПП</span><span><b>04</b> Стажування</span></div>
   </div>
-  <form class="ank" id="f" autocomplete="on">
-    <div class="two">
-      <label class="f"><span>Ім'я та прізвище персонажа (IC)</span><input class="i" name="name" required minlength="3" maxlength="60" placeholder="Name Surname"></label>
-      <label class="f"><span>Static ID</span><input class="i mono" name="sid" required inputmode="numeric" pattern="\d{1,8}" maxlength="8" placeholder="3481"></label>
+
+  <form class="ank" id="f" autocomplete="on" novalidate>
+    <fieldset>
+      <legend><b>I</b>Особа кандидата (IC)</legend>
+      <div class="photo">
+        <label class="pv" id="pv" tabindex="0" title="Завантажити фото"><input type="file" id="photo" accept="image/png,image/jpeg,image/webp" hidden></label>
+        <div style="display:grid;gap:14px">
+          <label class="f"><span>Ім'я та прізвище</span><input class="i" name="name" required minlength="3" maxlength="60" placeholder="Name Surname"></label>
+          <div class="two">
+            <label class="f"><span>Static ID</span><input class="i mono" name="sid" required inputmode="numeric" pattern="\d{1,8}" maxlength="8" placeholder="3481"></label>
+            <label class="f"><span>Дата народження</span><input class="i" name="birth" required maxlength="20" placeholder="12.03.1998"></label>
+          </div>
+          <small>Фото персонажа (IC) у повний зріст або по пояс, без маски. PNG/JPG/WEBP до 5 МБ.</small>
+        </div>
+      </div>
+      <div class="two">
+        <label class="f"><span>Стать</span><select class="i" name="gender"><option value="ч">Чоловіча</option><option value="ж">Жіноча</option></select></label>
+        <label class="f"><span>Номер телефону (IC)</span><input class="i mono" name="phone" maxlength="20" placeholder="555-1234"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend><b>II</b>Документи</legend>
+      <div class="sub">Згідно з п. 1.4 Положення про стажування СБУ та ст. 8 Закону «Про державні документи» для вступу обов'язкові паспорт, медична карта й військовий квиток.</div>
+      <div class="chk">
+        <label class="req"><input type="checkbox" name="docs" value="passport"> Паспорт громадянина</label>
+        <label class="req"><input type="checkbox" name="docs" value="med"> Медична карта</label>
+        <label class="req"><input type="checkbox" name="docs" value="military"> Військовий квиток</label>
+        <label><input type="checkbox" name="docs" value="idcard"> Посвідчення особи</label>
+      </div>
+      <div class="sub">Посвідчення водія (категорії)</div>
+      <div class="chk">
+        <label><input type="checkbox" name="drive" value="A"> A</label><label><input type="checkbox" name="drive" value="B"> B</label>
+        <label><input type="checkbox" name="drive" value="CD"> C / D</label><label><input type="checkbox" name="drive" value="water"> Водний</label>
+        <label><input type="checkbox" name="drive" value="air"> Повітряний</label>
+      </div>
+      <div class="sub">Ліцензії</div>
+      <div class="chk">
+        <label><input type="checkbox" name="lics" value="weapon"> На зброю</label><label><input type="checkbox" name="lics" value="hunt"> На полювання</label>
+        <label><input type="checkbox" name="lics" value="fish"> На рибальство</label>
+      </div>
+      <p class="warnbox" id="docwarn" hidden>Без паспорта, медичної карти й військового квитка анкету буде відхилено. Отримайте документи й подайте анкету повторно.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend><b>III</b>Майно</legend>
+      <div class="two">
+        <label class="f"><span>Житло</span><select class="i" name="housing"><option value="none">Немає</option><option value="flat">Квартира</option><option value="house">Будинок</option><option value="rent">Орендоване</option></select></label>
+        <label class="f"><span>Адреса / номер житла</span><input class="i" name="housing_note" maxlength="200" placeholder="напр. будинок №214"></label>
+      </div>
+      <label class="f"><span>Транспорт (модель, номерний знак)</span><input class="i" name="cars" maxlength="200" placeholder="Bravado Buffalo, 12ABC345 · або «немає»"></label>
+      <label class="f"><span>Бізнес</span><input class="i" name="business" maxlength="200" placeholder="назва / номер бізнесу · або «немає»"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend><b>IV</b>Правова історія</legend>
+      <div class="two">
+        <div class="f"><span class="sub">Судимості</span><div class="chk yn">
+          <label><input type="radio" name="record" value="0" checked> Немає</label><label><input type="radio" name="record" value="1"> Є</label></div></div>
+        <div class="f"><span class="sub">Зараз у розшуку</span><div class="chk yn">
+          <label><input type="radio" name="wanted" value="0" checked> Ні</label><label><input type="radio" name="wanted" value="1"> Так</label></div></div>
+      </div>
+      <label class="f" id="recnote" hidden><span>Судимості: стаття КК, коли, вирок</span><textarea class="i" name="record_note" maxlength="400"></textarea></label>
+      <label class="f"><span>Адміністративні порушення, штрафи (за останній час)</span><input class="i" name="admin_note" maxlength="300" placeholder="або «немає»"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend><b>V</b>Служба та мотивація</legend>
+      <label class="f"><span>Досвід у державних структурах</span><textarea class="i" name="exp" required maxlength="500" placeholder="Структура, звання, посада, причина звільнення. Якщо досвіду немає — так і напишіть."></textarea></label>
+      <label class="f"><span>Чому ви хочете служити в СБУ?</span><textarea class="i" name="motive" required minlength="20" maxlength="800"></textarea></label>
+    </fieldset>
+
+    <fieldset>
+      <legend><b>VI</b>OOC</legend>
+      <div class="three">
+        <label class="f"><span>Нік у Discord</span><input class="i mono" name="discord" required maxlength="40" placeholder="agent.smith"></label>
+        <label class="f"><span>Ваш вік (OOC)</span><input class="i" name="age" required maxlength="20" placeholder="19"></label>
+        <label class="f"><span>Онлайн на день</span><input class="i" name="online" maxlength="60" placeholder="4–5 год, вечір"></label>
+      </div>
+      <small>Ви маєте бути на Discord-сервері «Служба Безпеки NG»: туди надійде рішення, ролі й код доступу.</small>
+      <div class="chk">
+        <label><input type="checkbox" name="warn"> Маю активний Warn</label>
+        <label><input type="checkbox" name="fired_1d"> Звільнився з держструктури менше доби тому</label>
+      </div>
+    </fieldset>
+
+    <div class="chk" style="display:grid;gap:8px">
+      <label><input type="checkbox" id="agree1"> Ознайомлений із Конституцією, Кримінальним кодексом, Законом «Про СБУ» та Внутрішнім статутом СБУ.</label>
+      <label><input type="checkbox" id="agree2"> Підтверджую правдивість даних і даю згоду на перевірку Відділом внутрішньої безпеки.</label>
     </div>
-    <div class="two">
-      <label class="f"><span>Нік у Discord (username)</span><input class="i mono" name="discord" required maxlength="40" placeholder="agent.smith"><small>Ви маєте бути на сервері «Служба Безпеки NG»</small></label>
-      <label class="f"><span>Вік (OOC) і середній онлайн</span><input class="i" name="age" required maxlength="60" placeholder="19 років, 4–5 год на день"></label>
-    </div>
-    <label class="f"><span>Досвід у державних структурах</span><textarea class="i" name="exp" required maxlength="500" placeholder="Де служили, звання, причина звільнення. Якщо досвіду немає — так і напишіть."></textarea></label>
-    <label class="f"><span>Чому ви хочете служити в СБУ?</span><textarea class="i" name="motive" required minlength="20" maxlength="800"></textarea></label>
-    <label class="f" style="display:flex;gap:10px;align-items:flex-start;flex-direction:row"><input type="checkbox" required style="margin-top:4px"><span>Підтверджую, що ознайомлений із законодавством штату NG і правилами сервера, а вказані дані правдиві.</span></label>
     <p class="err" id="err" hidden></p>
     <button class="btn gold" type="submit" id="btn">Подати анкету</button>
-    <p class="fine">Анкету розгляне Відділ внутрішньої безпеки, потім ВКПП. Рішення бот «Сова» надішле вам в особисті повідомлення Discord, тож тримайте їх відкритими.</p>
+    <p class="fine">Анкету перевірить Відділ внутрішньої безпеки, потім рішення ухвалить ВКПП. Рішення бот «Сова» надішле в особисті повідомлення Discord, тож тримайте їх відкритими. Надання неправдивих даних є підставою для відмови.</p>
   </form>
 </div></div></div>
 <script>
 (() => {
   const API = (new URLSearchParams(location.search).get("api") || "https://sova.d-f-12339.workers.dev").replace(/\/$/, "");
-  const f = document.getElementById("f"), btn = document.getElementById("btn"), err = document.getElementById("err");
+  const $ = (s) => document.querySelector(s);
+  const f = $("#f"), btn = $("#btn"), err = $("#err"), pv = $("#pv"), photo = $("#photo");
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  pv.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); photo.click(); } });
+  photo.addEventListener("change", () => {
+    const file = photo.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { photo.value = ""; return fail("Фото більше за 5 МБ."); }
+    pv.style.backgroundImage = `url("${URL.createObjectURL(file)}")`;
+    pv.classList.add("has");
+  });
+  const docsOk = () => ["passport", "med", "military"].every((v) => f.querySelector(`input[name=docs][value=${v}]`).checked);
+  f.addEventListener("change", (e) => {
+    if (e.target.name === "record") $("#recnote").hidden = e.target.value !== "1";
+    if (e.target.name === "docs") $("#docwarn").hidden = docsOk();
+  });
+  function fail(m) { err.textContent = m; err.hidden = false; err.scrollIntoView({ behavior: "smooth", block: "center" }); }
+
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
     err.hidden = true;
+    const fd = new FormData(f);
+    const val = (k) => String(fd.get(k) || "").trim();
+    if (!photo.files[0]) return fail("Додайте фото персонажа (IC).");
+    for (const [k, m] of [["name", "Вкажіть ім'я та прізвище."], ["sid", "Вкажіть Static ID."], ["birth", "Вкажіть дату народження."],
+      ["exp", "Опишіть досвід (або напишіть, що його немає)."], ["motive", "Напишіть мотивацію."], ["discord", "Вкажіть нік у Discord."], ["age", "Вкажіть ваш вік."]]) {
+      if (!val(k)) return fail(m);
+    }
+    if (!/^\d{1,8}$/.test(val("sid"))) return fail("Static ID — лише цифри.");
+    if (val("motive").length < 20) return fail("Розпишіть мотивацію детальніше (щонайменше 20 символів).");
+    if (!$("#agree1").checked || !$("#agree2").checked) return fail("Підтвердьте ознайомлення із законодавством і згоду на перевірку.");
+    const data = {
+      name: val("name"), sid: val("sid"), birth: val("birth"), gender: val("gender"), phone: val("phone"),
+      docs: fd.getAll("docs"), drive: fd.getAll("drive"), lics: fd.getAll("lics"),
+      housing: val("housing"), housing_note: val("housing_note"), cars: val("cars"), business: val("business"),
+      record: val("record") === "1", record_note: val("record_note"), wanted: val("wanted") === "1", admin_note: val("admin_note"),
+      exp: val("exp"), motive: val("motive"), discord: val("discord"), age: val("age"), online: val("online"),
+      warn: !!fd.get("warn"), fired_1d: !!fd.get("fired_1d"),
+    };
+    const body = new FormData();
+    body.append("data", JSON.stringify(data));
+    body.append("photo", photo.files[0]);
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span> Надсилаю…';
-    const data = Object.fromEntries(new FormData(f));
     try {
       let r;
-      try {
-        r = await fetch(API + "/api/public/candidate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-      } catch (x) { throw new Error("Немає зв'язку з ботом «Сова». Спробуйте за хвилину."); }
+      try { r = await fetch(API + "/api/public/candidate", { method: "POST", body }); }
+      catch (x) { throw new Error("Немає зв'язку з ботом «Сова». Спробуйте за хвилину."); }
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Помилка " + r.status);
       f.outerHTML = `<div class="done"><div class="eyebrow">Анкету зареєстровано</div><div class="no">${esc(d.no)}</div>
         <p>Анкету передано на перевірку <b>Відділу внутрішньої безпеки</b>. Рішення надійде в особисті повідомлення Discord від бота «Сова».</p>
         ${d.found ? "" : '<p class="note warn">Вашого ніку не знайдено на сервері «Служба Безпеки NG». Приєднайтеся до сервера, інакше ви не отримаєте рішення й ролі.</p>'}</div>`;
+      scrollTo({ top: 0, behavior: "smooth" });
     } catch (x) {
-      err.textContent = x.message;
-      err.hidden = false;
+      fail(x.message);
       btn.disabled = false;
       btn.textContent = "Подати анкету";
     }
