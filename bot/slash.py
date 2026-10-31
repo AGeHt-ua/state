@@ -106,6 +106,17 @@ class Admin(app_commands.Group):
         except Fail as e:
             await reply_error(interaction, e)
 
+    @app_commands.command(name="панель", description="Розмістити в цьому каналі панель «Створити акаунт» (Голова СБУ)")
+    async def panel(self, interaction: discord.Interaction):
+        try:
+            await head_only(interaction)
+            await interaction.channel.send(embed=welcome_embed(), view=RegisterView())
+            await interaction.response.send_message("Панель розміщено.", ephemeral=True)
+        except Fail as e:
+            await reply_error(interaction, e)
+        except discord.Forbidden:
+            await interaction.response.send_message("Бот не може писати в цей канал.", ephemeral=True)
+
     @app_commands.command(name="бекап", description="Зробити бекап бази зараз (Голова СБУ)")
     async def backup_now(self, interaction: discord.Interaction):
         try:
@@ -127,6 +138,91 @@ class Admin(app_commands.Group):
             await reply_error(interaction, e)
 
 
+# ---------------------------------------------------------------- кнопка «Створити акаунт»
+def credentials_text(sid: int, pw: str, a: dict) -> str:
+    text = (f"**Ваш акаунт у кабінеті «Сова»**\nСайт: {config.SITE_URL}\nStatic ID: `{sid}`\nПароль: `{pw}`\n"
+            "Збережіть пароль — це повідомлення бачите лише ви.")
+    if not a.get("ok"):
+        text += f"\n\n⚠️ Увійти поки не вийде: {a.get('why', 'немає ролей СБУ')}. Щойно отримаєте ролі — вхід відкриється сам."
+    return text
+
+
+async def guild_member(interaction: discord.Interaction) -> discord.Member | None:
+    """Учасник сервера СБУ (кнопку могли натиснути в особистих повідомленнях)."""
+    if isinstance(interaction.user, discord.Member) and core.guild() and interaction.user.guild.id == core.guild().id:
+        return interaction.user
+    return await core.member_of(interaction.user.id)
+
+
+async def do_reset(interaction: discord.Interaction):
+    try:
+        member = await guild_member(interaction)
+        if not member:
+            raise Fail("Спершу приєднайтеся до сервера «Служба Безпеки NG».")
+        u, pw = await core.reset_own_password(member)
+        await interaction.response.send_message(credentials_text(u["sid"], pw, resolve({r.id for r in member.roles})), ephemeral=True)
+    except Fail as e:
+        await interaction.response.send_message(str(e), ephemeral=True)
+
+
+class RegisterModal(discord.ui.Modal, title="Акаунт у кабінеті «Сова»"):
+    sid = discord.ui.TextInput(label="Static ID (номер жетона)", placeholder="напр. 3481", min_length=1, max_length=8)
+    name = discord.ui.TextInput(label="Ім'я та прізвище персонажа (IC)", placeholder="Name Surname", min_length=3, max_length=60)
+
+    def __init__(self, member: discord.Member):
+        super().__init__()
+        self.member = member
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            raw = str(self.sid.value).strip()
+            if not raw.isdigit():
+                raise Fail("Static ID — лише цифри.")
+            a, pw = await core.register(self.member, int(raw), str(self.name.value).strip())
+            await interaction.response.send_message(credentials_text(int(raw), pw, a), ephemeral=True)
+        except Fail as e:
+            await interaction.response.send_message(str(e), ephemeral=True, view=ResetView())
+
+
+class ResetView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+
+    @discord.ui.button(label="Новий пароль", style=discord.ButtonStyle.secondary)
+    async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await do_reset(interaction)
+
+
+class RegisterView(discord.ui.View):
+    """Постійна кнопка (працює і після перезапуску бота)."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Створити акаунт", style=discord.ButtonStyle.success, emoji="🦉", custom_id="sova:register")
+    async def create(self, interaction: discord.Interaction, button: discord.ui.Button):
+        member = await guild_member(interaction)
+        if not member:
+            return await interaction.response.send_message("Спершу приєднайтеся до сервера «Служба Безпеки NG».", ephemeral=True)
+        if await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id)):
+            return await interaction.response.send_message("У вас уже є акаунт. Забули пароль?", ephemeral=True, view=ResetView())
+        await interaction.response.send_modal(RegisterModal(member))
+
+    @discord.ui.button(label="Новий пароль", style=discord.ButtonStyle.secondary, custom_id="sova:resetpw")
+    async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await do_reset(interaction)
+
+
+def welcome_embed(member: discord.abc.User | None = None) -> discord.Embed:
+    e = discord.Embed(title="Служба безпеки штату NG · кабінет «Сова»", color=0xC9A05A,
+                      description=(f"Ласкаво просимо, {member.mention}!\n\n" if member else "")
+                      + "Натисніть **«Створити акаунт»**, вкажіть Static ID та ім'я персонажа — бот одразу видасть пароль до кабінету.\n"
+                      "Звання й відділ кабінет бере з ваших ролей на сервері. Без ролей СБУ акаунт створюється, але вхід відкриється, "
+                      "щойно ролі з'являться. Якщо вийдете із сервера — доступ закриється автоматично.")
+    e.add_field(name="Кабінет", value=config.SITE_URL)
+    return e
+
+
 async def setup(bot: discord.Client):
     bot.tree.add_command(Access())
     bot.tree.add_command(Admin())
+    bot.add_view(RegisterView())

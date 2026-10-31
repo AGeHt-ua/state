@@ -565,6 +565,48 @@ async def post_audit(actor: dict, kind: str, u: dict):
         await ch.send(f"**{row['action']}** · {who(u)} · {row['details']}\nРішення: {who(actor)}")
 
 
+# ---------------------------------------------------------------- самостійна реєстрація
+async def register(member: discord.Member, sid: int, name: str) -> tuple[dict, str]:
+    """Акаунт створює сама людина кнопкою в Discord. Доступ до кабінету все одно дають лише ролі СБУ."""
+    own = await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id))
+    if own:
+        raise Fail(f"У вас уже є акаунт: Static ID {own['sid']}. Якщо забули пароль — натисніть «Новий пароль».")
+    if await db.one("SELECT sid FROM users WHERE sid=?", sid):
+        raise Fail("Цей Static ID уже зареєстровано за іншим Discord. Якщо це ваш номер — зверніться до Голови СБУ.")
+    a = resolve({r.id for r in member.roles})
+    rank, dept = (a["rank"], a["dept"]) if a["ok"] else (1, "academy")
+    pw = new_password()
+    t = now_ms()
+    await db.run("INSERT INTO users(sid,name,discord_id,pw_hash,pw_set,rank,dept,since,created) VALUES(?,?,?,?,?,?,?,?,?)",
+                 sid, name[:60], str(member.id), hash_password(pw), t, rank, dept, t, t)
+    await db.audit(0, "Створено акаунт", sid, f"самостійно через Discord · {rank_name(rank) if a['ok'] else 'без ролей СБУ'}")
+    return a, pw
+
+
+async def reset_own_password(member: discord.Member) -> tuple[dict, str]:
+    u = await db.one("SELECT * FROM users WHERE discord_id=?", str(member.id))
+    if not u:
+        raise Fail("У вас ще немає акаунта. Натисніть «Створити акаунт».")
+    pw = new_password()
+    await db.run("UPDATE users SET pw_hash=?, pw_set=? WHERE sid=?", hash_password(pw), now_ms(), u["sid"])
+    await db.run("DELETE FROM sessions WHERE sid=?", u["sid"])
+    await db.audit(0, "Новий пароль", u["sid"], "самостійно через Discord, попередні входи завершено")
+    return u, pw
+
+
+async def member_left(member: discord.Member):
+    """Вийшов або кікнули з сервера — усі входи в кабінет завершуються одразу."""
+    u = await db.one("SELECT * FROM users WHERE discord_id=?", str(member.id))
+    _roles_cache.pop(str(member.id), None)
+    if not u:
+        return
+    await db.run("DELETE FROM sessions WHERE sid=?", u["sid"])
+    await db.audit(0, "Вийшов із сервера", u["sid"], "доступ до кабінету закрито")
+    ch = await channel("audit")
+    if ch:
+        await ch.send(f"**Вийшов із сервера** · {who(u)} · {rank_name(u['rank'])} · доступ до кабінету закрито")
+
+
 # ---------------------------------------------------------------- файли
 _url_cache: dict[str, tuple[float, str]] = {}
 
