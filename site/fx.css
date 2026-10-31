@@ -1,0 +1,119 @@
+/* Ефекти «Сови»: шар поверх sova.css — режимний термінал СБУ (сканлінії, радар, HUD-кути, грифи, анімації появи). */
+:root{--glow:0 0 24px rgba(201,160,90,.18);--hud:rgba(201,160,90,.55)}
+
+/* фон: віньєтка, сканлінії, легкий шум */
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse at 50% 0%,rgba(201,160,90,.07),transparent 60%),radial-gradient(ellipse at 50% 120%,rgba(0,0,0,.6),transparent 70%)}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:999;opacity:.35;mix-blend-mode:overlay;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px)}
+#app{position:relative;z-index:1}
+
+/* ---------- вхід ---------- */
+.login{position:relative;overflow:hidden}
+.login::before{content:"";position:absolute;width:1100px;height:1100px;left:50%;top:50%;translate:-50% -50%;border-radius:50%;pointer-events:none;
+  background:conic-gradient(from 0deg,rgba(201,160,90,.16),transparent 14%,transparent);
+  -webkit-mask:radial-gradient(circle,#000 0 70%,transparent 71%);mask:radial-gradient(circle,#000 0 70%,transparent 71%);
+  animation:radar 9s linear infinite}
+.login::after{content:"";position:absolute;width:1100px;height:1100px;left:50%;top:50%;translate:-50% -50%;border-radius:50%;pointer-events:none;
+  background:repeating-radial-gradient(circle,transparent 0 109px,rgba(201,160,90,.07) 110px 111px)}
+@keyframes radar{to{rotate:360deg}}
+
+.login-card{position:relative;z-index:1;padding:34px 30px 26px;background:linear-gradient(180deg,rgba(18,25,36,.88),rgba(10,13,19,.92));
+  border:1px solid var(--line);box-shadow:0 30px 80px rgba(0,0,0,.55),var(--glow);backdrop-filter:blur(6px);animation:rise .7s cubic-bezier(.2,.8,.2,1) both}
+.login-card{overflow:hidden}
+.login-card .fx-grif{position:absolute;top:14px;right:-38px;rotate:35deg;padding:3px 44px;background:rgba(212,96,90,.14);border-block:1px solid rgba(212,96,90,.55);
+  font:600 10px/1.4 var(--mono);letter-spacing:.2em;color:#e07b74}
+.login-card .fx-ring{position:relative;display:grid;place-items:center;width:172px;height:172px}
+.login-card .fx-ring::before,.login-card .fx-ring::after{content:"";position:absolute;inset:0;border-radius:50%;border:1px dashed rgba(201,160,90,.45);animation:radar 30s linear infinite}
+.login-card .fx-ring::after{inset:-9px;border:2px solid transparent;border-top-color:var(--gold);border-right-color:rgba(201,160,90,.25);animation-duration:6s}
+.login-card h1{letter-spacing:.04em;text-shadow:0 0 18px rgba(226,192,127,.18)}
+.login-card h1.fx-glitch{animation:glitch .9s steps(2) 1 .3s both}
+@keyframes glitch{0%{clip-path:inset(0 0 60% 0);translate:-3px 0;color:var(--gold2)}20%{clip-path:inset(40% 0 20% 0);translate:3px 0}40%{clip-path:inset(10% 0 70% 0);translate:-2px 0}60%{clip-path:inset(70% 0 0 0);translate:2px 0}80%,100%{clip-path:none;translate:0;color:inherit}}
+.login form{position:relative}
+.login input.i{transition:border-color .2s,box-shadow .2s,background .2s}
+.login input.i:focus{box-shadow:0 0 0 3px var(--gold-soft),inset 0 0 18px rgba(201,160,90,.08)}
+.fx-meta{display:flex;justify-content:space-between;gap:12px;width:100%;font:11px var(--mono);color:var(--dim);letter-spacing:.08em;border-top:1px dashed var(--line);padding-top:10px}
+
+/* HUD-кути */
+.login-card,.card,.tile{--c:14px}
+.login-card::before,.card::before,.tile::before{content:"";position:absolute;inset:-1px;pointer-events:none;
+  background:linear-gradient(var(--hud),var(--hud)) top left/var(--c) 1px,linear-gradient(var(--hud),var(--hud)) top left/1px var(--c),
+             linear-gradient(var(--hud),var(--hud)) bottom right/var(--c) 1px,linear-gradient(var(--hud),var(--hud)) bottom right/1px var(--c);
+  background-repeat:no-repeat;transition:opacity .3s;opacity:.7}
+.login-card::before{inset:0}
+.card,.tile{position:relative}
+.card:hover::before,.tile:hover::before{opacity:1}
+
+/* інтро-заставка */
+.fx-boot{position:fixed;inset:0;z-index:2000;background:#06080c;display:grid;place-items:center;cursor:pointer;transition:opacity .5s}
+.fx-boot.out{opacity:0;pointer-events:none}
+.fx-boot pre{margin:0;min-width:min(560px,90vw);font:13px/1.8 var(--mono);color:var(--muted);white-space:pre-wrap}
+.fx-boot pre b{color:var(--gold2);font-weight:500}.fx-boot pre i{color:var(--ok);font-style:normal}
+.fx-boot pre::after{content:"▌";color:var(--gold);animation:blink 1s steps(1) infinite}
+.fx-boot small{position:absolute;bottom:22px;font:11px var(--mono);color:var(--dim);letter-spacing:.14em}
+@keyframes blink{50%{opacity:0}}
+
+/* «ДОСТУП НАДАНО» */
+.fx-granted{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;pointer-events:none;background:rgba(6,8,12,.75);animation:fade 1.5s ease both}
+.fx-granted div{border:2px solid var(--ok);color:var(--ok);padding:14px 30px;font:22px var(--display);letter-spacing:.2em;rotate:-4deg;
+  box-shadow:0 0 40px rgba(95,179,122,.3),inset 0 0 20px rgba(95,179,122,.15);animation:stamp .45s cubic-bezier(.2,1.6,.4,1) both}
+.fx-granted span{display:block;font:11px var(--mono);letter-spacing:.2em;text-align:center;margin-top:4px;color:var(--muted)}
+@keyframes stamp{from{scale:2.4;opacity:0}to{scale:1;opacity:1}}
+@keyframes fade{0%,70%{opacity:1}100%{opacity:0}}
+
+/* ---------- кабінет ---------- */
+.side{position:relative;background:linear-gradient(180deg,var(--bg2),var(--bg))}
+.side::after{content:"";position:absolute;top:0;right:0;width:1px;height:100%;background:linear-gradient(transparent,var(--dept),transparent);opacity:.5}
+.brand img{filter:drop-shadow(0 0 10px rgba(201,160,90,.3))}
+.me{position:relative;overflow:hidden}
+.me::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(226,192,127,.08) 50%,transparent 70%);translate:-100% 0;animation:sheen 6s ease-in-out infinite 1s}
+@keyframes sheen{0%,70%{translate:-100% 0}100%{translate:100% 0}}
+nav.nav button{position:relative;transition:background .2s,color .2s,padding .2s}
+nav.nav button:not(.soon):hover{padding-left:16px}
+nav.nav button.on{box-shadow:inset 3px 0 0 var(--dept),inset 60px 0 40px -40px color-mix(in srgb,var(--dept) 18%,transparent)}
+nav.nav button.on .ico{filter:drop-shadow(0 0 6px var(--dept))}
+
+.fx-class{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:5px 14px;margin:-1px 0 0;
+  background:repeating-linear-gradient(-45deg,rgba(201,160,90,.08) 0 10px,transparent 10px 20px);border-bottom:1px solid var(--line);
+  font:500 10.5px/1.4 var(--mono);letter-spacing:.18em;color:var(--gold)}
+.fx-class .r{color:var(--muted);letter-spacing:.08em}
+.fx-class .live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:6px;vertical-align:1px;box-shadow:0 0 8px var(--ok);animation:pulse 2s infinite}
+@keyframes pulse{50%{opacity:.35}}
+.fx-clock{font:500 13px var(--mono);color:var(--gold2);letter-spacing:.06em;padding:4px 10px;border:1px solid var(--line2);background:var(--bg2)}
+.top h2{text-shadow:0 0 22px color-mix(in srgb,var(--dept) 25%,transparent)}
+
+/* поява розділів і карток */
+.fx-in>*{animation:rise .45s cubic-bezier(.2,.8,.2,1) both}
+.fx-in>*:nth-child(2){animation-delay:.06s}.fx-in>*:nth-child(3){animation-delay:.12s}.fx-in>*:nth-child(4){animation-delay:.18s}.fx-in>*:nth-child(n+5){animation-delay:.24s}
+.tiles>.tile{animation:rise .5s cubic-bezier(.2,.8,.2,1) both}
+.tiles>.tile:nth-child(2){animation-delay:.07s}.tiles>.tile:nth-child(3){animation-delay:.14s}.tiles>.tile:nth-child(4){animation-delay:.21s}
+@keyframes rise{from{opacity:0;translate:0 10px}to{opacity:1;translate:0 0}}
+.tile{transition:transform .25s,box-shadow .25s,border-color .25s}
+.tile:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,0,0,.35),var(--glow)}
+.tile.accent .v{text-shadow:0 0 18px rgba(226,192,127,.35)}
+
+.btn{position:relative;overflow:hidden;transition:background .2s,border-color .2s,box-shadow .2s,transform .1s}
+.btn:active{transform:translateY(1px)}
+.btn.gold{box-shadow:0 0 0 1px rgba(226,192,127,.3),0 6px 20px rgba(201,160,90,.2)}
+.btn.gold::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 35%,rgba(255,255,255,.35) 50%,transparent 65%);translate:-120% 0;transition:translate .6s}
+.btn.gold:hover::after{translate:120% 0}
+
+table.t tr td{transition:background .15s}
+table.t tr:hover td:first-child{box-shadow:inset 2px 0 0 var(--gold)}
+.chip.wait::before,.chip.wait{animation:none}
+.chip.wait::before{animation:pulse 1.6s infinite}
+
+.dossier{transition:transform .25s,box-shadow .25s}
+.dossier:hover{transform:translateY(-3px) rotate(-.3deg);box-shadow:0 14px 34px rgba(0,0,0,.45)}
+
+::selection{background:rgba(201,160,90,.35);color:#fff}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--line2);border:2px solid var(--bg)}
+::-webkit-scrollbar-thumb:hover{background:var(--gold)}
+
+@media (max-width:860px){.fx-class .r{display:none}.login::before,.login::after{width:700px;height:700px}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .fx-boot,.fx-granted{display:none}
+}
