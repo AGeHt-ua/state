@@ -189,8 +189,7 @@ async def card(c: dict, member: discord.Member | None) -> discord.Embed:
     e = style.document("АНКЕТА КАНДИДАТА НА СЛУЖБУ", ecolor, desc=f"Discord: {who}\n" + style.block(*lines),
                        no=style.doc_no("АНК", c["id"]), footer=footer)
     if x:  # довгі тексти — окремими полями, щоб не перевищити ліміт опису Discord
-        for title, val in (("⚖️ Судимості та адмінпорушення", "
-".join(v for v in (x.get("record_note"), x.get("admin_note")) if v)),
+        for title, val in (("⚖️ Судимості та адмінпорушення", "\n".join(v for v in (x.get("record_note"), x.get("admin_note")) if v)),
                            ("🎖️ Досвід у державних структурах", c["exp"]), ("📝 Мотивація", c["motive"])):
             if val:
                 e.add_field(name=title, value=val[:1024], inline=False)
