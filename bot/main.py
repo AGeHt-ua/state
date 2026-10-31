@@ -13,6 +13,7 @@ from discord.ext import commands, tasks
 import api
 import backup
 import config
+import candidates
 import core
 import slash
 import tunnel
@@ -35,7 +36,7 @@ class Sova(commands.Bot):
     async def setup_hook(self):
         await db.open()
         core.bot = self
-        self.add_dynamic_items(core.ActButton, core.RapButton, core.AccessButton)
+        self.add_dynamic_items(core.ActButton, core.RapButton, core.AccessButton, candidates.CandButton)
         await slash.setup(self)
         self.runner = await api.start()
         asyncio.create_task(tunnel.run())

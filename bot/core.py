@@ -236,18 +236,16 @@ def can_approve_act(actor: dict, a: dict) -> bool:
 def can_approve_rap(actor: dict, r: dict) -> bool:
     if r["by_sid"] == actor["sid"] or r["status"] != "wait":
         return False
-    data = json.loads(r["data"] or "{}")
-    if r["type"] == "dismiss":
-        return actor["rank"] >= 14
-    if r["type"] == "promo" and RANKS[data["to"] - 1][2] is None:
-        return actor["rank"] == 15
-    if r["type"] == "transfer":
-        return actor["rank"] >= 13
-    if r["dept"] == "academy":
-        return (actor["dept"] == "vkpp" and actor["rank"] >= 11) or actor["rank"] >= 13
-    if r["dept"] == "press":
-        return actor["rank"] >= 13
-    return actor["rank"] >= 11 and (actor["dept"] == r["dept"] or actor["dept"] == "lead")
+    # Усі кадрові рапорти розглядає ВКПП або керівництво (Начальник управління, Заступник Голови, Голова)
+    return actor["rank"] >= 13 or has_dept_role(actor, "vkpp")
+
+
+def has_dept_role(u: dict, dept: str) -> bool:
+    """Чи є в людини роль відділу (з кешу ролей; навіть якщо основний відділ у картці інший)."""
+    if u.get("dept") == dept:
+        return True
+    hit = _roles_cache.get(str(u.get("discord_id")))
+    return bool(hit and hit[1] and DEPTS[dept]["role"] in hit[1])
 
 
 async def promo_check(u: dict) -> dict | None:
@@ -810,13 +808,14 @@ async def decide_access(req_id: int, reviewer: discord.Member, decision: str) ->
     return "Заявку відхилено." + (f" Причина: {note}" if note else "")
 
 
-async def register(member: discord.Member, sid: int, name: str, reviewer: discord.Member | None = None) -> tuple[dict, str]:
+async def register(member: discord.Member, sid: int, name: str, reviewer: discord.Member | None = None,
+                   extra_roles: tuple[int, ...] = ()) -> tuple[dict, str]:
     """Створює допуск (після підтвердження заявки або командою Голови): ролі, нікнейм, код доступу."""
     if await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id)):
         raise Fail("Цій людині допуск уже оформлено.")
     if await db.one("SELECT sid FROM users WHERE sid=?", sid):
         raise Fail("На цей номер жетона вже оформлено допуск іншій особі.")
-    give = [r for r in (member.guild.get_role(rid) for rid in config.JOIN_ROLES) if r and r not in member.roles]
+    give = [r for r in (member.guild.get_role(rid) for rid in (*config.JOIN_ROLES, *extra_roles)) if r and r not in member.roles]
     if give:
         try:
             await member.add_roles(*give, reason="Сова: оформлено допуск до ЄІС")

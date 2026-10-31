@@ -89,6 +89,21 @@ CREATE TABLE IF NOT EXISTS access_requests (
   ch_id      TEXT,
   msg_id     TEXT
 );
+CREATE TABLE IF NOT EXISTS candidates (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  discord_id TEXT NOT NULL,
+  sid        INTEGER NOT NULL,
+  name       TEXT NOT NULL,
+  age        TEXT,
+  exp        TEXT,
+  motive     TEXT,
+  t          INTEGER,
+  status     TEXT DEFAULT 'vvb',           -- vvb (перевірка ВВБ) | vkpp (рішення ВКПП) | ok | rej
+  vvb_by     TEXT, vvb_t INTEGER,          -- Discord ID і час рішення ВВБ
+  vkpp_by    TEXT, vkpp_t INTEGER,
+  note       TEXT,
+  vvb_ch TEXT, vvb_msg TEXT, vkpp_ch TEXT, vkpp_msg TEXT
+);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);
 CREATE INDEX IF NOT EXISTS acts_status ON acts(status);
 CREATE INDEX IF NOT EXISTS raps_status ON raps(status);

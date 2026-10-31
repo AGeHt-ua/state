@@ -3,6 +3,7 @@ import discord
 from discord import app_commands
 
 import backup
+import candidates
 import config
 import core
 import style
@@ -222,6 +223,15 @@ class ResetView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
 
+    @discord.ui.button(label="Анкета кандидата", style=discord.ButtonStyle.primary, emoji="📝", custom_id="sova:candidate")
+    async def candidate(self, interaction: discord.Interaction, button: discord.ui.Button):
+        member = await guild_member(interaction)
+        if not member:
+            return await interaction.response.send_message("Спершу приєднайтеся до сервера «Служба Безпеки NG».", ephemeral=True)
+        if await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id)):
+            return await interaction.response.send_message("Ви вже у складі СБУ й маєте допуск до «Сови».", ephemeral=True)
+        await interaction.response.send_modal(candidates.CandidateModal(member))
+
     @discord.ui.button(label="Відновити код доступу", style=discord.ButtonStyle.secondary)
     async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
         await do_reset(interaction)
@@ -277,7 +287,10 @@ def welcome_embed(member: discord.abc.User | None = None) -> discord.Embed:
                       description=(f"Вітаємо, {member.mention}. Ви прибули до Служби безпеки штату NG.\n\n" if member else "")
                       + "Єдина інформаційна система «Сова» — службовий кабінет співробітника СБУ: звіти про діяльність, "
                       "рапорти, кейс-файли, бали й премії.")
-    e.add_field(name="📋  Як оформити допуск", inline=False, value=(
+    e.add_field(name="📝  Хочете вступити до СБУ?", inline=False, value=(
+        "Натисніть **«Анкета кандидата»** і заповніть анкету. Її перевірить **Відділ внутрішньої безпеки**, "
+        "після погодження рішення про прийом ухвалює **ВКПП**. Якщо вас приймуть, бот видасть ролі й надішле код доступу."))
+    e.add_field(name="📋  Вже служите в СБУ? Оформіть допуск", inline=False, value=(
         "**1.** Натисніть **«Отримати допуск»** під цим повідомленням.\n"
         "**2.** Вкажіть **номер жетона** (ваш Static ID) та **ім'я й прізвище** персонажа.\n"
         "**3.** Заявку розгляне **ВКПП**. Після підтвердження бот надішле вам **код доступу** в особисті повідомлення.\n"
