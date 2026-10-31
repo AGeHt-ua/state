@@ -92,6 +92,12 @@ async def health(request):
     return web.json_response({"ok": True, "discord": bool(core.guild()), "time": now_ms()})
 
 
+@routes.get("/api/relay-key")
+async def relay_key(request):
+    import tunnel
+    return web.json_response({"key": tunnel.public_key_b64()})
+
+
 @routes.get("/api/meta")
 async def meta(request):
     c = await core.coef()

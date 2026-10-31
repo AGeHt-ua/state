@@ -1,28 +1,49 @@
 """HTTPS для сайту. SparkedHost дає лише http://IP:порт, а GitHub Pages працює через HTTPS,
-тому бот відкриває безкоштовний тунель Cloudflare (адреса *.trycloudflare.com) і повідомляє її
-ретранслятору (Cloudflare Worker з постійною адресою), до якого звертається сайт.
+тому бот відкриває безкоштовний тунель Cloudflare (адреса *.trycloudflare.com змінюється після перезапуску)
+і повідомляє її ретранслятору — Cloudflare Worker з постійною адресою, до якого звертається сайт.
 
-Вмикається змінними в .env:
-  TUNNEL=1
-  RELAY_URL=https://<worker>.workers.dev      — постійна адреса для сайту
-  RELAY_SECRET=<спільний секрет із Worker>
+Повідомлення підписується ключем Ed25519, який бот створює сам (data/relay.key).
+Worker знає лише відкритий ключ (GET /api/relay-key), тож жодних спільних секретів немає.
 """
 import asyncio
+import base64
 import logging
-import os
 import platform
 import re
 import stat
+import time
 import urllib.request
 
 import aiohttp
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import config
 
 log = logging.getLogger("sova.tunnel")
 BIN = config.DATA_DIR / "bin" / "cloudflared"
+KEY = config.DATA_DIR / "relay.key"
 URL = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{arch}"
 current_url: str | None = None
+_key: Ed25519PrivateKey | None = None
+
+
+def signing_key() -> Ed25519PrivateKey:
+    global _key
+    if _key:
+        return _key
+    if KEY.exists():
+        _key = Ed25519PrivateKey.from_private_bytes(KEY.read_bytes())
+    else:
+        _key = Ed25519PrivateKey.generate()
+        KEY.write_bytes(_key.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+                                           serialization.NoEncryption()))
+    return _key
+
+
+def public_key_b64() -> str:
+    raw = signing_key().public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    return base64.b64encode(raw).decode()
 
 
 def ensure_binary():
@@ -36,19 +57,21 @@ def ensure_binary():
 
 
 async def announce(url: str):
-    relay, secret = config.env("RELAY_URL"), config.env("RELAY_SECRET")
-    if not relay or not secret:
-        log.warning("RELAY_URL/RELAY_SECRET не задано — адреса тунелю: %s", url)
+    relay = config.RELAY_URL
+    if not relay:
+        log.warning("RELAY_URL не задано — адреса тунелю: %s", url)
         return
-    for attempt in range(10):
+    for attempt in range(20):
+        ts = int(time.time())
+        sig = base64.b64encode(signing_key().sign(f"{url}|{ts}".encode())).decode()
         try:
             async with aiohttp.ClientSession() as s:
-                async with s.post(relay.rstrip("/") + "/__sova/upstream", json={"url": url},
-                                  headers={"Authorization": f"Bearer {secret}"}, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                async with s.post(relay.rstrip("/") + "/__sova/upstream", json={"url": url, "ts": ts, "sig": sig},
+                                  timeout=aiohttp.ClientTimeout(total=15)) as r:
                     if r.status == 200:
-                        log.info("Ретранслятор оновлено: %s → %s", relay, url)
+                        log.info("Ретранслятор %s → %s", relay, url)
                         return
-                    log.warning("Ретранслятор відповів %s", r.status)
+                    log.warning("Ретранслятор відповів %s: %s", r.status, (await r.text())[:200])
         except aiohttp.ClientError as e:
             log.warning("Ретранслятор недоступний: %s", e)
         await asyncio.sleep(min(60, 5 * (attempt + 1)))
@@ -56,8 +79,9 @@ async def announce(url: str):
 
 async def run():
     global current_url
-    if config.env("TUNNEL") != "1":
+    if config.TUNNEL != "1":
         return
+    log.info("Відкритий ключ ретранслятора: %s", public_key_b64())
     while True:
         try:
             await asyncio.to_thread(ensure_binary)
@@ -65,8 +89,7 @@ async def run():
                 str(BIN), "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{config.API_PORT}",
                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
             async for line in proc.stderr:
-                text = line.decode(errors="ignore")
-                m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", text)
+                m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line.decode(errors="ignore"))
                 if m and m.group(0) != current_url:
                     current_url = m.group(0)
                     log.info("Тунель: %s", current_url)

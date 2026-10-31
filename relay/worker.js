@@ -1,10 +1,10 @@
 // Ретранслятор «Сови» на Cloudflare Workers: постійна HTTPS-адреса для сайту.
 // Бот на SparkedHost відкриває тунель *.trycloudflare.com (адреса змінюється після перезапуску)
-// і повідомляє її сюди; Worker пересилає всі запити сайту на актуальну адресу.
-//
-// Потрібно у Worker: KV-простір із прив'язкою SOVA і секрет RELAY_SECRET (той самий, що в .env бота).
+// і повідомляє її сюди, підписавши ключем Ed25519. Worker перевіряє підпис відкритим ключем бота
+// (RELAY_PUBKEY у wrangler.toml) і пересилає всі запити сайту на актуальну адресу.
 
 const UPSTREAM_RE = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
+const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -13,17 +13,27 @@ function json(data, status = 200) {
   });
 }
 
+async function verify(env, url, ts, sig) {
+  if (!UPSTREAM_RE.test(url || "") || Math.abs(Date.now() / 1000 - Number(ts)) > 300) return false;
+  const key = await crypto.subtle.importKey("raw", b64(env.RELAY_PUBKEY), { name: "Ed25519" }, false, ["verify"]);
+  return crypto.subtle.verify({ name: "Ed25519" }, key, b64(sig), new TextEncoder().encode(`${url}|${ts}`));
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (url.pathname === "/__sova/upstream") {
       if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
-      if (request.headers.get("Authorization") !== `Bearer ${env.RELAY_SECRET}`) return json({ error: "Forbidden" }, 403);
-      const { url: upstream } = await request.json().catch(() => ({}));
-      if (!UPSTREAM_RE.test(upstream || "")) return json({ error: "Bad upstream" }, 400);
+      const { url: upstream, ts, sig } = await request.json().catch(() => ({}));
+      const ok = await verify(env, upstream, ts, sig).catch(() => false);
+      if (!ok) return json({ error: "Bad signature" }, 403);
       await env.SOVA.put("upstream", upstream);
       return json({ ok: true });
+    }
+
+    if (url.pathname === "/__sova/status") {
+      return json({ upstream: Boolean(await env.SOVA.get("upstream")) });
     }
 
     const upstream = await env.SOVA.get("upstream", { cacheTtl: 30 });

@@ -31,7 +31,11 @@ DB_PATH = DATA_DIR / "sova.db"
 BACKUP_DIR = DATA_DIR / "backups"
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
-BACKUP_EVERY_HOURS = float(env("BACKUP_EVERY_HOURS", "6"))
+# Тунель Cloudflare + ретранслятор (Cloudflare Worker) — постійна HTTPS-адреса для сайту
+TUNNEL = env("SOVA_TUNNEL", "1")
+RELAY_URL = env("RELAY_URL", "https://sova.d-f-12339.workers.dev")
+
+BACKUP_EVERY_HOURS =float(env("BACKUP_EVERY_HOURS", "6"))
 BACKUP_KEEP_DAYS = int(env("BACKUP_KEEP_DAYS", "30"))
 SESSION_DAYS = int(env("SESSION_DAYS", "7"))
 MAX_UPLOAD_MB = float(env("MAX_UPLOAD_MB", "10"))
