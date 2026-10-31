@@ -587,13 +587,127 @@ async def post_audit(actor: dict, kind: str, u: dict):
 
 
 # ---------------------------------------------------------------- самостійна реєстрація
-async def register(member: discord.Member, sid: int, name: str) -> tuple[dict, str]:
-    """Акаунт створює сама людина кнопкою в Discord. Доступ до кабінету все одно дають лише ролі СБУ."""
+async def request_access(member: discord.Member, sid: int, name: str) -> int:
+    """Людина подає заявку кнопкою «Отримати допуск»; заявка йде на підтвердження в канал заявок."""
     own = await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id))
     if own:
         raise Fail(f"Допуск уже оформлено на жетон №{own['sid']}. Загубили код доступу — натисніть «Відновити код доступу».")
     if await db.one("SELECT sid FROM users WHERE sid=?", sid):
-        raise Fail("На цей номер жетона вже оформлено допуск іншій особі. Якщо це ваш номер — зверніться до Голови СБУ.")
+        raise Fail("На цей номер жетона вже оформлено допуск іншій особі. Якщо це ваш номер — зверніться до керівництва.")
+    if await db.one("SELECT id FROM access_requests WHERE status='wait' AND (discord_id=? OR sid=?)", str(member.id), sid):
+        raise Fail("Заявку вже подано й вона очікує підтвердження. Код доступу надійде в особисті повідомлення.")
+    rid = await db.run("INSERT INTO access_requests(discord_id,sid,name,t) VALUES(?,?,?,?)", str(member.id), sid, name[:60], now_ms())
+    req = await db.one("SELECT * FROM access_requests WHERE id=?", rid)
+    ch = await channel("access")
+    if ch:
+        msg = await ch.send(embed=access_embed(req, member), view=access_view(rid))
+        await db.run("UPDATE access_requests SET ch_id=?, msg_id=? WHERE id=?", str(ch.id), str(msg.id), rid)
+    else:
+        log.warning("Канал заявок на допуск не знайдено — заявку №%s збережено без картки", rid)
+    return rid
+
+
+def can_approve_access(member: discord.Member) -> bool:
+    ids = {r.id for r in member.roles}
+    if ids & set(config.ACCESS_APPROVER_ROLES):
+        return True
+    a = resolve(ids)
+    return a["ok"] and a["rank"] >= 14  # Голова й заступник теж можуть
+
+
+def access_embed(req: dict, member: discord.Member | None) -> discord.Embed:
+    st = {"wait": ("🟡 Очікує підтвердження ВКПП", 0xD9A23D), "ok": ("🟢 Допуск видано", 0x5FB37A), "rej": ("🔴 Відмовлено", 0xD4605A)}[req["status"]]
+    e = discord.Embed(title=f"Заявка на допуск до ЄІС «Сова» №{req['id']}", color=st[1])
+    e.add_field(name="Discord", value=f"<@{req['discord_id']}>")
+    e.add_field(name="Номер жетона", value=f"`{req['sid']}`")
+    e.add_field(name="Ім'я та прізвище", value=req["name"])
+    if member:
+        a = resolve({r.id for r in member.roles})
+        e.add_field(name="Поточні ролі", value=f"{rank_name(a['rank'])} · {DEPTS[a['dept']]['s']}" if a["ok"] else a["why"], inline=False)
+        e.add_field(name="Акаунт Discord створено", value=f"<t:{int(member.created_at.timestamp())}:D>")
+    e.add_field(name="Подано", value=f"<t:{req['t'] // 1000}:f>")
+    e.set_footer(text=st[0] + (f" · розглянув {req['reviewer_name']}" if req.get("reviewer_name") else ""))
+    return e
+
+
+class AccessButton(discord.ui.DynamicItem[discord.ui.Button], template=r"sova:acc:(?P<id>\d+):(?P<d>ok|rej)"):
+    def __init__(self, req_id: int, decision: str):
+        super().__init__(discord.ui.Button(
+            label="Підтвердити допуск" if decision == "ok" else "Відмовити",
+            style=discord.ButtonStyle.success if decision == "ok" else discord.ButtonStyle.danger,
+            custom_id=f"sova:acc:{req_id}:{decision}"))
+        self.req_id, self.decision = req_id, decision
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["id"]), match["d"])
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            text = await decide_access(self.req_id, interaction.user, self.decision)
+            await interaction.response.send_message(text, ephemeral=True)
+        except Fail as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
+
+
+def access_view(req_id: int) -> discord.ui.View:
+    v = discord.ui.View(timeout=None)
+    v.add_item(AccessButton(req_id, "ok"))
+    v.add_item(AccessButton(req_id, "rej"))
+    return v
+
+
+async def decide_access(req_id: int, reviewer: discord.Member, decision: str) -> str:
+    if not isinstance(reviewer, discord.Member) or not can_approve_access(reviewer):
+        raise Fail("Підтверджувати заявки на допуск може лише ВКПП або керівництво СБУ.")
+    req = await db.one("SELECT * FROM access_requests WHERE id=?", req_id)
+    if not req or req["status"] != "wait":
+        raise Fail("Цю заявку вже розглянуто.")
+    member = await member_of(req["discord_id"])
+    note = ""
+    if decision == "ok":
+        if not member:
+            decision, note = "rej", "Людина вже не на сервері."
+        else:
+            try:
+                _, pw = await register(member, req["sid"], req["name"], reviewer)
+            except Fail as e:
+                decision, note = "rej", str(e)
+    await db.run("UPDATE access_requests SET status=?, reviewer=?, reviewed=? WHERE id=?",
+                 "ok" if decision == "ok" else "rej", str(reviewer.id), now_ms(), req_id)
+    req = await db.one("SELECT * FROM access_requests WHERE id=?", req_id)
+    req["reviewer_name"] = reviewer.display_name
+    if req["ch_id"] and req["msg_id"]:
+        try:
+            ch = bot.get_channel(int(req["ch_id"])) or await bot.fetch_channel(int(req["ch_id"]))
+            msg = await ch.fetch_message(int(req["msg_id"]))
+            await msg.edit(embed=access_embed(req, member), view=None)
+        except (discord.NotFound, discord.Forbidden):
+            pass
+    if decision == "ok":
+        sent = False
+        try:
+            await member.send(f"**Допуск до ЄІС «Сова» підтверджено**\nСайт: {config.SITE_URL}\nНомер жетона: `{req['sid']}`\n"
+                              f"Код доступу: `{pw}`\nКод доступу є службовою таємницею — не передавайте його нікому.")
+            sent = True
+        except discord.Forbidden:
+            pass
+        return ("Допуск видано, код доступу надіслано в особисті." if sent else
+                "Допуск видано, але особисті повідомлення закриті. Нехай людина натисне «Відновити код доступу» в панелі.")
+    if member:
+        try:
+            await member.send("У видачі допуску до ЄІС «Сова» відмовлено." + (f" {note}" if note else "") + " Зверніться до ВКПП.")
+        except discord.Forbidden:
+            pass
+    return "Заявку відхилено." + (f" Причина: {note}" if note else "")
+
+
+async def register(member: discord.Member, sid: int, name: str, reviewer: discord.Member | None = None) -> tuple[dict, str]:
+    """Створює допуск (після підтвердження заявки або командою Голови): ролі, нікнейм, код доступу."""
+    if await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id)):
+        raise Fail("Цій людині допуск уже оформлено.")
+    if await db.one("SELECT sid FROM users WHERE sid=?", sid):
+        raise Fail("На цей номер жетона вже оформлено допуск іншій особі.")
     give = [r for r in (member.guild.get_role(rid) for rid in config.JOIN_ROLES) if r and r not in member.roles]
     if give:
         try:
@@ -607,7 +721,9 @@ async def register(member: discord.Member, sid: int, name: str) -> tuple[dict, s
     t = now_ms()
     await db.run("INSERT INTO users(sid,name,discord_id,pw_hash,pw_set,rank,dept,since,created) VALUES(?,?,?,?,?,?,?,?,?)",
                  sid, name[:60], str(member.id), hash_password(pw), t, rank, dept, t, t)
-    await db.audit(0, "Оформлено допуск до ЄІС", sid, f"самостійно через Discord · {rank_name(rank) if a['ok'] else 'без ролей СБУ'}")
+    approver = await db.one("SELECT sid FROM users WHERE discord_id=?", str(reviewer.id)) if reviewer else None
+    await db.audit(approver["sid"] if approver else 0, "Оформлено допуск до ЄІС", sid,
+                   f"{'підтвердив ' + reviewer.display_name if reviewer else 'через Discord'} · {rank_name(rank) if a['ok'] else 'без ролей СБУ'}")
     if a["ok"]:
         await set_nick({"sid": sid, "name": name[:60], "rank": rank, "discord_id": str(member.id)}, member)
     return a, pw

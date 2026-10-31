@@ -77,6 +77,18 @@ CREATE TABLE IF NOT EXISTS settings (
   k TEXT PRIMARY KEY,
   v TEXT
 );
+CREATE TABLE IF NOT EXISTS access_requests (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  discord_id TEXT NOT NULL,
+  sid        INTEGER NOT NULL,
+  name       TEXT NOT NULL,
+  t          INTEGER,
+  status     TEXT DEFAULT 'wait',          -- wait | ok | rej
+  reviewer   TEXT,                         -- Discord ID того, хто розглянув
+  reviewed   INTEGER,
+  ch_id      TEXT,
+  msg_id     TEXT
+);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);
 CREATE INDEX IF NOT EXISTS acts_status ON acts(status);
 CREATE INDEX IF NOT EXISTS raps_status ON raps(status);

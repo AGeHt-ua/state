@@ -35,7 +35,7 @@ class Sova(commands.Bot):
     async def setup_hook(self):
         await db.open()
         core.bot = self
-        self.add_dynamic_items(core.ActButton, core.RapButton)
+        self.add_dynamic_items(core.ActButton, core.RapButton, core.AccessButton)
         await slash.setup(self)
         self.runner = await api.start()
         asyncio.create_task(tunnel.run())
@@ -52,6 +52,7 @@ class Sova(commands.Bot):
             log.error("Боту бракує права «Керувати каналами» — канали не створено.")
         self.tree.copy_global_to(guild=g)
         await self.tree.sync(guild=g)
+        await slash.ensure_panel()
         if not backup_loop.is_running():
             backup_loop.start()
         log.info("Сова на зв'язку як %s · сервер %s", self.user, g.name)

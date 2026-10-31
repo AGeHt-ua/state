@@ -197,8 +197,10 @@ class RegisterModal(discord.ui.Modal, title="Оформлення допуску
             raw = str(self.sid.value).strip()
             if not raw.isdigit():
                 raise Fail("Static ID — лише цифри.")
-            a, pw = await core.register(self.member, int(raw), str(self.name.value).strip())
-            await interaction.response.send_message(credentials_text(int(raw), pw, a), ephemeral=True)
+            rid = await core.request_access(self.member, int(raw), str(self.name.value).strip())
+            await interaction.response.send_message(
+                f"Заявку на допуск №{rid} подано. Після підтвердження ВКПП код доступу надійде вам в особисті повідомлення.\n"
+                "Тримайте особисті повідомлення від учасників сервера відкритими.", ephemeral=True)
         except Fail as e:
             await interaction.response.send_message(str(e), ephemeral=True, view=ResetView())
 
@@ -260,13 +262,33 @@ class NameModal(discord.ui.Modal, title="Зміна персональних д�
 def welcome_embed(member: discord.abc.User | None = None) -> discord.Embed:
     e = discord.Embed(title="Служба безпеки штату NG · ЄІС «Сова»", color=0xC9A05A,
                       description=(f"Вітаємо, {member.mention}. Ви прибули до Служби безпеки штату NG.\n\n" if member else "")
-                      + "Для роботи в Єдиній інформаційній системі «Сова» оформіть **допуск**: натисніть **«Отримати допуск»**, "
-                      "вкажіть номер жетона та ім'я — система видасть особистий код доступу.\n\n"
+                      + "Для роботи в Єдиній інформаційній системі «Сова» оформіть **допуск**: натисніть **«Отримати допуск»** "
+                      "і вкажіть номер жетона та ім'я. Заявку розгляне ВКПП — після підтвердження код доступу надійде в особисті повідомлення.\n\n"
                       "Звання й підрозділ система бере з вашого службового статусу на сервері. "
                       "Допуск діє, доки ви перебуваєте у складі СБУ: при звільненні чи виході із сервера його буде анульовано автоматично.")
     e.add_field(name="ЄІС «Сова»", value=config.SITE_URL)
     e.set_footer(text="Код доступу є службовою таємницею (Положення про захист службової інформації СБУ)")
     return e
+
+
+async def ensure_panel():
+    """Панель «Отримати допуск» у каналі панелі: бот розміщує її сам і не дублює після перезапусків."""
+    ch = await core.channel("welcome")
+    if not ch:
+        return
+    mid = await db.get_setting("panel_msg")
+    if mid:
+        try:
+            msg = await ch.fetch_message(int(mid))
+            await msg.edit(embed=welcome_embed(), view=RegisterView())
+            return
+        except (discord.NotFound, discord.Forbidden):
+            pass
+    try:
+        msg = await ch.send(embed=welcome_embed(), view=RegisterView())
+        await db.set_setting("panel_msg", str(msg.id))
+    except discord.Forbidden:
+        core.log.warning("Бот не може писати в канал панелі %s", ch.id)
 
 
 async def setup(bot: discord.Client):
