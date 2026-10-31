@@ -313,34 +313,85 @@ const CST = { vvb: ["chip wait", "Перевірка ВВБ"], vkpp: ["chip wait
 const candChip = (c) => `<span class="${CST[c.status][0]}">${CST[c.status][1]}</span>`;
 const docNo = (p, n) => `${p}-${String(n).padStart(4, "0")}`;
 
-const CDOCS = { passport: "Паспорт", med: "Медична карта", military: "Військовий квиток", idcard: "Посвідчення особи" };
-const CDRIVE = { A: "A", B: "B", CD: "C/D", water: "водний", air: "повітряний" };
-const CLICS = { weapon: "на зброю", hunt: "на полювання", fish: "на рибальство" };
-const CHOUSE = { none: "немає", flat: "квартира", house: "будинок", rent: "орендоване" };
-function candExtra(x) {
-  const docs = ["passport", "med", "military", "idcard"].filter((k) => k !== "idcard" || x.docs.includes(k))
-    .map((k) => `<span class="chip ${x.docs.includes(k) ? "ok" : "bad"}">${CDOCS[k]}</span>`).join(" ");
-  const flags = [x.record && "судимості", x.wanted && "у розшуку", x.warn && "активний Warn", x.fired_1d && "звільнення < 1 доби"].filter(Boolean);
-  return `<dt>Дата народження</dt><dd>${esc(x.birth || "—")}${x.phone ? " · тел. " + esc(x.phone) : ""}</dd>
-    <dt>Документи</dt><dd>${docs}</dd>
-    <dt>Посв. водія / ліцензії</dt><dd>${esc(x.drive.map((d) => CDRIVE[d]).join(", ") || "немає")} · ${esc(x.lics.map((l) => CLICS[l]).join(", ") || "ліцензій немає")}</dd>
-    <dt>Майно</dt><dd>Житло: ${esc(CHOUSE[x.housing] || "—")}${x.housing_note ? " (" + esc(x.housing_note) + ")" : ""} · Транспорт: ${esc(x.cars || "немає")} · Бізнес: ${esc(x.business || "немає")}</dd>
-    <dt>Правова історія</dt><dd>${flags.length ? flags.map((f) => `<span class="chip bad">${f}</span>`).join(" ") : '<span class="chip ok">Чисто</span>'}
-      ${x.record_note ? "<div>" + esc(x.record_note) + "</div>" : ""}${x.admin_note ? '<div class="muted">Адмін.: ' + esc(x.admin_note) + "</div>" : ""}</dd>`;
+const CDOCS = { passport: "Паспорт громадянина", med: "Медична карта", military: "Військовий квиток", idcard: "Посвідчення особи" };
+const CDRIVE = { A: "A", B: "B", CD: "C/D", water: "Водний", air: "Повітряний" };
+const CLICS = { weapon: "На зброю", hunt: "На полювання", fish: "На рибальство" };
+const CHOUSE = { none: "Немає", flat: "Квартира", house: "Будинок", rent: "Орендоване" };
+const dash = (v) => esc(v && String(v).trim() && !/^(немає|нема|-|—)$/i.test(String(v).trim()) ? v : "—");
+
+/* Перевірка вимог: п. 1.4 Положення про стажування СБУ, ст. 8 Закону «Про державні документи», пп. 1.35/1.37/1.38 правил держорганізацій */
+function candChecks(x) {
+  const d = x.docs || [];
+  return [
+    ["Паспорт громадянина", d.includes("passport")], ["Медична карта", d.includes("med")], ["Військовий квиток", d.includes("military")],
+    ["Не перебуває в розшуку", !x.wanted], ["Без активного Warn", !x.warn], ["Не звільнявся протягом доби", !x.fired_1d],
+  ];
+}
+
+function candRoute(c) {
+  const st = c.status, rejAt = st === "rej" ? (c.vkpp_t ? "vkpp" : "vvb") : null;
+  const steps = [
+    ["Подано", "done", fmtDT(c.t)],
+    ["Перевірка ВВБ", rejAt === "vvb" ? "bad" : c.vvb_t ? "done" : "cur", c.vvb_t ? `${esc(c.vvbName || "—")} · ${fmtDT(c.vvb_t)}` : "очікує"],
+    ["Рішення ВКПП", rejAt === "vkpp" ? "bad" : c.vkpp_t ? "done" : st === "vkpp" ? "cur" : "", c.vkpp_t ? `${esc(c.vkppName || "—")} · ${fmtDT(c.vkpp_t)}` : st === "vkpp" ? "очікує" : ""],
+    ["Зв'язок і допуск", st === "ok" ? "cur" : "", st === "ok" ? "ВКПП запрошує на сервер" : ""],
+  ];
+  return `<ol class="dz-route">${steps.map(([t, s, sub]) => `<li class="${s}"><i></i><b>${t}</b>${sub ? `<span>${sub}</span>` : ""}</li>`).join("")}</ol>`;
 }
 
 function candCard(c, r) {
+  const x = c.extra || { docs: [], drive: [], lics: [] };
   const mine = (c.status === "vvb" && r.vvb) || (c.status === "vkpp" && r.vkpp);
-  return `<article class="card"><header><h3>${esc(c.name)} <span class="muted mono small">№${c.sid}</span></h3><span class="sp"></span>
-    <span class="mono small muted">${docNo("АНК", c.id)}</span>${candChip(c)}</header>
-    ${c.photoUrl ? `<img class="cand-photo" src="${esc(c.photoUrl)}" alt="Фото кандидата" loading="lazy">` : ""}
-    <dl class="kv">${c.extra ? candExtra(c.extra) : ""}<dt>Вік / онлайн</dt><dd>${esc(c.age || "—")}${c.extra && c.extra.online ? " · " + esc(c.extra.online) : ""}</dd><dt>Досвід</dt><dd>${esc(c.exp || "—")}</dd>
-      <dt>Мотивація</dt><dd>${esc(c.motive || "—")}</dd><dt>Подано</dt><dd class="num">${fmtDT(c.t)}</dd>
-      ${c.vvb_t ? `<dt>ВВБ</dt><dd>${c.status === "rej" && !c.vkpp_t ? "відмовлено" : "погоджено"} · ${esc(c.vvbName || "—")} · ${fmtDT(c.vvb_t)}</dd>` : ""}
-      ${c.vkpp_t ? `<dt>Discord</dt><dd class="mono">${esc(c.discord_name || "—")}</dd><dt>ВКПП</dt><dd>${c.status === "ok" ? "погоджено" : "відмовлено"} · ${esc(c.vkppName || "—")} · ${fmtDT(c.vkpp_t)}</dd>` : ""}
-      ${c.note ? `<dt>Причина</dt><dd>${esc(c.note)}</dd>` : ""}</dl>
-    ${mine ? `<div class="acts"><button class="btn ok" data-a="cand" data-id="${c.id}" data-d="ok">${c.status === "vvb" ? "Погодити й передати до ВКПП" : "Погодити зарахування"}</button>
-      <button class="btn bad" data-a="cand" data-id="${c.id}" data-d="rej">Відмовити</button></div>` : ""}</article>`;
+  const checks = candChecks(x);
+  const fit = checks.every((k) => k[1]);
+  const stamp = c.status === "rej" ? ["bad", "ВІДМОВЛЕНО"] : c.status === "ok" ? ["ok", "ПОГОДЖЕНО"] : fit ? ["ok", "ВІДПОВІДАЄ ВИМОГАМ"] : ["bad", "НЕ ВІДПОВІДАЄ ВИМОГАМ"];
+  const legal = [x.record && "Судимості", x.wanted && "У розшуку"].filter(Boolean);
+  return `<article class="card dz">
+  <header class="dz-head">
+    <div><div class="dz-eyebrow">Служба безпеки штату NG · ВВБ / ВКПП</div><h3>ОСОБОВА СПРАВА КАНДИДАТА</h3></div>
+    <div class="dz-no"><span>справа</span><b>${docNo("АНК", c.id)}</b>${candChip(c)}</div>
+  </header>
+  <div class="dz-grif">ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ</div>
+  <div class="dz-top">
+    <figure class="dz-photo">${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="Фото кандидата" loading="lazy">` : "<div>ФОТО<br>ВІДСУТНЄ</div>"}
+      <figcaption>STATIC ID ${c.sid}</figcaption></figure>
+    <div class="dz-id">
+      <div class="dz-name">${esc(c.name)}</div>
+      <dl class="dz-kv">
+        <dt>Static ID</dt><dd class="mono">${c.sid}</dd>
+        <dt>Дата народження</dt><dd>${dash(x.birth)}</dd>
+        <dt>Стать</dt><dd>${x.gender === "ж" ? "Жіноча" : x.gender === "ч" ? "Чоловіча" : "—"}</dd>
+        <dt>Телефон (IC)</dt><dd class="mono">${dash(x.phone)}</dd>
+        <dt>Discord</dt><dd class="mono">${dash(c.discord_name)}</dd>
+        <dt>OOC</dt><dd>${esc(c.age || "—")} р.${x.online ? " · онлайн " + esc(x.online) : ""}</dd>
+      </dl>
+    </div>
+    <div class="dz-verdict">
+      <div class="dz-stamp ${stamp[0]}">${stamp[1]}</div>
+      <ul class="dz-checks">${checks.map(([t, ok]) => `<li class="${ok ? "ok" : "bad"}">${t}</li>`).join("")}</ul>
+    </div>
+  </div>
+  <div class="dz-grid">
+    <section><h4><b>I</b>Документи</h4>
+      <div class="dz-docs">${["passport", "med", "military", "idcard"].filter((k) => k !== "idcard" || (x.docs || []).includes(k))
+        .map((k) => `<span class="${(x.docs || []).includes(k) ? "ok" : "bad"}">${CDOCS[k]}</span>`).join("")}</div>
+      <dl class="dz-kv"><dt>Посвідчення водія</dt><dd>${esc((x.drive || []).map((d) => CDRIVE[d]).join(" · ") || "—")}</dd>
+        <dt>Ліцензії</dt><dd>${esc((x.lics || []).map((l) => CLICS[l]).join(" · ") || "—")}</dd></dl></section>
+    <section><h4><b>II</b>Майно</h4>
+      <dl class="dz-kv"><dt>Житло</dt><dd>${esc(CHOUSE[x.housing] || "—")}${x.housing_note ? ` <span class="muted">(${esc(x.housing_note)})</span>` : ""}</dd>
+        <dt>Транспорт</dt><dd>${dash(x.cars)}</dd><dt>Бізнес</dt><dd>${dash(x.business)}</dd></dl></section>
+    <section><h4><b>III</b>Правова історія</h4>
+      <div class="dz-docs">${legal.length ? legal.map((t) => `<span class="bad">${t}</span>`).join("") : '<span class="ok">Судимостей і розшуку немає</span>'}</div>
+      <dl class="dz-kv">${x.record_note ? `<dt>Судимості</dt><dd>${esc(x.record_note)}</dd>` : ""}<dt>Адмінпорушення</dt><dd>${dash(x.admin_note)}</dd></dl></section>
+    <section><h4><b>IV</b>Службовий досвід</h4><p class="dz-text">${esc(c.exp || "—")}</p></section>
+    <section class="wide"><h4><b>V</b>Мотивація</h4><p class="dz-text quote">${esc(c.motive || "—")}</p></section>
+  </div>
+  ${c.note ? `<div class="dz-note"><b>Причина відмови:</b> ${esc(c.note)}</div>` : ""}
+  ${candRoute(c)}
+  ${mine ? `<footer class="dz-act"><span class="muted small">${c.status === "vvb" ? "Висновок Відділу внутрішньої безпеки" : "Рішення Відділу кадрів та підготовки персоналу"}</span>
+    <div class="acts"><button class="btn ok" data-a="cand" data-id="${c.id}" data-d="ok">${c.status === "vvb" ? "Погодити й передати до ВКПП" : "Погодити зарахування"}</button>
+    <button class="btn bad" data-a="cand" data-id="${c.id}" data-d="rej">Відмовити</button></div></footer>` : ""}
+</article>`;
 }
 
 async function vHr() {
