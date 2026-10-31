@@ -145,7 +145,7 @@ async def submit(member: discord.Member | None, sid: int, name: str, age: str, e
     ch = await core.channel("vvb")
     if ch:
         f = await photo_file(c)
-        msg = await ch.send(embed=await card(c, member), view=view(cid, "vvb"), **({"file": f} if f else {}))
+        msg = await ch.send(embed=await card(c, member), **({"file": f} if f else {}))
         await db.run("UPDATE candidates SET vvb_ch=?, vvb_msg=? WHERE id=?", str(ch.id), str(msg.id), cid)
     else:
         log.warning("Канал ВВБ не знайдено — анкету №%s збережено без картки", cid)
@@ -241,7 +241,7 @@ async def _refresh(c: dict, member: discord.Member | None):
         try:
             ch = core.bot.get_channel(int(c[chk])) or await core.bot.fetch_channel(int(c[chk]))
             msg = await ch.fetch_message(int(c[mk]))
-            await msg.edit(embed=await card(c, member), view=view(c["id"], stage) if c["status"] == stage else None)
+            await msg.edit(embed=await card(c, member), view=None)
         except (discord.NotFound, discord.Forbidden):
             pass
 
@@ -273,12 +273,15 @@ async def decide(cid: int, reviewer: discord.Member, decision: str, note: str = 
     await db.run(f"UPDATE candidates SET status=?, {col}_by=?, {col}_t=?, note=? WHERE id=?", new, str(reviewer.id), t, note[:300] or None, cid)
     c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
     await _refresh(c, None)
+    await core.post_log(c[f"{col}_ch"], c[f"{col}_msg"], style.doc_no("АНК", cid),
+                        "Анкета кандидата · " + ("перевірка ВВБ" if stage == "vvb" else "зарахування ВКПП"),
+                        f"{c['name']} · №{c['sid']}", "ok" if decision == "ok" else "rej", reviewer.display_name, t, note)
 
     if new == "vkpp":
         ch = await core.channel("access")
         if ch:
             f = await photo_file(c)
-            msg = await ch.send(embed=await card(c, None), view=view(cid, "vkpp"), **({"file": f} if f else {}))
+            msg = await ch.send(embed=await card(c, None), **({"file": f} if f else {}))
             await db.run("UPDATE candidates SET vkpp_ch=?, vkpp_msg=? WHERE id=?", str(ch.id), str(msg.id), cid)
         return "Анкету погоджено й передано до ВКПП."
     if new == "ok":

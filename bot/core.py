@@ -1,4 +1,4 @@
-"""Ядро «Сови»: доступ, звіти, рапорти, файли, картки в Discord. Сайт і кнопки в Discord викликають ті самі функції."""
+"""Ядро «Сови»: доступ, звіти, рапорти, файли, картки в Discord. Рішення ухвалюються на сайті, Discord — оформлений журнал."""
 import hashlib
 import hmac
 import io
@@ -508,7 +508,7 @@ async def post_card(kind: str, row: dict):
     if not ch:
         return
     embed = await (act_embed(row) if kind == "act" else rap_embed(row))
-    msg = await ch.send(embed=embed, view=decision_view(kind, row["id"]))
+    msg = await ch.send(embed=embed)  # Discord — журнал: рішення ухвалюються лише в ЄІС «Сова»
     table = "acts" if kind == "act" else "raps"
     await db.run(f"UPDATE {table} SET ch_id=?, msg_id=? WHERE id=?", str(ch.id), str(msg.id), row["id"])
 
@@ -520,9 +520,34 @@ async def refresh_card(kind: str, row: dict):
         ch = bot.get_channel(int(row["ch_id"])) or await bot.fetch_channel(int(row["ch_id"]))
         msg = await ch.fetch_message(int(row["msg_id"]))
         embed = await (act_embed(row) if kind == "act" else rap_embed(row))
-        await msg.edit(embed=embed, view=decision_view(kind, row["id"]) if row["status"] == "wait" else None)
+        await msg.edit(embed=embed, view=None)
     except (discord.NotFound, discord.Forbidden):
-        pass
+        return
+    if row["status"] != "wait":
+        reviewer = await user(row["reviewer"]) if row.get("reviewer") else None
+        author = await user(row["by_sid"])
+        what = ACTS[row["type"]][0] if kind == "act" else RAP_TYPES.get(row["type"], "Рапорт")
+        await post_log(row["ch_id"], row["msg_id"], style.doc_no("ЗВТ" if kind == "act" else "РАП", row["id"]), what,
+                       who(author), row["status"], who(reviewer), row.get("reviewed"))
+
+
+async def post_log(ch_id, msg_id, no: str, what: str, subject: str, status: str, by: str, t: int | None = None, note: str = ""):
+    """Запис журналу про рішення: окреме повідомлення-відповідь на картку документа."""
+    try:
+        ch = bot.get_channel(int(ch_id)) or await bot.fetch_channel(int(ch_id))
+    except (discord.NotFound, discord.Forbidden, TypeError, ValueError):
+        return
+    label, color, ecolor = style.STATUS.get(status, (status.upper(), "white", 0x8C96A5))
+    lines = [style.kv("ДОКУМЕНТ", f"{no} · {what}", "white", True), style.kv("СТОСУЄТЬСЯ", subject, "white"),
+             style.kv("РІШЕННЯ", label, color, True), style.kv("УХВАЛИВ", by or "—", "white"), style.kv("ДАТА", style.when(t), "gray")]
+    if note:
+        lines += [style.rule()] + [style.kv("ПРИЧИНА" if i == 0 else "", p, "white") for i, p in enumerate(style.wrap(note, 28))]
+    e = style.document("ЖУРНАЛ РІШЕНЬ", ecolor, desc=style.block(*lines), footer="Рішення ухвалено в ЄІС «Сова»")
+    ref = discord.MessageReference(message_id=int(msg_id), channel_id=int(ch_id), fail_if_not_exists=False) if msg_id else None
+    try:
+        await ch.send(embed=e, reference=ref, mention_author=False, allowed_mentions=discord.AllowedMentions.none())
+    except discord.HTTPException as ex:
+        log.warning("Журнал рішень: %s", ex)
 
 
 # ---------------------------------------------------------------- звіти
@@ -698,7 +723,7 @@ async def request_access(member: discord.Member, sid: int, name: str) -> int:
     req["cand_id"] = await approved_candidate(sid)
     ch = await channel("access")
     if ch:
-        msg = await ch.send(embed=access_embed(req, member), view=access_view(rid))
+        msg = await ch.send(embed=access_embed(req, member))
         await db.run("UPDATE access_requests SET ch_id=?, msg_id=? WHERE id=?", str(ch.id), str(msg.id), rid)
     else:
         log.warning("Канал заявок на допуск не знайдено — заявку №%s збережено без картки", rid)
@@ -742,7 +767,7 @@ def access_embed(req: dict, member: discord.Member | None) -> discord.Embed:
             lines.append(style.kv("", req["reviewer_name"], "white"))
         lines.append(style.kv("", style.when(req["reviewed"]), "gray"))
     return style.document("ЗАЯВКА НА ДОПУСК ДО ЄІС «СОВА»", color, desc=f"Discord: <@{req['discord_id']}>\n" + style.block(*lines),
-                          no=style.doc_no("ЗД", req["id"]), footer="Перевірка ВКПП перед наданням допуску")
+                          no=style.doc_no("ЗД", req["id"]), footer="Розгляд ВКПП: ЄІС «Сова» → Кадри")
 
 
 class AccessButton(discord.ui.DynamicItem[discord.ui.Button], template=r"sova:acc:(?P<id>\d+):(?P<d>ok|rej)"):
@@ -804,6 +829,8 @@ async def decide_access(req_id: int, reviewer: discord.Member, decision: str) ->
             await msg.edit(embed=access_embed(req, member), view=None)
         except (discord.NotFound, discord.Forbidden):
             pass
+        await post_log(req["ch_id"], req["msg_id"], style.doc_no("ЗД", req_id), "Заявка на допуск до ЄІС",
+                       f"{req['name']} · №{req['sid']}", "ok" if decision == "ok" else "rej", reviewer.display_name, req["reviewed"], note)
     if decision == "ok":
         sent = False
         try:
