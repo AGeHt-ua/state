@@ -117,3 +117,7 @@ table.t tr:hover td:first-child{box-shadow:inset 2px 0 0 var(--gold)}
   *,*::before,*::after{animation:none!important;transition:none!important}
   .fx-boot,.fx-granted{display:none}
 }
+
+/* кадри */
+.card>dl.kv+.acts{margin-top:14px}
+.view>.card+.card{margin-top:14px}

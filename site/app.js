@@ -112,6 +112,7 @@ const IC = {
   rap: '<path d="M7 3h8l4 4v14H7zM15 3v4h4M10 12h6M10 16h6"/>',
   staff: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c.6-3.4 3-5.4 6-5.4s5.4 2 6 5.4M16 4.5a3 3 0 0 1 0 6M21 19c-.4-2.4-1.7-4-3.6-4.7"/>',
   audit: '<path d="M5 4h14v16H5zM9 8h6M9 12h6M9 16h3"/>',
+  hr: '<circle cx="10" cy="8" r="3.4"/><path d="M3.5 20c.7-3.6 3.3-5.6 6.5-5.6 1.6 0 3 .5 4.1 1.4M15 18l2 2 4-4.5"/>',
   soon: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',
 };
 const ico = (k) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${IC[k] || IC.soon}</svg>`;
@@ -120,14 +121,15 @@ const NAV = [
   ["act", "Моя активність", () => true],
   ["rap", "Рапорти", () => true],
   ["staff", "Особовий склад", (u) => u.rank >= 8],
-  ["audit", "Кадровий аудит", (u) => u.rank >= 12],
+  ["hr", "Кадри", () => !!(ME.hr && (ME.hr.vvb || ME.hr.vkpp))],
+  ["audit", "Кадровий аудит", (u) => u.rank >= 12 || !!(ME.hr && ME.hr.vkpp)],
 ];
-const SOON = ["Кейс-файли", "Запити між відділами", "Розділ відділу", "Дисципліна", "Премії", "Набір кандидатів"];
-const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад", audit: "Кадровий аудит" };
+const SOON = ["Кейс-файли", "Запити між відділами", "Розділ відділу", "Дисципліна", "Премії"];
+const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски" };
 
 function viewShell(inner) {
   const p = ME.pending || {};
-  const badge = { act: p.acts, rap: p.raps };
+  const badge = { act: p.acts, rap: p.raps, hr: p.hr };
   const c = META.depts[ME.me.dept].color;
   return `<div class="shell" style="--dept:${c}">
   <aside class="side">
@@ -248,7 +250,7 @@ function rapDesc(r) {
 }
 
 async function vRap() {
-  const canRev = ME.me.rank >= 11;
+  const canRev = ME.me.rank >= 13 || !!(ME.hr && ME.hr.vkpp);
   const t = tab("rap", "mine");
   const head = tabsBar("rap", [["mine", "Мої рапорти"], ["new", "Подати рапорт"], ...(canRev ? [["review", "На розгляд", ME.pending.raps || 0]] : [])], "mine");
   if (t === "new") return head + rapForm();
@@ -306,7 +308,47 @@ async function vAudit() {
   </tbody></table></div></div>`;
 }
 
-const VIEWS = { home: vHome, act: vAct, rap: vRap, staff: vStaff, audit: vAudit };
+/* ---------------- кадри: анкети кандидатів (ВВБ → ВКПП) і заявки на допуск ---------------- */
+const CST = { vvb: ["chip wait", "Перевірка ВВБ"], vkpp: ["chip wait", "Очікує ВКПП"], ok: ["chip ok", "Прийнято"], rej: ["chip bad", "Відмовлено"] };
+const candChip = (c) => `<span class="${CST[c.status][0]}">${CST[c.status][1]}</span>`;
+const docNo = (p, n) => `${p}-${String(n).padStart(4, "0")}`;
+
+function candCard(c, r) {
+  const mine = (c.status === "vvb" && r.vvb) || (c.status === "vkpp" && r.vkpp);
+  return `<article class="card"><header><h3>${esc(c.name)} <span class="muted mono small">№${c.sid}</span></h3><span class="sp"></span>
+    <span class="mono small muted">${docNo("АНК", c.id)}</span>${candChip(c)}</header>
+    <dl class="kv"><dt>Вік / онлайн</dt><dd>${esc(c.age || "—")}</dd><dt>Досвід</dt><dd>${esc(c.exp || "—")}</dd>
+      <dt>Мотивація</dt><dd>${esc(c.motive || "—")}</dd><dt>Подано</dt><dd class="num">${fmtDT(c.t)}</dd>
+      ${c.vvb_t ? `<dt>ВВБ</dt><dd>${c.status === "rej" && !c.vkpp_t ? "відмовлено" : "погоджено"} · ${esc(c.vvbName || "—")} · ${fmtDT(c.vvb_t)}</dd>` : ""}
+      ${c.vkpp_t ? `<dt>ВКПП</dt><dd>${c.status === "ok" ? "прийнято" : "відмовлено"} · ${esc(c.vkppName || "—")} · ${fmtDT(c.vkpp_t)}</dd>` : ""}
+      ${c.note ? `<dt>Причина</dt><dd>${esc(c.note)}</dd>` : ""}</dl>
+    ${mine ? `<div class="acts"><button class="btn ok" data-a="cand" data-id="${c.id}" data-d="ok">${c.status === "vvb" ? "Погодити й передати до ВКПП" : "Прийняти на службу"}</button>
+      <button class="btn bad" data-a="cand" data-id="${c.id}" data-d="rej">Відмовити</button></div>` : ""}</article>`;
+}
+
+async function vHr() {
+  const d = await call("/api/hr");
+  const r = d.rights;
+  const t = tab("hr", "cand");
+  const head = tabsBar("hr", [["cand", "Анкети кандидатів", d.cand.length], ...(r.vkpp ? [["access", "Заявки на допуск", d.access.length]] : []), ["done", "Архів рішень"]], "cand");
+  const stage = r.vvb && r.vkpp ? "ВВБ перевіряє анкети, ВКПП приймає на службу." : r.vvb ? "Ви перевіряєте анкети як ВВБ: погоджена анкета йде до ВКПП." : "Ви ухвалюєте рішення про прийом як ВКПП.";
+  const note = `<p class="note">${stage} Усі рішення бот дублює в Discord: картки оновлюються, кандидат отримує повідомлення в особисті.</p>`;
+  if (t === "access") {
+    if (!d.access.length) return head + note + '<div class="empty">Немає заявок на допуск.</div>';
+    return head + note + `<div class="card"><div class="tbl-wrap"><table class="t"><thead><tr><th>Заявка</th><th>Ім'я</th><th>Static ID</th><th>Подано</th><th class="r">Рішення</th></tr></thead><tbody>
+      ${d.access.map((a) => `<tr><td class="mono">${docNo("ЗД", a.id)}</td><td>${esc(a.name)}</td><td class="num">№${a.sid}</td><td class="muted num">${fmtDT(a.t)}</td>
+        <td class="r"><div class="acts" style="justify-content:flex-end"><button class="btn sm ok" data-a="accd" data-id="${a.id}" data-d="ok">Надати допуск</button><button class="btn sm bad" data-a="accd" data-id="${a.id}" data-d="rej">Відмовити</button></div></td></tr>`).join("")}
+      </tbody></table></div></div>`;
+  }
+  if (t === "done") {
+    const acc = d.accessDone.map((a) => `<tr><td class="mono">${docNo("ЗД", a.id)}</td><td>${esc(a.name)} <span class="muted">№${a.sid}</span></td><td>${a.status === "ok" ? '<span class="chip ok">Допуск надано</span>' : '<span class="chip bad">Відмовлено</span>'}</td><td>${esc(a.reviewerName || "—")}</td><td class="muted num">${fmtDT(a.reviewed)}</td></tr>`).join("");
+    return head + (d.candDone.length ? d.candDone.map((c) => candCard(c, r)).join("") : '<div class="empty">Розглянутих анкет ще немає.</div>')
+      + (acc ? `<div class="card"><header><h3>Заявки на допуск</h3></header><div class="tbl-wrap"><table class="t"><thead><tr><th>Заявка</th><th>Заявник</th><th>Рішення</th><th>Хто</th><th>Коли</th></tr></thead><tbody>${acc}</tbody></table></div></div>` : "");
+  }
+  return head + note + (d.cand.length ? d.cand.map((c) => candCard(c, r)).join("") : '<div class="empty">Немає анкет на розгляд.</div>');
+}
+
+const VIEWS = { home: vHome, act: vAct, rap: vRap, staff: vStaff, audit: vAudit, hr: vHr };
 
 /* ---------------- рендер ---------------- */
 async function boot() {
@@ -352,6 +394,19 @@ const A = {
   actd: async (b) => {
     b.disabled = true;
     try { await call(`/api/acts/${b.dataset.id}/decision`, { json: { decision: b.dataset.d } }); toast(b.dataset.d === "ok" ? "Звіт підтверджено" : "Звіт відхилено"); await refreshMe(); render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
+  cand: async (b) => {
+    let note = "";
+    if (b.dataset.d === "rej") { note = prompt("Причина відмови (кандидат її побачить):", ""); if (note === null) return; }
+    b.disabled = true;
+    try { const r = await call(`/api/hr/cand/${b.dataset.id}`, { json: { decision: b.dataset.d, note } }); toast(r.text); await refreshMe(); render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
+  accd: async (b) => {
+    if (b.dataset.d === "rej" && !confirm("Відмовити в допуску?")) return;
+    b.disabled = true;
+    try { const r = await call(`/api/hr/access/${b.dataset.id}`, { json: { decision: b.dataset.d } }); toast(r.text); await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
   rapd: async (b) => {

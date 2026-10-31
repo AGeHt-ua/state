@@ -5,6 +5,7 @@ import time
 
 from aiohttp import web
 
+import candidates
 import config
 import core
 from core import ACTS, RAP_TYPES, Fail
@@ -144,7 +145,9 @@ async def me(request):
         "pending": {
             "acts": len([a for a in await db.all("SELECT * FROM acts WHERE status='wait'") if core.can_approve_act(u, a)]),
             "raps": len([r for r in await db.all("SELECT * FROM raps WHERE status='wait'") if core.can_approve_rap(u, r)]),
+            "hr": await hr_pending(u),
         },
+        "hr": hr_rights(u),
     })
 
 
@@ -229,11 +232,76 @@ async def staff(request):
 @routes.get("/api/audit")
 async def audit(request):
     u = await auth(request)
-    if u["rank"] < 12:
+    if u["rank"] < 12 and not hr_rights(u)["vkpp"]:
         raise Fail("Недостатній рівень допуску.", 403)
     rows = await db.all("SELECT * FROM audit ORDER BY id DESC LIMIT 200")
     people = await people_map([r["actor"] for r in rows] + [r["target"] for r in rows])
     return web.json_response([{**r, "actorUser": people.get(r["actor"]), "targetUser": people.get(r["target"])} for r in rows])
+
+
+# ---------------------------------------------------------------- кадри: анкети кандидатів і заявки на допуск
+def hr_rights(u: dict) -> dict:
+    return {"vvb": u["rank"] >= 13 or core.has_dept_role(u, "vvb"), "vkpp": u["rank"] >= 14 or core.has_dept_role(u, "vkpp")}
+
+
+async def hr_pending(u: dict) -> int:
+    r = hr_rights(u)
+    n = 0
+    if r["vvb"]:
+        n += (await db.one("SELECT COUNT(*) AS n FROM candidates WHERE status='vvb'"))["n"]
+    if r["vkpp"]:
+        n += (await db.one("SELECT COUNT(*) AS n FROM candidates WHERE status='vkpp'"))["n"]
+        n += (await db.one("SELECT COUNT(*) AS n FROM access_requests WHERE status='wait'"))["n"]
+    return n
+
+
+async def reviewer_member(u: dict):
+    m = await core.member_of(u["discord_id"], fresh=True) if u["discord_id"] else None
+    if not m:
+        raise Fail("Вас немає на Discord-сервері СБУ.", 403)
+    return m
+
+
+async def names(ids) -> dict:
+    out = {}
+    for i in {i for i in ids if i}:
+        u = await db.one("SELECT name FROM users WHERE discord_id=?", i)
+        out[i] = u["name"] if u else None
+    return out
+
+
+@routes.get("/api/hr")
+async def hr_list(request):
+    u = await auth(request)
+    r = hr_rights(u)
+    if not (r["vvb"] or r["vkpp"]):
+        raise Fail("Розділ «Кадри» доступний ВВБ, ВКПП і керівництву.", 403)
+    stages = [s for s, ok in (("vvb", r["vvb"]), ("vkpp", r["vkpp"])) if ok]
+    cand = await db.all(f"SELECT * FROM candidates WHERE status IN ({','.join('?' * len(stages))}) ORDER BY t", *stages)
+    done = await db.all("SELECT * FROM candidates WHERE status IN ('ok','rej') ORDER BY COALESCE(vkpp_t, vvb_t) DESC LIMIT 30")
+    acc = await db.all("SELECT * FROM access_requests WHERE status='wait' ORDER BY t") if r["vkpp"] else []
+    acc_done = await db.all("SELECT * FROM access_requests WHERE status!='wait' ORDER BY reviewed DESC LIMIT 30") if r["vkpp"] else []
+    nm = await names([c["vvb_by"] for c in cand + done] + [c["vkpp_by"] for c in cand + done] + [a["reviewer"] for a in acc_done])
+    for c in cand + done:
+        c["vvbName"], c["vkppName"] = nm.get(c["vvb_by"]), nm.get(c["vkpp_by"])
+    for a in acc_done:
+        a["reviewerName"] = nm.get(a["reviewer"])
+    return web.json_response({"rights": r, "cand": cand, "candDone": done, "access": acc, "accessDone": acc_done})
+
+
+@routes.post("/api/hr/cand/{id}")
+async def hr_cand(request):
+    u = await auth(request)
+    b = await body(request)
+    text = await candidates.decide(int(request.match_info["id"]), await reviewer_member(u), b.get("decision"), (b.get("note") or "").strip())
+    return web.json_response({"text": text})
+
+
+@routes.post("/api/hr/access/{id}")
+async def hr_access(request):
+    u = await auth(request)
+    text = await core.decide_access(int(request.match_info["id"]), await reviewer_member(u), (await body(request)).get("decision"))
+    return web.json_response({"text": text})
 
 
 # ---------------------------------------------------------------- файли
