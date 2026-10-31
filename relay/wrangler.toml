@@ -1,0 +1,14 @@
+# Ретранслятор «Сови»: https://sova.d-f-12339.workers.dev → тунель бота на SparkedHost.
+# Розгортання: cd relay && npx wrangler deploy
+name = "sova"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+# Відкритий ключ бота (GET /api/relay-key). Не секрет: ним лише перевіряють підпис.
+RELAY_PUBKEY = "ULj3KqKkiX7XR6uIJJ2oUAOY17Dx/Eeupnzwwrjb7bY="
+
+[[kv_namespaces]]
+binding = "SOVA"
+id = "084de31c76e6492dbf9b2fa186640a1d"
