@@ -13,7 +13,7 @@ import discord
 import config
 from db import db, now_ms
 from roles import (ALL_SBU_ROLES, DEPTS, OPS_DEPTS, PRESS_ROLE, RANK_ROLES, RANKS, SBU_ROLE,
-                   rank_name, resolve, roles_for)
+                   nickname, rank_name, resolve, roles_for)
 
 log = logging.getLogger("sova")
 bot: discord.Client | None = None
@@ -178,7 +178,26 @@ async def access(u: dict, fresh: bool = False) -> dict:
         await db.audit(0, "Синхронізація з Discord", u["sid"],
                        f"{rank_name(u['rank'])} / {DEPTS[u['dept']]['s']} → {rank_name(a['rank'])} / {DEPTS[a['dept']]['s']}")
         u.update(rank=a["rank"], dept=a["dept"], since=since)
+        await set_nick(u)
     return a
+
+
+async def set_nick(u: dict, member: discord.Member | None = None) -> bool:
+    """Ставить нікнейм «Звання | Ім'я Прізвище | Static ID». Потрібне право бота «Керувати нікнеймами»."""
+    if u.get("status") == "dismissed" or not u.get("discord_id"):
+        return False
+    m = member or await member_of(u["discord_id"])
+    if not m:
+        return False
+    nick = nickname(u["rank"], u["name"], u["sid"])
+    if m.nick == nick:
+        return True
+    try:
+        await m.edit(nick=nick, reason="Сова: службовий нікнейм")
+        return True
+    except discord.Forbidden:
+        log.warning("Не можу змінити нікнейм %s: немає права «Керувати нікнеймами» або роль учасника вища за роль бота", m)
+        return False
 
 
 async def sync_roles(u: dict, reason: str):
@@ -555,6 +574,8 @@ async def apply_rap(actor: dict, r: dict):
     u = await user(r["by_sid"])
     if r["type"] in ("promo", "transfer", "dismiss"):
         await sync_roles(u, f"Сова: рапорт №{r['id']}")
+    if r["type"] == "promo":
+        await set_nick(u)
     await post_audit(actor, r["type"], u)
 
 
@@ -580,7 +601,25 @@ async def register(member: discord.Member, sid: int, name: str) -> tuple[dict, s
     await db.run("INSERT INTO users(sid,name,discord_id,pw_hash,pw_set,rank,dept,since,created) VALUES(?,?,?,?,?,?,?,?,?)",
                  sid, name[:60], str(member.id), hash_password(pw), t, rank, dept, t, t)
     await db.audit(0, "Оформлено допуск до ЄІС", sid, f"самостійно через Discord · {rank_name(rank) if a['ok'] else 'без ролей СБУ'}")
+    if a["ok"]:
+        await set_nick({"sid": sid, "name": name[:60], "rank": rank, "discord_id": str(member.id)}, member)
     return a, pw
+
+
+async def change_name(member: discord.Member, name: str) -> dict:
+    """Зміна імені персонажа: оновлює картку й нікнейм, повідомляє керівництво через кадровий аудит."""
+    u = await db.one("SELECT * FROM users WHERE discord_id=?", str(member.id))
+    if not u:
+        raise Fail("Допуск ще не оформлено. Натисніть «Отримати допуск».")
+    old = u["name"]
+    await db.run("UPDATE users SET name=? WHERE sid=?", name[:60], u["sid"])
+    u["name"] = name[:60]
+    await db.audit(0, "Зміна персональних даних", u["sid"], f"{old} → {u['name']}")
+    ch = await channel("audit")
+    if ch:
+        await ch.send(f"**Зміна персональних даних** · №{u['sid']} · {old} → **{u['name']}**")
+    await set_nick(u, member)
+    return u
 
 
 async def reset_own_password(member: discord.Member) -> tuple[dict, str]:

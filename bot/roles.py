@@ -45,6 +45,22 @@ DEPTS = {
 OPS_DEPTS = ["orv", "vvb", "atc", "alpha", "deb", "vkpp"]
 
 
+# Скорочення звань для нікнейму (Discord дозволяє не більше 32 символів)
+RANK_SHORT = ["Стажер", "Мол. агент", "Агент", "Ст. агент", "Мол. опер", "Опер", "Ст. опер", "Інструктор",
+              "Кер. групи", "Кер. сектору", "Заст. нач. від.", "Нач. відділу", "Нач. управл.", "Заст. Голови", "Голова СБУ"]
+
+
+def nickname(rank: int, name: str, sid: int) -> str:
+    """«Звання | Ім'я Прізвище | Static ID», за потреби ім'я скорочується до «І. Прізвище»."""
+    short = RANK_SHORT[rank - 1] if 1 <= rank <= len(RANK_SHORT) else "СБУ"
+    nick = f"{short} | {name} | {sid}"
+    if len(nick) > 32:
+        parts = name.split()
+        if len(parts) >= 2:
+            nick = f"{short} | {parts[0][0]}. {' '.join(parts[1:])} | {sid}"
+    return nick[:32]
+
+
 def rank_name(rank: int) -> str:
     return RANKS[rank - 1][0] if 1 <= rank <= len(RANKS) else "—"
 

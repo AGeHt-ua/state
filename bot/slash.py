@@ -7,7 +7,7 @@ import config
 import core
 from core import Fail
 from db import db, now_ms
-from roles import DEPTS, rank_name, resolve
+from roles import DEPTS, nickname, rank_name, resolve
 
 
 async def head_only(interaction: discord.Interaction) -> dict:
@@ -61,6 +61,7 @@ class Access(app_commands.Group):
             await db.audit(head["sid"], "Видано доступ" if not exists else "Оновлено доступ", static_id,
                            f"{rank_name(a['rank'])} · {DEPTS[a['dept']]['s']}")
             await db.run("DELETE FROM sessions WHERE sid=?", static_id)
+            await core.set_nick({"sid": static_id, "name": імя[:60], "rank": a["rank"], "discord_id": str(учасник.id)}, учасник)
             dm = await send_credentials(учасник, static_id, pw)
             await interaction.response.send_message(
                 f"Доступ для {учасник.mention}: №{static_id}, {rank_name(a['rank'])}, {DEPTS[a['dept']]['s']}.\n"
@@ -116,6 +117,23 @@ class Admin(app_commands.Group):
             await reply_error(interaction, e)
         except discord.Forbidden:
             await interaction.response.send_message("Бот не може писати в цей канал.", ephemeral=True)
+
+    @app_commands.command(name="нікнейми", description="Оновити службові нікнейми всім, хто має допуск (Голова СБУ)")
+    async def nicks(self, interaction: discord.Interaction):
+        try:
+            await head_only(interaction)
+            await interaction.response.defer(ephemeral=True)
+            done = fail = 0
+            for u in await db.all("SELECT * FROM users WHERE status!='dismissed' AND discord_id IS NOT NULL"):
+                await core.access(u, fresh=True)
+                if await core.set_nick(u):
+                    done += 1
+                else:
+                    fail += 1
+            await interaction.followup.send(f"Нікнейми оновлено: {done}. Не вдалося: {fail} "
+                                            "(бракує права «Керувати нікнеймами», роль вища за роль бота або власник сервера).", ephemeral=True)
+        except Fail as e:
+            await reply_error(interaction, e)
 
     @app_commands.command(name="бекап", description="Зробити бекап бази зараз (Голова СБУ)")
     async def backup_now(self, interaction: discord.Interaction):
@@ -211,6 +229,32 @@ class RegisterView(discord.ui.View):
     @discord.ui.button(label="Відновити код доступу", style=discord.ButtonStyle.secondary, custom_id="sova:resetpw")
     async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
         await do_reset(interaction)
+
+    @discord.ui.button(label="Змінити дані", style=discord.ButtonStyle.secondary, custom_id="sova:rename")
+    async def rename(self, interaction: discord.Interaction, button: discord.ui.Button):
+        member = await guild_member(interaction)
+        u = await db.one("SELECT * FROM users WHERE discord_id=?", str(member.id)) if member else None
+        if not u:
+            return await interaction.response.send_message("Допуск ще не оформлено. Натисніть «Отримати допуск».", ephemeral=True)
+        await interaction.response.send_modal(NameModal(member, u["name"]))
+
+
+class NameModal(discord.ui.Modal, title="Зміна персональних даних"):
+    name = discord.ui.TextInput(label="Ім'я та прізвище персонажа (IC)", min_length=3, max_length=60)
+
+    def __init__(self, member: discord.Member, current: str):
+        super().__init__()
+        self.member = member
+        self.name.default = current
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            u = await core.change_name(self.member, str(self.name.value).strip())
+            await interaction.response.send_message(
+                f"Дані оновлено: **{u['name']}**. Нікнейм: `{nickname(u['rank'], u['name'], u['sid'])}`.\n"
+                "Зміну зафіксовано в кадровому аудиті — керівництво повідомлено.", ephemeral=True)
+        except Fail as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
 
 
 def welcome_embed(member: discord.abc.User | None = None) -> discord.Embed:
