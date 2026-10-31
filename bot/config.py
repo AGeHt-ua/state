@@ -15,7 +15,7 @@ def env(key: str, default: str | None = None) -> str | None:
 
 
 DISCORD_TOKEN = env("DISCORD_TOKEN")
-GUILD_ID = int(env("GUILD_ID", "0"))
+GUILD_ID = int(env("GUILD_ID", "1553695043947077684"))  # сервер «Служба Безпеки NG»
 
 # Pterodactyl (SparkedHost) сам передає порт основної алокації в SERVER_PORT
 API_PORT = int(env("API_PORT", env("SERVER_PORT", "8080")))
