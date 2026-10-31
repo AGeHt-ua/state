@@ -59,13 +59,13 @@ function viewLogin(err) {
     <p class="sub">Єдина інформаційна система «СОВА» · вхід для особового складу</p>
     <form data-f="login" autocomplete="on">
       <label class="f"><span>Static ID (номер жетона)</span><input class="i mono" id="lg-id" name="username" inputmode="numeric" autocomplete="username" required></label>
-      <label class="f"><span>Пароль</span><input class="i" id="lg-pw" name="password" type="password" autocomplete="current-password" required></label>
+      <label class="f"><span>Код доступу</span><input class="i" id="lg-pw" name="password" type="password" autocomplete="current-password" required></label>
       ${err ? `<p class="err">${esc(err)}</p>` : ""}
       <button class="btn gold" type="submit" id="lg-btn">Увійти до системи</button>
     </form>
     <p class="botstate" id="botstate"><span class="spin"></span> Перевіряю зв'язок з ботом…</p>
-    <p class="fine">Немає акаунта? На сервері «Служба Безпеки NG» натисніть кнопку <b>«Створити акаунт»</b> — бот одразу видасть пароль.
-      Вхід можливий лише з ролями СБУ; звання й відділ підтягуються з Discord автоматично.</p>
+    <p class="fine">Немає допуску? На сервері «Служба Безпеки NG» натисніть <b>«Отримати допуск»</b> — система видасть код доступу.
+      Вхід лише для складу СБУ; звання й підрозділ підтягуються автоматично.</p>
   </div></div>`;
 }
 

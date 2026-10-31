@@ -117,7 +117,7 @@ async def login(request):
     limit_login(f"{request.remote}:{sid}")
     u = await db.one("SELECT * FROM users WHERE sid=?", int(sid)) if sid.isdigit() else None
     if not u or not core.check_password(str(b.get("password", "")), u["pw_hash"]):
-        raise Fail("Невірний Static ID або пароль.", 401)
+        raise Fail("Невірний номер жетона або код доступу.", 401)
     a = await core.access(u, fresh=True)
     if not a["ok"]:
         raise Fail(f"Вхід відхилено: {a['why']}.", 403)

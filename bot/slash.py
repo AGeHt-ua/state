@@ -28,8 +28,8 @@ async def reply_error(interaction: discord.Interaction, e: Fail):
 
 async def send_credentials(member: discord.Member, sid: int, password: str) -> bool:
     try:
-        await member.send(f"**Кабінет СБУ «Сова»**\nСайт: {config.SITE_URL}\nStatic ID: `{sid}`\nПароль: `{password}`\n"
-                          "Нікому не передавайте пароль. Вхід можливий лише з ролями СБУ на сервері.")
+        await member.send(f"**Допуск до ЄІС «Сова» оформлено**\nСайт: {config.SITE_URL}\nНомер жетона: `{sid}`\nКод доступу: `{password}`\n"
+                          "Код доступу є службовою таємницею — не передавайте його нікому. Вхід можливий лише з ролями СБУ на сервері.")
         return True
     except discord.Forbidden:
         return False
@@ -39,7 +39,7 @@ class Access(app_commands.Group):
     def __init__(self):
         super().__init__(name="доступ", description="Облікові записи кабінету «Сова»")
 
-    @app_commands.command(name="видати", description="Створити або оновити обліковий запис співробітника і надіслати пароль")
+    @app_commands.command(name="видати", description="Оформити допуск до ЄІС «Сова» співробітнику і надіслати код доступу")
     @app_commands.describe(учасник="Співробітник на сервері", static_id="Static ID = номер жетона", імя="Ім'я та прізвище (IC)")
     async def issue(self, interaction: discord.Interaction, учасник: discord.Member, static_id: app_commands.Range[int, 1, 9_999_999], імя: str):
         try:
@@ -64,12 +64,12 @@ class Access(app_commands.Group):
             dm = await send_credentials(учасник, static_id, pw)
             await interaction.response.send_message(
                 f"Доступ для {учасник.mention}: №{static_id}, {rank_name(a['rank'])}, {DEPTS[a['dept']]['s']}.\n"
-                + ("Пароль надіслано в особисті повідомлення." if dm else f"Особисті повідомлення закриті. Пароль: `{pw}` — передайте особисто."),
+                + ("Код доступу надіслано в особисті повідомлення." if dm else f"Особисті повідомлення закриті. Код доступу: `{pw}` — передайте особисто."),
                 ephemeral=True)
         except Fail as e:
             await reply_error(interaction, e)
 
-    @app_commands.command(name="пароль", description="Згенерувати новий пароль співробітнику")
+    @app_commands.command(name="пароль", description="Видати співробітнику новий код доступу")
     async def reset(self, interaction: discord.Interaction, учасник: discord.Member):
         try:
             head = await head_only(interaction)
@@ -79,9 +79,9 @@ class Access(app_commands.Group):
             pw = core.new_password()
             await db.run("UPDATE users SET pw_hash=?, pw_set=? WHERE sid=?", core.hash_password(pw), now_ms(), u["sid"])
             await db.run("DELETE FROM sessions WHERE sid=?", u["sid"])
-            await db.audit(head["sid"], "Новий пароль", u["sid"], "попередні входи завершено")
+            await db.audit(head["sid"], "Новий код доступу", u["sid"], "попередні входи завершено")
             dm = await send_credentials(учасник, u["sid"], pw)
-            await interaction.response.send_message("Новий пароль надіслано в особисті." if dm else f"Пароль: `{pw}` — передайте особисто.", ephemeral=True)
+            await interaction.response.send_message("Новий код доступу надіслано в особисті." if dm else f"Код доступу: `{pw}` — передайте особисто.", ephemeral=True)
         except Fail as e:
             await reply_error(interaction, e)
 
@@ -106,7 +106,7 @@ class Admin(app_commands.Group):
         except Fail as e:
             await reply_error(interaction, e)
 
-    @app_commands.command(name="панель", description="Розмістити в цьому каналі панель «Створити акаунт» (Голова СБУ)")
+    @app_commands.command(name="панель", description="Розмістити в цьому каналі панель «Отримати допуск» (Голова СБУ)")
     async def panel(self, interaction: discord.Interaction):
         try:
             await head_only(interaction)
@@ -138,12 +138,13 @@ class Admin(app_commands.Group):
             await reply_error(interaction, e)
 
 
-# ---------------------------------------------------------------- кнопка «Створити акаунт»
+# ---------------------------------------------------------------- кнопка «Отримати допуск»
 def credentials_text(sid: int, pw: str, a: dict) -> str:
-    text = (f"**Ваш акаунт у кабінеті «Сова»**\nСайт: {config.SITE_URL}\nStatic ID: `{sid}`\nПароль: `{pw}`\n"
-            "Збережіть пароль — це повідомлення бачите лише ви.")
+    text = (f"**Допуск до ЄІС «Сова» оформлено**\nСайт: {config.SITE_URL}\nНомер жетона: `{sid}`\nКод доступу: `{pw}`\n"
+            "Код доступу є службовою таємницею. Це повідомлення бачите лише ви.")
     if not a.get("ok"):
-        text += f"\n\n⚠️ Увійти поки не вийде: {a.get('why', 'немає ролей СБУ')}. Щойно отримаєте ролі — вхід відкриється сам."
+        text += (f"\n\n⚠️ Допуск оформлено, але система поки не пустить: {a.get('why', 'немає ролей СБУ')}. "
+                 "Щойно вас зарахують до складу СБУ — вхід відкриється сам.")
     return text
 
 
@@ -165,8 +166,8 @@ async def do_reset(interaction: discord.Interaction):
         await interaction.response.send_message(str(e), ephemeral=True)
 
 
-class RegisterModal(discord.ui.Modal, title="Акаунт у кабінеті «Сова»"):
-    sid = discord.ui.TextInput(label="Static ID (номер жетона)", placeholder="напр. 3481", min_length=1, max_length=8)
+class RegisterModal(discord.ui.Modal, title="Оформлення допуску до ЄІС «Сова»"):
+    sid = discord.ui.TextInput(label="Номер жетона (Static ID)", placeholder="напр. 3481", min_length=1, max_length=8)
     name = discord.ui.TextInput(label="Ім'я та прізвище персонажа (IC)", placeholder="Name Surname", min_length=3, max_length=60)
 
     def __init__(self, member: discord.Member):
@@ -188,7 +189,7 @@ class ResetView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
 
-    @discord.ui.button(label="Новий пароль", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Відновити код доступу", style=discord.ButtonStyle.secondary)
     async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
         await do_reset(interaction)
 
@@ -198,27 +199,29 @@ class RegisterView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Створити акаунт", style=discord.ButtonStyle.success, emoji="🦉", custom_id="sova:register")
+    @discord.ui.button(label="Отримати допуск", style=discord.ButtonStyle.success, emoji="🦉", custom_id="sova:register")
     async def create(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = await guild_member(interaction)
         if not member:
             return await interaction.response.send_message("Спершу приєднайтеся до сервера «Служба Безпеки NG».", ephemeral=True)
         if await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id)):
-            return await interaction.response.send_message("У вас уже є акаунт. Забули пароль?", ephemeral=True, view=ResetView())
+            return await interaction.response.send_message("Допуск уже оформлено. Загубили код доступу?", ephemeral=True, view=ResetView())
         await interaction.response.send_modal(RegisterModal(member))
 
-    @discord.ui.button(label="Новий пароль", style=discord.ButtonStyle.secondary, custom_id="sova:resetpw")
+    @discord.ui.button(label="Відновити код доступу", style=discord.ButtonStyle.secondary, custom_id="sova:resetpw")
     async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
         await do_reset(interaction)
 
 
 def welcome_embed(member: discord.abc.User | None = None) -> discord.Embed:
-    e = discord.Embed(title="Служба безпеки штату NG · кабінет «Сова»", color=0xC9A05A,
-                      description=(f"Ласкаво просимо, {member.mention}!\n\n" if member else "")
-                      + "Натисніть **«Створити акаунт»**, вкажіть Static ID та ім'я персонажа — бот одразу видасть пароль до кабінету.\n"
-                      "Звання й відділ кабінет бере з ваших ролей на сервері. Без ролей СБУ акаунт створюється, але вхід відкриється, "
-                      "щойно ролі з'являться. Якщо вийдете із сервера — доступ закриється автоматично.")
-    e.add_field(name="Кабінет", value=config.SITE_URL)
+    e = discord.Embed(title="Служба безпеки штату NG · ЄІС «Сова»", color=0xC9A05A,
+                      description=(f"Вітаємо, {member.mention}. Ви прибули до Служби безпеки штату NG.\n\n" if member else "")
+                      + "Для роботи в Єдиній інформаційній системі «Сова» оформіть **допуск**: натисніть **«Отримати допуск»**, "
+                      "вкажіть номер жетона та ім'я — система видасть особистий код доступу.\n\n"
+                      "Звання й підрозділ система бере з вашого службового статусу на сервері. "
+                      "Допуск діє, доки ви перебуваєте у складі СБУ: при звільненні чи виході із сервера його буде анульовано автоматично.")
+    e.add_field(name="ЄІС «Сова»", value=config.SITE_URL)
+    e.set_footer(text="Код доступу є службовою таємницею (Положення про захист службової інформації СБУ)")
     return e
 
 

@@ -570,27 +570,27 @@ async def register(member: discord.Member, sid: int, name: str) -> tuple[dict, s
     """Акаунт створює сама людина кнопкою в Discord. Доступ до кабінету все одно дають лише ролі СБУ."""
     own = await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id))
     if own:
-        raise Fail(f"У вас уже є акаунт: Static ID {own['sid']}. Якщо забули пароль — натисніть «Новий пароль».")
+        raise Fail(f"Допуск уже оформлено на жетон №{own['sid']}. Загубили код доступу — натисніть «Відновити код доступу».")
     if await db.one("SELECT sid FROM users WHERE sid=?", sid):
-        raise Fail("Цей Static ID уже зареєстровано за іншим Discord. Якщо це ваш номер — зверніться до Голови СБУ.")
+        raise Fail("На цей номер жетона вже оформлено допуск іншій особі. Якщо це ваш номер — зверніться до Голови СБУ.")
     a = resolve({r.id for r in member.roles})
     rank, dept = (a["rank"], a["dept"]) if a["ok"] else (1, "academy")
     pw = new_password()
     t = now_ms()
     await db.run("INSERT INTO users(sid,name,discord_id,pw_hash,pw_set,rank,dept,since,created) VALUES(?,?,?,?,?,?,?,?,?)",
                  sid, name[:60], str(member.id), hash_password(pw), t, rank, dept, t, t)
-    await db.audit(0, "Створено акаунт", sid, f"самостійно через Discord · {rank_name(rank) if a['ok'] else 'без ролей СБУ'}")
+    await db.audit(0, "Оформлено допуск до ЄІС", sid, f"самостійно через Discord · {rank_name(rank) if a['ok'] else 'без ролей СБУ'}")
     return a, pw
 
 
 async def reset_own_password(member: discord.Member) -> tuple[dict, str]:
     u = await db.one("SELECT * FROM users WHERE discord_id=?", str(member.id))
     if not u:
-        raise Fail("У вас ще немає акаунта. Натисніть «Створити акаунт».")
+        raise Fail("Допуск ще не оформлено. Натисніть «Отримати допуск».")
     pw = new_password()
     await db.run("UPDATE users SET pw_hash=?, pw_set=? WHERE sid=?", hash_password(pw), now_ms(), u["sid"])
     await db.run("DELETE FROM sessions WHERE sid=?", u["sid"])
-    await db.audit(0, "Новий пароль", u["sid"], "самостійно через Discord, попередні входи завершено")
+    await db.audit(0, "Новий код доступу", u["sid"], "самостійно через Discord, попередні входи завершено")
     return u, pw
 
 
