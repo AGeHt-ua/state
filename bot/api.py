@@ -254,6 +254,13 @@ async def files_upload(request):
     return web.json_response({"id": fid, "url": f"/api/files/{fid}"}, status=201)
 
 
+@routes.get("/api/files/{id}/url")
+async def files_url(request):
+    """Свіже посилання Discord на файл (сайт відкриває його без передачі токена в адресі)."""
+    await auth(request)
+    return web.json_response({"url": await core.file_url(request.match_info["id"])})
+
+
 @routes.get("/api/files/{id}")
 async def files_get(request):
     await auth(request)
