@@ -201,7 +201,7 @@ async def me_verify(request):
         {"t": "Учасник Discord-сервера СБУ", "ok": bool(m)},
         {"t": "Основна роль СБУ", "ok": SBU_ROLE in roles},
         {"t": f"Роль звання: {rank_name(max(rank_roles))}" if rank_roles else "Роль звання відсутня", "ok": bool(rank_roles) and max(rank_roles) == u["rank"]},
-        {"t": f"Роль підрозділу: {', '.join(depts_in)}" if depts_in else ("Підрозділ: Академія / Керівництво" if u["dept"] in ("academy", "lead") else "Роль підрозділу відсутня"),
+        {"t": f"Роль підрозділу: {', '.join(depts_in)}" if depts_in else (f"Підрозділ: {DEPTS[u['dept']]['n']} (за званням)" if u["dept"] in ("academy", "lead") else "Роль підрозділу відсутня"),
          "ok": bool(depts_in) or u["dept"] in ("academy", "lead")},
         {"t": "Службовий нікнейм" + (f": {m.nick or m.display_name}" if m else ""), "ok": nick_ok, "soft": True},
     ]
