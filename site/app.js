@@ -178,9 +178,11 @@ const ring = (val, max, label) => {
 };
 
 // Звірка посвідчення з ролями Discord: свіжі ролі → звання й відділ на сайті, службовий нікнейм
-async function verifyCard(btn) {
+async function verifyCard(btn, tries = 0) {
   const box = document.getElementById("idver");
-  if (!box) return;
+  if (!box) { if (tries < 40) setTimeout(() => verifyCard(btn, tries + 1), 150); return; }  // сторінка ще вставляється
+  if (box.dataset.done && !btn) return;
+  box.dataset.done = "1";
   if (btn) btn.disabled = true;
   try {
     const v = await call("/api/me/verify");
