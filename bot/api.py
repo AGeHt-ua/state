@@ -11,6 +11,7 @@ import bonus
 import cases
 import depts
 import discipline
+import orders
 import config
 import core
 from core import ACTS, RAP_TYPES, Fail
@@ -157,6 +158,7 @@ async def me(request):
         "hr": hr_rights(u),
         "cases": cases.rights(u),
         "control": depts.control_depts(u),
+        "appoint": orders.can_appoint(u),
         "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
         "bonus": {"manage": bonus.can_manage(u), "finalize": bonus.can_finalize(u)},
     })
@@ -514,6 +516,31 @@ async def insp_move(request):
     u = await auth(request)
     await discipline.insp_move(u, int(request.match_info["id"]), (await body(request)).get("to"))
     return web.json_response({"ok": True})
+
+
+# ---------------------------------------------------------------- накази про призначення
+@routes.get("/api/orders")
+async def orders_list(request):
+    u = await auth(request)
+    if not orders.can_appoint(u):
+        raise Fail("Накази про призначення доступні Голові СБУ.", 403)
+    return web.json_response(await orders.listing())
+
+
+@routes.post("/api/orders")
+async def orders_create(request):
+    u = await auth(request)
+    o = await orders.appoint(u, await body(request))
+    _structure_cache[0] = 0  # схема оновиться з новим званням
+    return web.json_response({"id": o["id"]}, status=201)
+
+
+@routes.post("/api/orders/{id}/cancel")
+async def orders_cancel(request):
+    u = await auth(request)
+    r = await orders.cancel(u, int(request.match_info["id"]))
+    _structure_cache[0] = 0
+    return web.json_response(r)
 
 
 _structure_cache: list = [0.0, None]

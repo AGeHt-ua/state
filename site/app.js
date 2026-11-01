@@ -403,7 +403,8 @@ const person = (p) => `<div class="pp ${p.sid === ME.me.sid ? "me" : ""} ${p.sta
 async function vStaff() {
   const canList = ME.me.rank >= 8;
   const t = tab("staff", "tree");
-  const head = tabsBar("staff", [["tree", "Штатна структура"], ...(canList ? [["list", "Особовий склад"]] : [])], "tree");
+  const head = tabsBar("staff", [["tree", "Штатна структура"], ...(canList ? [["list", "Особовий склад"]] : []), ...(ME.appoint ? [["appoint", "Призначення"]] : [])], "tree");
+  if (t === "appoint" && ME.appoint) return window.SOVA.appointView(head);
   if (t === "list" && canList) {
     const list = await call("/api/staff");
     return head + `${ME.me.dept !== "lead" ? `<p class="note">Особовий склад вашого відділу: ${esc(ME.me.deptName)}.</p>` : ""}

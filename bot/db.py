@@ -144,6 +144,17 @@ CREATE TABLE IF NOT EXISTS inspections (
   status     TEXT DEFAULT 'open',          -- open | sent | closed | deleted
   author     INTEGER, created INTEGER, updated INTEGER, order_id INTEGER
 );
+CREATE TABLE IF NOT EXISTS orders (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  sid        INTEGER NOT NULL,
+  kind       TEXT DEFAULT 'appoint',       -- наказ про призначення на посаду
+  from_rank  INTEGER, to_rank INTEGER, from_dept TEXT, to_dept TEXT,
+  extra      TEXT,                         -- другий відділ начальника відділу
+  reason     TEXT,
+  by_sid     INTEGER, t INTEGER,
+  status     TEXT DEFAULT 'active',        -- active | deleted
+  cancelled_by INTEGER, cancelled INTEGER
+);
 CREATE INDEX IF NOT EXISTS disc_sid ON discipline(sid);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);
 CREATE INDEX IF NOT EXISTS acts_status ON acts(status);
