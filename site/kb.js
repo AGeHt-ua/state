@@ -69,13 +69,39 @@ async function lawView() {
       ${r.snippets.map((s) => `<p>${mark(s, st.q)}</p>`).join("")}</article>`).join("") || '<div class="empty">Нічого не знайдено.</div>'}</div></div></div>`;
   }
 
-  // ---- головна бази: категорії-картки
-  const sbu = INDEX.docs.filter((d) => d.sbu);
-  return `<div class="kb-home2">${searchBox.replace('class="kb-search"', 'class="kb-search big"')}
-    <section><div class="kb-sec-h"><span>Документи СБУ</span><i></i></div><div class="kb-cards">${sbu.map((d) => `<button class="kb-card sbu" data-a="kbopen" data-v="${esc(d.slug)}"><b>${esc(d.title)}</b><span>${esc(d.faction_abbr || d.grp_title || "")}</span></button>`).join("")}</div></section>
-    ${Object.entries(groups).map(([g, list]) => `<details class="kb-cat" ${st.sbu ? "open" : ""}><summary><span>${esc(g)}</span><i>${list.length}</i></summary>
-      <div class="kb-cards">${list.map((d) => `<button class="kb-card ${d.sbu ? "sbu" : ""}" data-a="kbopen" data-v="${esc(d.slug)}"><b>${esc(d.title)}</b><span>${esc(d.faction_abbr || d.grp_title || "")}</span></button>`).join("")}</div></details>`).join("")}
-    <p class="muted small" style="margin-top:14px">Джерело — офіційна база проєкту NG · ${INDEX.docs.length} документів · звірено ${INDEX.checked ? fmtDT(INDEX.checked) : "—"}</p></div>`;
+  // ---- головна бази: архів штату — Конституція й кодекси книгами на полиці, закони томами, статути й правила теками
+  const kind = (d) => d.faction_abbr ? "fac" : ({ "Конституція": "const", "Кодекси": "code", "Закони": "law" })[d.grp_title] || "rules";
+  const short = (t) => t.replace(/\s+штату NG\s*$/i, "").replace(/^\(\(\s*|\s*\)\)$/g, "");
+  const book = (d, k) => { const t = short(d.title); const law = k === "law" && /^Закон про /i.test(t);
+    return `<button class="law-book k-${k}" data-a="kbopen" data-v="${esc(d.slug)}"><span class="lb-spine"></span>${d.sbu ? '<span class="law-rib">СБУ</span>' : ""}
+      <img src="ng-logo.png" alt="" width="54" height="27"><span class="law-kind">${k === "const" ? "Основний закон" : k === "code" ? "Кодекс" : "Закон"}</span>
+      <b>${esc(law ? t.replace(/^Закон про /i, "про ") : t)}</b><span class="lb-foot">Штат NG</span></button>`; };
+  const folder = (d) => `<button class="law-folder ${d.sbu ? "sbu" : ""}" data-a="kbopen" data-v="${esc(d.slug)}"><span class="lf-tab">${esc(d.faction_abbr || "NG")}</span>
+    ${d.sbu ? '<span class="lf-stamp">СБУ</span>' : ""}<span class="lf-org">${d.faction_abbr ? "Статут фракції" : "Правила проєкту NG"}</span><b>${esc(short(d.title))}</b></button>`;
+  const CATS = [["sbu", "Документи СБУ", "🛡"], ["const", "Конституція", "📜"], ["code", "Кодекси", "📕"], ["law", "Закони", "📚"], ["fac", "Статути фракцій", "🗂"], ["rules", "Правила проєкту", "📁"]];
+  const by = {};
+  INDEX.docs.forEach((d) => { const k = kind(d); (by[k] = by[k] || []).push(d); if (d.sbu) (by.sbu = by.sbu || []).push(d); });
+  const shown = CATS.filter(([k]) => (!st.lawCat || st.lawCat === k) && (!st.sbu || k === "sbu"));
+  const body = (k, list) => {
+    if (k === "fac") {  // статути: окремий стос тек на кожну фракцію
+      const f = {};
+      list.forEach((d) => (f[d.faction_abbr] = f[d.faction_abbr] || []).push(d));
+      return Object.entries(f).map(([a, l]) => `<div class="law-fac"><div class="law-fac-h">${esc(a)} <i>${l.length}</i></div><div class="lib-row">${l.map(folder).join("")}</div></div>`).join("");
+    }
+    if (k === "sbu") {  // закони про СБУ — томами на полиці, внутрішні документи — теками
+      const books = list.filter((d) => ["const", "code", "law"].includes(kind(d))), docs = list.filter((d) => !books.includes(d));
+      return `${books.length ? `<div class="lib-row law-shelf">${books.map((d) => book(d, kind(d))).join("")}</div>` : ""}<div class="lib-row" style="margin-top:22px">${docs.map(folder).join("")}</div>`;
+    }
+    return k === "rules" ? `<div class="lib-row">${list.map(folder).join("")}</div>` : `<div class="lib-row law-shelf">${list.map((d) => book(d, k)).join("")}</div>`;
+  };
+  return `<div class="lib-arch law-arch">
+    <div class="law-top"><img src="ng-logo.png" alt="NG" width="120" height="59"><div><div class="eyebrow">Державний архів · Законодавча база</div><b>Штат NG</b>
+      <span class="muted small">${INDEX.docs.length} документів · звірено ${INDEX.checked ? fmtDT(INDEX.checked) : "—"}</span></div>
+      <div class="law-top-s">${searchBox}</div></div>
+    <div class="lib-pills"><button class="${st.lawCat ? "" : "on"}" data-a="lawcat" data-v="">Усе <i>${INDEX.docs.length}</i></button>
+      ${CATS.map(([k, v, ic]) => `<button class="${st.lawCat === k ? "on" : ""}" data-a="lawcat" data-v="${k}">${ic} ${esc(v)} <i>${(by[k] || []).length}</i></button>`).join("")}</div>
+    ${shown.map(([k, v, ic]) => `<section class="lib-sec"><div class="kb-sec-h"><span>${ic} ${esc(v)}</span><i></i></div>${(by[k] || []).length ? body(k, by[k]) : '<div class="lib-empty">Розділ порожній.</div>'}</section>`).join("")}
+    <p class="muted small" style="margin-top:6px">Джерело — офіційна база проєкту NG. Повнотекстовий пошук шукає по змісту всіх документів.</p></div>`;
 }
 
 // Розбиває документ на розділи-«теки»: кожен заголовок розділу (h2) з наступним текстом — окремий <details>
@@ -362,6 +388,7 @@ Object.assign(S.actions, {
     setTimeout(poll, 4000); R();
   }),
   libopen: (b) => { st.lib = +b.dataset.id; R(); scrollTo(0, 0); },
+  lawcat: (b) => { st.lawCat = b.dataset.v || null; R(); },
   libcat: (b) => { st.libCat = b.dataset.v || null; R(); },
   libback: () => { st.lib = null; st.libEdit = null; R(); },
   libfs: () => { const f = document.getElementById("lib-frame"); if (f && f.requestFullscreen) f.requestFullscreen(); },

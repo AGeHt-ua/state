@@ -71,13 +71,13 @@ mark{background:rgba(226,192,127,.35);color:inherit;padding:0 2px}
 .lib-book:hover{transform:translateY(-8px) rotate(-1deg);box-shadow:inset -6px 0 10px rgba(0,0,0,.4),10px 18px 26px rgba(0,0,0,.6)}
 .lib-shelf{height:14px;margin-top:-2px;background:linear-gradient(#5a3b22,#3a2414);box-shadow:0 10px 18px rgba(0,0,0,.55);border-top:2px solid #7a5532}
 /* теки ДСК */
-.lib-folder{position:relative;width:250px;min-height:150px;display:flex;flex-direction:column;gap:6px;padding:26px 16px 14px;margin-top:14px;color:#2c2110;
+.lib-folder,.law-folder{position:relative;width:250px;min-height:150px;display:flex;flex-direction:column;gap:6px;padding:26px 16px 14px;margin-top:14px;color:#2c2110;
   background:linear-gradient(170deg,#d9bf86,#c6a76a);border-radius:0 6px 6px 6px;box-shadow:0 10px 22px rgba(0,0,0,.45)}
 .lf-tab{position:absolute;top:-16px;left:0;padding:3px 14px;font:700 10px var(--mono);letter-spacing:.1em;background:#d9bf86;border-radius:6px 6px 0 0}
 .lf-stamp{position:absolute;top:10px;right:12px;font:700 11px var(--mono);letter-spacing:.15em;color:#9b1f1f;border:2px solid #9b1f1f;padding:1px 6px;transform:rotate(8deg);opacity:.8}
 .lf-org{font:9px var(--mono);letter-spacing:.12em;text-transform:uppercase;opacity:.65}
-.lib-folder b{font:700 15px/1.3 "PT Serif",Georgia,serif;flex:1;padding-right:30px}.lf-meta{font:10px var(--mono);opacity:.7}
-.lib-folder:hover{transform:translateY(-4px)}
+.lib-folder b,.law-folder b{font:700 15px/1.3 "PT Serif",Georgia,serif;flex:1;padding-right:30px}.lf-meta{font:10px var(--mono);opacity:.7}
+.lib-folder:hover,.law-folder:hover{transform:translateY(-4px)}
 /* пам'ятки */
 .lib-memo{position:relative;width:220px;min-height:130px;display:flex;flex-direction:column;gap:8px;padding:20px 16px 12px;color:#231c12;
   background:repeating-linear-gradient(#f3eee2 0 23px,#d9e1ea 23px 24px);border-top:4px solid #9b1f1f;box-shadow:0 8px 18px rgba(0,0,0,.4);transform:rotate(-.6deg)}
@@ -94,7 +94,7 @@ mark{background:rgba(226,192,127,.35);color:inherit;padding:0 2px}
 .lbd-label i{font:700 9px var(--mono);font-style:normal;letter-spacing:.14em;color:#6b6253}.lbd-label b{font:700 13px/1.3 "PT Serif",Georgia,serif}
 .lbd-meta{font:10px var(--mono);opacity:.6;margin-top:8px}
 .lib-binder:hover{transform:translateY(-4px)}
-@media (max-width:640px){.lib-row{justify-content:center}.lib-book{width:140px;height:210px}.lib-folder,.lib-memo,.lib-binder{width:100%}.lib-q{max-width:none}}
+@media (max-width:640px){.law-top-s{min-width:0}.law-book{width:128px;height:190px}.lib-row{justify-content:center}.lib-book{width:140px;height:210px}.lib-folder,.lib-memo,.lib-binder{width:100%}.lib-q{max-width:none}}
 .lib-doc .law-body h3{font:700 16px "PT Serif",serif;margin:18px 0 8px}
 .kb-edit{min-height:360px;font:14px/1.6 var(--body)}
 .ex-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
@@ -220,3 +220,22 @@ mark.hit.cur{background:#ff9f1a;box-shadow:0 0 0 2px #ff9f1a}
   .kb-paper2{padding:24px 18px}}
 .law-body .kb-sub{margin-top:12px!important;font:700 calc(var(--fs) - 1px)/1.4 var(--mono);letter-spacing:.05em;text-transform:uppercase;color:#7a5a1a;border-bottom:1px solid rgba(35,28,18,.2);padding-bottom:6px}
 .kb-reader.dark .law-body .kb-sub{color:var(--gold2);border-color:var(--line2)}
+/* законодавство: архів штату */
+.law-top{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:16px 20px;margin-bottom:10px;border:1px solid var(--line2);background:radial-gradient(circle at 0 50%,rgba(64,224,208,.12),transparent 45%),linear-gradient(90deg,rgba(201,162,77,.06),transparent 70%)}
+.law-top img{filter:drop-shadow(0 0 10px rgba(64,224,208,.35))}.law-top>div:nth-child(2){display:grid;gap:2px}.law-top b{font:22px var(--display)}
+.law-top-s{flex:1;min-width:280px;display:grid;gap:6px}.law-top-s .kb-search{margin:0}
+.law-shelf{padding:0 14px 18px;row-gap:40px}
+.law-book{position:relative;width:150px;height:215px;display:flex;flex-direction:column;align-items:center;gap:5px;padding:14px 10px 10px 20px;text-align:center!important;color:#e9d9a8;
+  background:linear-gradient(135deg,#2a3340,#151b24 70%);border-radius:2px 6px 6px 2px;box-shadow:inset -6px 0 10px rgba(0,0,0,.4),6px 8px 16px rgba(0,0,0,.55)}
+.law-book::after{content:"";position:absolute;inset:7px 7px 7px 17px;border:1px solid rgba(201,162,77,.4);pointer-events:none}
+.law-book::before{content:"";position:absolute;left:-12px;right:-12px;bottom:-16px;height:12px;background:linear-gradient(#5a3b22,#3a2414);border-top:2px solid #7a5532;box-shadow:0 8px 14px rgba(0,0,0,.5)}
+.law-book.k-const{background:linear-gradient(135deg,#5b1414,#2e0909 70%);width:180px}.law-book.k-code{background:linear-gradient(135deg,#1c2b4a,#0e1628 70%)}
+.law-book.k-law{background:linear-gradient(135deg,#1f3a35,#0f1f1c 70%)}.law-book:nth-child(even).k-law{background:linear-gradient(135deg,#2b3b24,#141f10 70%)}
+.law-book img{width:54px;height:auto;margin-top:4px;filter:drop-shadow(0 0 6px rgba(64,224,208,.3))}
+.law-kind{font:9px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--gold)}
+.law-book b{font:700 12.5px/1.3 "PT Serif",Georgia,serif;flex:1;display:flex;align-items:center;overflow:hidden}
+.law-book .lb-foot{font:8px var(--mono);letter-spacing:.14em;text-transform:uppercase;opacity:.55}
+.law-rib{position:absolute;top:-4px;right:12px;padding:8px 4px 10px;font:700 8px var(--mono);letter-spacing:.08em;color:#fff;background:#9b1f1f;clip-path:polygon(0 0,100% 0,100% 100%,50% 82%,0 100%)}
+.law-book:hover{transform:translateY(-8px) rotate(-1deg)}.law-book:hover::before{transform:translateY(8px) rotate(1deg)}
+.law-folder{width:230px;min-height:120px}.law-folder.sbu{background:linear-gradient(170deg,#e0c48c,#c9a35f);box-shadow:0 0 0 2px rgba(155,31,31,.5),0 10px 22px rgba(0,0,0,.45)}
+.law-fac{margin-bottom:14px}.law-fac-h{font:700 12px var(--mono);letter-spacing:.14em;color:var(--gold);margin:0 0 4px}.law-fac-h i{font-style:normal;opacity:.55}
