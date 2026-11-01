@@ -595,6 +595,12 @@ async function boot() {
     [META, ME] = await Promise.all([META || call("/api/meta"), call("/api/me")]);
   } catch (e) {
     if (!TOKEN) return render();
+    // Бот перезапускається або тунель ще не піднявся: вхід збережено — чекаємо й пробуємо знову, а не показуємо екран входу
+    if (/зв'язку/.test(e.message)) {
+      $("#app").innerHTML = `<div class="login"><div class="login-card"><img src="sbu-logo.webp" alt="" width="120" height="120">
+        <h1>ЄІС «СОВА»</h1><p class="sub"><span class="spin"></span> Відновлюю зв'язок із ботом… Вхід збережено, сторінка відкриється автоматично.</p></div></div>`;
+      return setTimeout(boot, 5000);
+    }
     return render(e.message);
   }
   render();
