@@ -6,6 +6,7 @@ import time
 from aiohttp import web
 
 import candidates
+import cases
 import config
 import core
 from core import ACTS, RAP_TYPES, Fail
@@ -146,8 +147,10 @@ async def me(request):
             "acts": len([a for a in await db.all("SELECT * FROM acts WHERE status='wait'") if core.can_approve_act(u, a)]),
             "raps": len([r for r in await db.all("SELECT * FROM raps WHERE status='wait'") if core.can_approve_rap(u, r)]),
             "hr": await hr_pending(u),
+            "cases": await cases.pending(u),
         },
         "hr": hr_rights(u),
+        "cases": cases.rights(u),
     })
 
 
@@ -227,6 +230,57 @@ async def staff(request):
     for r in rows:
         out.append({**public_user(r), "points": await core.week_points(r["sid"])})
     return web.json_response(out)
+
+
+# ---------------------------------------------------------------- кейс-файли
+async def case_people(rows: list[dict]) -> dict:
+    return await people_map([c["author"] for c in rows])
+
+
+@routes.get("/api/cases")
+async def cases_list(request):
+    u = await auth(request)
+    rows = await cases.visible(u)
+    people = await case_people(rows)
+    return web.json_response([{**cases.out(c, u), "authorUser": people.get(c["author"]), "history": c["history"][-1:]} for c in rows])
+
+
+@routes.get("/api/cases/{id}")
+async def cases_get(request):
+    u = await auth(request)
+    c = await cases.get(int(request.match_info["id"]))
+    if not cases.can_view(u, c):
+        raise Fail("Немає доступу до цього кейс-файлу.", 403)
+    return web.json_response({**cases.out(c, u), "authorUser": (await case_people([c])).get(c["author"])})
+
+
+@routes.post("/api/cases")
+async def cases_create(request):
+    u = await auth(request)
+    c = await cases.create(u, await body(request))
+    return web.json_response({**cases.out(c, u), "authorUser": public_user(u)}, status=201)
+
+
+@routes.post("/api/cases/{id}")
+async def cases_update(request):
+    u = await auth(request)
+    c = await cases.update(u, int(request.match_info["id"]), await body(request))
+    return web.json_response({**cases.out(c, u), "authorUser": public_user(u)})
+
+
+@routes.post("/api/cases/{id}/submit")
+async def cases_submit(request):
+    u = await auth(request)
+    c = await cases.submit(u, int(request.match_info["id"]))
+    return web.json_response(cases.out(c, u))
+
+
+@routes.post("/api/cases/{id}/decision")
+async def cases_decide(request):
+    u = await auth(request)
+    b = await body(request)
+    c = await cases.decide(u, int(request.match_info["id"]), b.get("decision"), str(b.get("note") or ""))
+    return web.json_response(cases.out(c, u))
 
 
 @routes.get("/api/structure")

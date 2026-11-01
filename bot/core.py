@@ -187,7 +187,7 @@ async def access(u: dict, fresh: bool = False) -> dict:
 
 async def set_nick(u: dict, member: discord.Member | None = None) -> bool:
     """Ставить нікнейм «Звання | Ім'я Прізвище | Static ID». Потрібне право бота «Керувати нікнеймами»."""
-    if u.get("status") == "dismissed" or not u.get("discord_id"):
+    if u.get("status") == "dismissed" or not u.get("discord_id") or u.get("dept") == "prosecutor":
         return False
     m = member or await member_of(u["discord_id"])
     if not m:
@@ -249,6 +249,8 @@ def has_dept_role(u: dict, dept: str) -> bool:
 
 
 async def promo_check(u: dict) -> dict | None:
+    if u["dept"] == "prosecutor":
+        return None
     nxt = u["rank"] + 1
     if nxt > 15:
         return None
@@ -267,7 +269,7 @@ async def promo_check(u: dict) -> dict | None:
 
 
 # ---------------------------------------------------------------- канали
-CHANNEL_KEYS = list(DEPTS) + ["audit", "files", "backups"]
+CHANNEL_KEYS = [k for k in DEPTS if DEPTS[k]["channel"]] + ["audit", "files", "backups"]
 
 
 async def channel(key: str) -> discord.TextChannel | None:
@@ -857,6 +859,8 @@ async def register(member: discord.Member, sid: int, name: str, reviewer: discor
     if await db.one("SELECT sid FROM users WHERE sid=?", sid):
         raise Fail("На цей номер жетона вже оформлено допуск іншій особі.")
     give = [r for r in (member.guild.get_role(rid) for rid in (*config.JOIN_ROLES, *extra_roles)) if r and r not in member.roles]
+    if resolve({r.id for r in member.roles}).get("dept") == "prosecutor":
+        give = []  # Генеральному прокурору ролі СБУ не видаються
     if give:
         try:
             await member.add_roles(*give, reason="Сова: оформлено допуск до ЄІС")

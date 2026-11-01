@@ -107,6 +107,7 @@ function logout(silent) {
 
 /* ---------------- оболонка ---------------- */
 const IC = {
+  cases: '<path d="M3 7a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M8 13h8M8 16h5"/>',
   home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
   act: '<path d="M4 19V5m0 14h16M8 15l4-4 3 3 5-6"/>',
   rap: '<path d="M7 3h8l4 4v14H7zM15 3v4h4M10 12h6M10 16h6"/>',
@@ -121,15 +122,18 @@ const NAV = [
   ["act", "Моя активність", () => true],
   ["rap", "Рапорти", () => true],
   ["staff", "Особовий склад", () => true],
+  ["cases", "Кейс-файли", () => !!(ME.cases && ME.cases.view)],
   ["hr", "Кадри", () => !!(ME.hr && (ME.hr.vvb || ME.hr.vkpp))],
   ["audit", "Кадровий аудит", (u) => u.rank >= 12 || !!(ME.hr && ME.hr.vkpp)],
 ];
-const SOON = ["Кейс-файли", "Запити між відділами", "Розділ відділу", "Дисципліна", "Премії"];
-const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски" };
+const SOON = ["Запити між відділами", "Розділ відділу", "Дисципліна", "Премії"];
+// Генеральний прокурор (не співробітник СБУ) бачить лише кейс-файли
+const navOk = (n) => n[2](ME.me) && (ME.me.dept !== "prosecutor" || n[0] === "cases");
+const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли" };
 
 function viewShell(inner) {
   const p = ME.pending || {};
-  const badge = { act: p.acts, rap: p.raps, hr: p.hr };
+  const badge = { act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases };
   const c = META.depts[ME.me.dept].color;
   return `<div class="shell" style="--dept:${c}">
   <aside class="side">
@@ -137,9 +141,9 @@ function viewShell(inner) {
     <div class="me"><span class="dp">${esc(ME.me.deptName)}</span><span class="nm">${esc(ME.me.name)}</span><span class="rk">${esc(ME.me.rankName)}</span>
       <div class="meta"><span>${esc(META.depts[ME.me.dept].s)}</span><span>№${ME.me.sid}</span></div></div>
     <nav class="nav">
-      ${NAV.filter((n) => n[2](ME.me)).map(([k, l]) => `<button data-a="nav" data-v="${k}" class="${UI.view === k ? "on" : ""}">${ico(k)}<span>${l}</span>${badge[k] ? `<span class="cnt">${badge[k]}</span>` : ""}</button>`).join("")}
+      ${NAV.filter(navOk).map(([k, l]) => `<button data-a="nav" data-v="${k}" class="${UI.view === k ? "on" : ""}">${ico(k)}<span>${l}</span>${badge[k] ? `<span class="cnt">${badge[k]}</span>` : ""}</button>`).join("")}
       <div class="sec">У розробці</div>
-      ${SOON.map((l) => `<button class="soon" disabled>${ico("soon")}<span>${l}</span></button>`).join("")}
+      ${ME.me.dept === "prosecutor" ? "" : SOON.map((l) => `<button class="soon" disabled>${ico("soon")}<span>${l}</span></button>`).join("")}
     </nav>
     <div class="side-foot"><button data-a="logout">Вийти із системи</button></div>
   </aside>
@@ -518,6 +522,7 @@ async function vHr() {
   return head + note + (d.cand.length ? d.cand.map((c) => candCard(c, r)).join("") : '<div class="empty">Немає анкет на розгляд.</div>');
 }
 
+const HOOKS = [];
 const VIEWS = { home: vHome, act: vAct, rap: vRap, staff: vStaff, audit: vAudit, hr: vHr };
 
 /* ---------------- рендер ---------------- */
@@ -537,7 +542,7 @@ async function render(err) {
     checkBot();
     return;
   }
-  if (!NAV.find((n) => n[0] === UI.view && n[2](ME.me))) UI.view = "home";
+  if (!NAV.find((n) => n[0] === UI.view && navOk(n))) UI.view = (NAV.find(navOk) || ["home"])[0];
   $("#app").innerHTML = viewShell(loading);
   const view = UI.view;
   try {
@@ -553,7 +558,7 @@ async function refreshMe() {
 }
 
 const A = {
-  nav: (b) => { UI.view = b.dataset.v; render(); scrollTo(0, 0); },
+  nav: (b) => { UI.view = b.dataset.v; HOOKS.forEach((f) => f(UI.view)); render(); scrollTo(0, 0); },
   go: (b) => { UI.view = b.dataset.v; if (b.dataset.tab) UI.tabs[b.dataset.v] = b.dataset.tab; render(); scrollTo(0, 0); },
   raptype: (b) => { UI.rapType = b.dataset.v; render(); },
   auditf: (b) => { UI.auditF = b.dataset.v; render(); },
@@ -620,7 +625,7 @@ const F = {
 };
 
 document.addEventListener("click", (e) => { const b = e.target.closest("[data-a]"); if (!b || b.disabled) return; const f = A[b.dataset.a]; if (f) { e.preventDefault(); f(b); } });
-document.addEventListener("submit", (e) => { const f = e.target.closest("[data-f]"); if (!f) return; e.preventDefault(); const h = F[f.dataset.f]; if (h) h(f); });
+document.addEventListener("submit", (e) => { const f = e.target.closest("[data-f]"); if (!f) return; e.preventDefault(); const h = F[f.dataset.f]; if (h) h(f, e); });
 document.addEventListener("input", (e) => {
   if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview();
   if (e.target.id === "aud-q") {
@@ -631,6 +636,10 @@ document.addEventListener("input", (e) => {
 });
 document.addEventListener("change", (e) => {
   if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview(); if (e.target.dataset.change === "raptype") { UI.rapType = e.target.value; render(); } });
+
+// Спільні хелпери для модулів (cases.js)
+window.SOVA = { esc, fmtDT, call, toast, $, uploadFiles, render, refreshMe, views: VIEWS, actions: A, forms: F, onNav: HOOKS, cache: {},
+  ME: () => ME, META: () => META };
 
 if (TOKEN) boot(); else render();
 })();

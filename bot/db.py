@@ -104,6 +104,16 @@ CREATE TABLE IF NOT EXISTS candidates (
   note       TEXT,
   vvb_ch TEXT, vvb_msg TEXT, vkpp_ch TEXT, vkpp_msg TEXT
 );
+CREATE TABLE IF NOT EXISTS cases (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  dept     TEXT NOT NULL,                -- orv | deb | atc | alpha
+  author   INTEGER NOT NULL,             -- Static ID виконавця
+  status   TEXT DEFAULT 'draft',         -- draft | head | chief | prosecutor | approved | rejected
+  reached  INTEGER DEFAULT 0,            -- найдальший етап (3 = дійшло до прокурора)
+  data     TEXT,                         -- зміст справи (JSON)
+  history  TEXT,                         -- рух документа й візи (JSON)
+  created  INTEGER, updated INTEGER, approved INTEGER
+);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);
 CREATE INDEX IF NOT EXISTS acts_status ON acts(status);
 CREATE INDEX IF NOT EXISTS raps_status ON raps(status);
