@@ -198,7 +198,7 @@ async def attempt_out(a: dict, e: dict | None = None, reveal: bool = False) -> d
 async def overview(u: dict) -> dict:
     ex = is_examiner(u)
     exams = await db.all("SELECT id, title, descr, pass_pct, minutes, status, questions, t FROM exams WHERE status!='deleted'"
-                         + ("" if ex else " AND status='published'") + " ORDER BY t DESC")
+                         + ("" if ex else " AND status='published'") + " ORDER BY id")
     mine = await db.all("SELECT * FROM attempts WHERE sid=? AND status!='deleted' ORDER BY id DESC LIMIT 50", u["sid"])
     review = await db.all("SELECT * FROM attempts WHERE status IN ('submitted','graded') ORDER BY (status='submitted') DESC, finished DESC LIMIT 100") if ex else []
     return {
