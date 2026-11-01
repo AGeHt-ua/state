@@ -746,10 +746,16 @@ async def attempts_delete(request):
 
 
 _structure_cache: list = [0.0, None]
+_structure_lock = asyncio.Lock()
 
 
 async def build_structure() -> list:
     """Увесь чинний склад з ролями прес-служби й відділів (ролі тягнемо з Discord, тому результат кешується)."""
+    async with _structure_lock:  # одночасні побудови дублювали б записи синхронізації в аудиті
+        return await _build_structure()
+
+
+async def _build_structure() -> list:
     if not core.guild():
         raise Fail("Бот ще не підключився до Discord. Спробуйте за хвилину.", 503)
     rows = await db.all("SELECT * FROM users WHERE status!='dismissed' ORDER BY rank DESC, sid")
