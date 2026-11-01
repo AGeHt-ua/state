@@ -236,7 +236,7 @@ function actDoc(a) {
   const [sw, sc] = ACT_STAMP[a.status] || ["", ""];
   const sec = (n, t, body) => `<section class="kd-sec"><h4><b>${n}</b>${t}</h4>${body}</section>`;
   return `<div class="kd act-kd" style="--dc:${dp.color || "#c9a24d"}">
-    <div class="kd-grif g-dsk">Для службового користування</div>
+    <div class="kd-grif g-dsk">ДСК · Службовий</div>
     <header class="kd-head"><img src="sbu-logo.webp" alt="" width="84" height="84">
       <div><div class="kd-agency">Служба безпеки штату NG</div><div class="kd-dept">${esc(dp.n || "")}</div></div>
       <div class="kd-no"><span>Службовий звіт</span><b>${docNo("ЗВТ", a.id)}</b><span>${fmtDT(a.t)}</span></div></header>
