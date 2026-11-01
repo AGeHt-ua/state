@@ -8,6 +8,7 @@ from aiohttp import web
 
 import admin
 import callsigns
+import finance
 import candidates
 import bonus
 import cases
@@ -171,7 +172,9 @@ async def me(request):
             "exams": (await db.one("SELECT COUNT(*) AS n FROM attempts WHERE status='submitted'"))["n"] if library.is_examiner(u) else 0,
             "orders": (await db.one("SELECT COUNT(*) AS n FROM orders WHERE status='draft'"))["n"] if orders.can_sign(u) else 0,
             "callsign": await callsigns.pending(u),
+            "fin": await finance.pending(u) if finance.can_view(u) else 0,
         },
+        "fin": finance.rights(u),
         "callsign": {"eligible": callsigns.eligible(u), "current": u.get("callsign")},
         "hr": hr_rights(u),
         "cases": cases.rights(u),
@@ -182,6 +185,32 @@ async def me(request):
         "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
         "bonus": {"manage": bonus.can_manage(u) or bool(u.get("curator")), "finalize": bonus.can_finalize(u)},
     })
+
+
+@routes.get("/api/fin")
+async def fin_list(request):
+    u = await auth(request)
+    return web.json_response({"docs": await finance.listing(u), "rights": finance.rights(u), "purposes": finance.PURPOSES})
+
+
+@routes.get("/api/fin/{id}")
+async def fin_one(request):
+    u = await auth(request)
+    if not finance.can_view(u):
+        raise Fail("Немає доступу.", 403)
+    return web.json_response(await finance.get(int(request.match_info["id"])))
+
+
+@routes.post("/api/fin")
+async def fin_save(request):
+    u = await auth(request)
+    return web.json_response(await finance.save(u, await body(request)))
+
+
+@routes.post("/api/fin/{id}/{action}")
+async def fin_act(request):
+    u = await auth(request)
+    return web.json_response(await finance.act(u, int(request.match_info["id"]), request.match_info["action"], await body(request)))
 
 
 @routes.get("/api/callsign")
@@ -1050,6 +1079,7 @@ async def start() -> web.AppRunner:
     log.info("API слухає %s:%s", config.API_HOST, config.API_PORT)
     await ov.load(db)
     core.ROLES_CHANGED.append(build_structure)
+    asyncio.create_task(finance.reminder_loop())
     asyncio.create_task(structure_loop())
     asyncio.create_task(kb.ensure_seeded())
     return runner

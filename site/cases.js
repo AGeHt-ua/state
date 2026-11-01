@@ -214,6 +214,26 @@ async function pdfFrom(html, filename, avoid = []) {
   } finally { box.remove(); }
 }
 S.pdf = pdfFrom;
+// Картинка PNG з бланка (для вставки на форум)
+S.pngBtn = async (b, html, name) => {
+  const old = b.textContent;
+  b.disabled = true; b.textContent = "Формую PNG…";
+  const box = document.createElement("div");
+  box.className = "pdf-host";
+  box.innerHTML = html;
+  box.firstElementChild.classList.add("pdf");
+  box.querySelectorAll("button, .files, .no-pdf, input").forEach((n) => n.remove());
+  document.body.append(box);
+  try {
+    await loadPdf();
+    const canvas = await window.html2pdf().set({ html2canvas: { scale: 2, backgroundColor: "#f3eee2", useCORS: true } }).from(box.firstElementChild).toCanvas().get("canvas");
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/png");
+    a.download = `${String(name || "документ").replace(/[^\p{L}\p{N}-]+/gu, "_").slice(0, 80)}.png`;
+    a.click();
+  } catch (e) { S.toast(e.message, 1); }
+  finally { box.remove(); b.disabled = false; b.textContent = old; }
+};
 // Кнопка «⬇ PDF» для будь-якого документа: html бланка або селектор елемента на сторінці
 S.pdfBtn = async (b, src, name) => {
   const html = src.startsWith("<") ? src : (document.querySelector(src) || {}).outerHTML;

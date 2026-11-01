@@ -181,6 +181,11 @@ CREATE TABLE IF NOT EXISTS callsigns (
   status TEXT DEFAULT 'wait',                                                   -- wait | ok | rej | cancel
   t INTEGER, reviewer INTEGER, reviewed INTEGER, note TEXT
 );
+CREATE TABLE IF NOT EXISTS fin_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL,                       -- petition (клопотання) | report (звіт про використання)
+  parent INTEGER, author INTEGER, status TEXT DEFAULT 'draft', data TEXT, history TEXT,
+  approver INTEGER, approved INTEGER, forum_url TEXT, funded_amount INTEGER, funded_at INTEGER, created INTEGER, updated INTEGER
+);
 CREATE INDEX IF NOT EXISTS disc_sid ON discipline(sid);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);
 CREATE INDEX IF NOT EXISTS acts_status ON acts(status);
