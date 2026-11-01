@@ -17,7 +17,8 @@ def control_depts(u: dict) -> list[str]:
     if u["rank"] == 12:
         hit = core._roles_cache.get(str(u.get("discord_id")))
         roles = hit[1] if hit and hit[1] else set()
-        return [d for d in OPS_DEPTS if d == u["dept"] or DEPTS[d]["role"] in roles]
+        out = [d for d in OPS_DEPTS if d == u["dept"] or DEPTS[d]["role"] in roles]
+        return out + ["academy"] if "vkpp" in out else out  # Начальник ВКПП — він же начальник академії
     return []
 
 

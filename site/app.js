@@ -288,7 +288,8 @@ async function uploadFiles(input) {
 // Візи рапорту на переведення: начальник відділу «звідки» → «куди» → Голова
 function trVisas(r) {
   const d = r.data || {}, st = d.stage || "from", vis = Object.fromEntries((d.visas || []).map((v) => [v.stage, v]));
-  const steps = [["from", "нач. " + (META.depts[r.dept] || {}).s], ["to", "нач. " + (META.depts[d.to] || {}).s], ["chief", "Голова"]];
+  const steps = r.type === "assign" ? [["from", "нач. академії"], ["to", "нач. " + (META.depts[d.to] || {}).s]]
+    : [["from", "нач. " + (META.depts[r.dept] || {}).s], ["to", "нач. " + (META.depts[d.to] || {}).s], ["chief", "Голова"]];
   return `<div class="tr-visas">${steps.map(([k, l]) => `<span class="${vis[k] ? (vis[k].ok === false ? "bad" : "ok") : r.status === "wait" && st === k ? "cur" : ""}">${vis[k] ? (vis[k].ok === false ? "✖" : "✔") : "○"} ${esc(l)}${vis[k] ? ` · ${esc(vis[k].name)}` : ""}</span>`).join("")}</div>`;
 }
 
@@ -296,6 +297,7 @@ function rapDesc(r) {
   const d = r.data || {};
   if (r.type === "promo") return `→ <b>${esc(META.ranks[d.to - 1] ? META.ranks[d.to - 1].n : d.to)}</b>`;
   if (r.type === "vac") return `${d.days} діб${d.from ? " з " + esc(d.from) : ""}${d.reason ? " · " + esc(d.reason) : ""}`;
+  if (r.type === "assign") return `Академія → ${deptTag(d.to)}${d.reason ? " · " + esc(d.reason) : ""}${trVisas(r)}`;
   if (r.type === "transfer") return `${deptTag(r.dept)} → ${deptTag(d.to)}${d.reason ? " · " + esc(d.reason) : ""}${trVisas(r)}`;
   return esc(d.reason || "");
 }
@@ -316,7 +318,7 @@ async function vRapView(id) {
       <div class="rap-sub">${esc((META.rapTypes[r.type] || "").replace("Рапорт ", ""))}</div>
       <p>${esc(r.text)}</p>
       <div class="blank-sign"><span>${new Date(r.t).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span><span class="kf-sign">${esc(a.name)}</span></div>
-      ${r.type === "transfer" ? `<div class="rap-visas"><b>Візи погодження</b>${trVisas(r)}</div>` : ""}
+      ${["transfer", "assign"].includes(r.type) ? `<div class="rap-visas"><b>Візи погодження</b>${trVisas(r)}</div>` : ""}
       <div class="rap-res"><b>Резолюція:</b> ${r.status === "wait" ? `очікує розгляду${r.stageLabel ? " · зараз: " + esc(r.stageLabel) : ""}` : esc(sw.toLowerCase())}
         ${r.reviewer ? ` · ${esc(r.reviewer.rankName || "")} <span class="kf-sign">${esc(r.reviewer.name)}</span>` : ""}${r.reviewed ? ` · ${fmtDT(r.reviewed)}` : ""}</div>
       <div class="rap-stamp ${sc}">${sw}</div>
@@ -341,7 +343,7 @@ async function vRap() {
     </article>`).join("")}</div>`;
 }
 
-const RAP_ICONS = { promo: "M12 4l6 6h-4v10h-4V10H6z", vac: "M4 20h16M7 20V9l5-5 5 5v11M10 14h4", dismiss: "M6 6l12 12M18 6L6 18", transfer: "M4 8h13l-3-3M20 16H7l3 3" };
+const RAP_ICONS = { assign: "M12 3l8 4-8 4-8-4zM6 9.5V14c0 1.7 2.7 3 6 3s6-1.3 6-3V9.5M20 7v6", promo: "M12 4l6 6h-4v10h-4V10H6z", vac: "M4 20h16M7 20V9l5-5 5 5v11M10 14h4", dismiss: "M6 6l12 12M18 6L6 18", transfer: "M4 8h13l-3-3M20 16H7l3 3" };
 function rapForm() {
   const t = UI.rapType;
   let body = "", ok = true;
@@ -358,13 +360,18 @@ function rapForm() {
   } else if (t === "dismiss") {
     body = `<label class="f"><span>Мотивування</span><textarea class="i" id="r-reason" placeholder="за власним бажанням у зв'язку з..."></textarea></label>
       <p class="note warn">Після звільнення бот зніме ролі СБУ. Здайте жетон, посвідчення, зброю та спорядження (п. 5.3 Регламенту).</p>`;
+  } else if (t === "assign") {
+    body = `<div class="form-grid"><label class="f"><span>Підрозділ, до якого проситесь</span><select class="i" id="r-to">${META.opsDepts.map((k) => `<option value="${k}">${esc(META.depts[k].n)}</option>`).join("")}</select></label>
+      <label class="f wide"><span>Чому саме цей підрозділ</span><input class="i" id="r-reason"></label></div>
+      <p class="note">Погодження: Начальник академії → начальник обраного відділу. Після погодження бот видасть роль відділу.</p>`;
   } else if (t === "transfer") {
     const opts = META.opsDepts.filter((k) => k !== ME.me.dept);
     body = `<div class="form-grid"><label class="f"><span>До відділу</span><select class="i" id="r-to">${opts.map((k) => `<option value="${k}">${esc(META.depts[k].n)}</option>`).join("")}</select></label>
       <label class="f wide"><span>Обґрунтування</span><input class="i" id="r-reason"></label></div>
       <p class="note">Погодження: начальник вашого відділу → начальник відділу, куди переводитесь → Голова СБУ або заступник. Після останньої візи бот замінить роль відділу в Discord.</p>`;
   }
-  return `<div class="rap-types">${Object.entries(META.rapTypes).map(([k, n]) => `<button type="button" class="${k === t ? "on" : ""}" data-a="raptype" data-v="${k}">
+  const academy = ME.me.dept === "academy";
+  return `<div class="rap-types">${Object.entries(META.rapTypes).filter(([k]) => k === "assign" ? academy && ME.me.rank === 4 : !(k === "transfer" && academy)).map(([k, n]) => `<button type="button" class="${k === t ? "on" : ""}" data-a="raptype" data-v="${k}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="${RAP_ICONS[k] || RAP_ICONS.promo}"/></svg><span>${esc(n)}</span></button>`).join("")}</div>
   <div class="grid2 rap-wrap">
     <div class="card"><header><h3>${esc(META.rapTypes[t])}</h3></header><form data-f="rap" style="display:grid;gap:14px">${body}
@@ -373,13 +380,13 @@ function rapForm() {
   </div>`;
 }
 
-const RAP_ASK = { promo: "присвоїти мені чергове спеціальне звання", vac: "надати мені відпустку", dismiss: "звільнити мене зі служби в Службі безпеки штату NG", transfer: "перевести мене до іншого підрозділу" };
+const RAP_ASK = { assign: "розподілити мене після закінчення Академії СБУ до підрозділу", promo: "присвоїти мені чергове спеціальне звання", vac: "надати мені відпустку", dismiss: "звільнити мене зі служби в Службі безпеки штату NG", transfer: "перевести мене до іншого підрозділу" };
 function rapPreview() {
   const t = UI.rapType, v = (id) => ($(id) ? $(id).value.trim() : "");
   let ask = RAP_ASK[t] || "";
   if (t === "promo" && ME.promo) ask += ` «${ME.promo.name}»`;
   if (t === "vac") ask += ` тривалістю ${v("#r-days") || "3"} діб з ${v("#r-from") || new Date().toISOString().slice(0, 10)}`;
-  if (t === "transfer" && $("#r-to")) ask += ` — ${META.depts[$("#r-to").value].n}`;
+  if ((t === "transfer" || t === "assign") && $("#r-to")) ask += ` — ${META.depts[$("#r-to").value].n}`;
   const why = v("#r-reason");
   return `<div class="blank-to">Голові Служби безпеки штату NG<br>від ${esc(ME.me.rankName.toLowerCase())}<br>${esc(META.depts[ME.me.dept].n)}<br><b>${esc(ME.me.name)}</b>, жетон №${ME.me.sid}</div>
     <div class="blank-title">Р А П О Р Т</div>
@@ -391,7 +398,7 @@ function rapPreview() {
 /* ---------------- особовий склад і штатна структура ---------------- */
 const TIERS = [["Керівництво відділу", 11, 12], ["Керівники груп, секторів та інструктори", 8, 10], ["Оперативний склад", 3, 7], ["Молодший склад", 1, 2]];
 const RSHORT = ["Стажер", "Мол. агент", "Агент", "Ст. агент", "Мол. опер", "Опер", "Ст. опер", "Інструктор", "Кер. групи", "Кер. сектору", "Заст. нач. відділу", "Нач. відділу", "Нач. управління", "Заст. Голови", "Голова СБУ"];
-const person = (p) => `<div class="pp ${p.sid === ME.me.sid ? "me" : ""} ${p.status === "vacation" ? "vac" : ""}" title="${esc(p.rankName)}"><b>${esc(p.name)}</b><span>${RSHORT[p.rank - 1]} · ${p.sid}</span></div>`;
+const person = (p) => `<div class="pp ${p.sid === ME.me.sid ? "me" : ""} ${p.status === "vacation" ? "vac" : ""}" title="${esc(p.rankName)}"><b>${esc(p.name)}</b><span>${RSHORT[p.rank - 1]}${p.dept === "vkpp" && p.rank >= 5 && p.rank <= 10 ? " академії" : ""}${p.press ? " · прес" : ""} · ${p.sid}</span></div>`;
 
 async function vStaff() {
   const canList = ME.me.rank >= 8;
@@ -407,29 +414,46 @@ async function vStaff() {
     </tbody></table></div></div>`;
   }
   const all = await call("/api/structure");
-  const top = (r) => all.filter((p) => p.rank === r);
-  const slot = (r, label) => {
-    const ps = top(r);
-    return `<div class="org-node ${ps.length ? "" : "empty"}"><div class="org-pos">${label}</div>${ps.length ? ps.map(person).join("") : '<div class="pp vacant"><b>Вакантно</b></div>'}</div>`;
-  };
+  const D = META.depts;
+  const vac = (t) => `<div class="pp vacant"><b>Вакантно</b><span>${t}</span></div>`;
+  const node = (label, ps, empty) => `<div class="org-node ${ps.length ? "" : "empty"}"><div class="org-pos">${label}</div>${ps.length ? ps.map(person).join("") : vac(empty || "")}</div>`;
+  const of = (r) => all.filter((p) => p.rank === r);
+  // Начальники, що ведуть два відділи (ОРВ+ДЕБ, АТЦ+Альфа), — в Управлінні
+  const dualHeads = all.filter((p) => p.rank === 12 && p.depts.length >= 2);
+  const inDept = (p, k) => p.dept === k || (p.rank >= 11 && p.rank <= 12 && p.depts.includes(k));
+  const tier = (label, ps, empty) => !ps.length && !empty ? "" :
+    `<div class="org-tier"><div class="org-tier-t">${label}</div>${ps.length ? ps.map(person).join("") : vac(empty)}</div>`;
   const deptCard = (k) => {
-    const d = META.depts[k], ps = all.filter((p) => p.dept === k && p.rank < 13);
+    const d = D[k], ps = all.filter((p) => inDept(p, k) && p.rank < 13);
     return `<section class="org-dept" style="--dc:${d.color}">
       <header><span class="org-abbr">${esc(d.s)}</span><div><b>${esc(d.n)}</b><span>${ps.length} ос.</span></div></header>
-      ${TIERS.map(([label, lo, hi]) => {
-        const g = ps.filter((p) => p.rank >= lo && p.rank <= hi);
-        if (!g.length && hi < 11) return "";
-        return `<div class="org-tier"><div class="org-tier-t">${label}</div>${g.length ? g.map(person).join("") : '<div class="pp vacant"><b>Вакантно</b><span>начальник відділу</span></div>'}</div>`;
-      }).join("")}
+      ${tier("Управління", ps.filter((p) => p.rank >= 11), "начальник відділу")}
+      ${tier("Особовий склад", ps.filter((p) => p.rank >= 5 && p.rank <= 10))}
+      ${tier("Старші агенти · випускники Академії", ps.filter((p) => p.rank === 4))}
     </section>`;
   };
-  const depts = Object.keys(META.depts).filter((k) => k !== "lead");
+  const academy = () => {
+    const d = D.vkpp, staff = all.filter((p) => inDept(p, "vkpp") && p.rank < 13), cadets = all.filter((p) => p.dept === "academy");
+    return `<section class="org-dept org-academy" style="--dc:${d.color}">
+      <header><span class="org-abbr">ВКПП</span><div><b>ВКПП та Академія СБУ</b><span>${staff.length} ос. · ${cadets.length} курсантів</span></div></header>
+      ${tier("Управління: начальник академії та заступник", staff.filter((p) => p.rank >= 11), "начальник академії")}
+      ${tier("Викладацький та кадровий склад", staff.filter((p) => p.rank >= 5 && p.rank <= 10))}
+      ${tier("Випускники · очікують розподілу", cadets.filter((p) => p.rank === 4))}
+      ${tier("Новобранці академії", cadets.filter((p) => p.rank <= 3))}
+    </section>`;
+  };
+  const press = all.filter((p) => p.press);
   return head + `<div class="org">
+    <div class="org-band">УПРАВЛІННЯ</div>
     <div class="org-top">
-      ${slot(15, "Голова Служби безпеки")}
-      <div class="org-row">${slot(14, "Заступники Голови")}${slot(13, "Начальники управлінь")}</div>
+      ${node("Голова Служби безпеки", of(15), "Голова СБУ")}
+      <div class="org-row">${node("Заступник Голови", of(14), "заступник")}${node("Начальник управління", of(13), "начальник управління")}</div>
+      ${dualHeads.length ? `<div class="org-row">${dualHeads.map((p) => node(`Начальник відділу (${p.depts.map((k) => esc(D[k].s)).join(", ")})`, [p])).join("")}</div>` : ""}
     </div>
-    <div class="org-depts">${depts.map(deptCard).join("")}</div>
+    ${press.length ? `<section class="org-press"><div class="org-press-h"><b>ПРЕС-СЛУЖБА</b><span>позаштатна служба · усі з роллю прес-секретаря</span></div>
+      <div class="org-press-l">${press.map(person).join("")}</div></section>` : ""}
+    <div class="org-band">ВІДДІЛИ</div>
+    <div class="org-depts">${["orv", "vvb", "deb", "atc", "alpha"].map(deptCard).join("")}${academy()}</div>
     <p class="muted small org-legend"><span class="pp me"><b>Ви</b></span> <span class="pp vac"><b>Відпустка</b></span> Склад оновлюється автоматично з ролей Discord.</p>
   </div>`;
 }

@@ -40,7 +40,7 @@ DEPTS = {
     "alpha":   {"s": "ЦСО «А»", "n": "Центр спеціальних операцій «Альфа»", "role": 1562021631713349632, "color": 0x8FB35F, "channel": "сова-альфа"},
     "deb":     {"s": "ДЕБ", "n": "Департамент економічної безпеки", "role": 1553695044169506968, "color": 0x4FB3A6, "channel": "сова-деб"},
     "vkpp":    {"s": "ВКПП", "n": "Відділ кадрів та підготовки персоналу", "role": 1553695043947077691, "color": 0xE0866B, "channel": "сова-вкпп"},
-    "academy": {"s": "Академія", "n": "Академія СБУ · стажування", "role": None, "color": 0xA68AD6, "channel": "сова-академія"},
+    "academy": {"s": "Академія", "n": "Академія СБУ", "role": None, "color": 0xA68AD6, "channel": "сова-академія"},
     "press":   {"s": "Прес-служба", "n": "Прес-служба СБУ", "role": None, "color": 0xC98AB8, "channel": "сова-прес"},
     "prosecutor": {"s": "Прокуратура", "n": "Офіс Генерального прокурора", "role": None, "color": 0x9AA7B8, "channel": None},
 }
@@ -82,12 +82,12 @@ def resolve(role_ids: set[int]) -> dict:
     depts = [k for k in OPS_DEPTS if DEPTS[k]["role"] in role_ids]
     if rank >= 13:
         return {"ok": True, "rank": rank, "dept": "lead", "multi": False}
-    if PRESS_ROLE in role_ids:
-        return {"ok": True, "rank": rank, "dept": "press", "multi": False}
     if depts:
         return {"ok": True, "rank": rank, "dept": depts[0], "multi": len(depts) > 1}
-    if rank <= 2:
+    if rank <= 4:  # Академія: новобранці (1–3) і випускники — старші агенти (4) до розподілу в підрозділ
         return {"ok": True, "rank": rank, "dept": "academy", "multi": False}
+    if PRESS_ROLE in role_ids:  # прес-служба позаштатна; основним підрозділом стає лише коли іншого немає
+        return {"ok": True, "rank": rank, "dept": "press", "multi": False}
     return {"ok": False, "why": "Немає ролі відділу (ОРВ, ВВБ, АТЦ, ЦСО «А», ДЕБ або ВКПП)"}
 
 

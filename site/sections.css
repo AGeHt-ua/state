@@ -178,3 +178,14 @@
 .rap-stamp{position:absolute;right:40px;top:120px;font:700 18px var(--mono);letter-spacing:.16em;padding:6px 14px;border:4px double currentColor;rotate:-12deg;opacity:.85}
 .rap-stamp.ok{color:#24603a}.rap-stamp.bad{color:#8e1d17}.rap-stamp.wait{color:#1e4f8c}.rap-stamp.mute{color:#6b6253}
 @media (max-width:760px){.rap-doc{padding:40px 20px 24px}.rap-stamp{position:static;display:inline-block;margin-top:14px}}
+/* ---------- штатна структура: управління, прес-служба, академія ---------- */
+.org-band{display:flex;align-items:center;gap:14px;font:600 11px var(--mono);letter-spacing:.3em;color:var(--gold)}
+.org-band::before,.org-band::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+.org-press{border:1px dashed #c98ab8;background:linear-gradient(90deg,rgba(201,138,184,.1),transparent);padding:12px 16px;--dc:#c98ab8}
+.org-press-h{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;margin-bottom:10px}
+.org-press-h b{font:15px var(--display);letter-spacing:.12em;color:#e0a9d2}
+.org-press-h span{font:11px var(--mono);color:var(--muted)}
+.org-press-l{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.org-academy{grid-column:1/-1}
+.org-academy .org-tier{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px}
+.org-academy .org-tier-t{grid-column:1/-1}

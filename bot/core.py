@@ -46,7 +46,8 @@ ACTS = {  # id: (назва, бали, відділи або "all"/"instr", по
     "pr":        ("Брифінг або медіаматеріал", 3, ["press"], False),
 }
 RAP_TYPES = {"promo": "Рапорт на підвищення", "vac": "Рапорт на відпустку",
-             "dismiss": "Рапорт на звільнення (ПСЖ)", "transfer": "Рапорт на переведення між відділами"}
+             "dismiss": "Рапорт на звільнення (ПСЖ)", "transfer": "Рапорт на переведення між відділами",
+             "assign": "Рапорт про розподіл до підрозділу"}
 
 
 class Fail(Exception):
@@ -210,8 +211,11 @@ async def sync_roles(u: dict, reason: str):
         return
     have = {r.id for r in m.roles} & ALL_SBU_ROLES
     want = set() if u["status"] == "dismissed" else roles_for(u["rank"], u["dept"])
-    keep_dept = u["dept"] == "lead"  # керівництво зберігає роль свого відділу
+    # керівництво й начальники відділів (можуть вести два відділи) зберігають ролі відділів; прес-служба — позаштатна, роль не чіпаємо
+    keep_dept = u["dept"] == "lead" or (u["rank"] >= 12 and u["status"] != "dismissed")
     remove = {r for r in have - want if not (keep_dept and r in {DEPTS[d]["role"] for d in OPS_DEPTS})}
+    if u["status"] != "dismissed":
+        remove.discard(PRESS_ROLE)
     add = want - have
     g = m.guild
     try:
@@ -233,11 +237,14 @@ def can_approve_act(actor: dict, a: dict) -> bool:
     return actor["rank"] >= 9 and (actor["dept"] == a["dept"] or actor["dept"] == "lead")
 
 
-# Рапорт на переведення: начальник відділу, звідки → начальник відділу, куди → Голова СБУ або заступник
-TRANSFER_STAGES = ("from", "to", "chief")
+# Рапорти з візами: переведення — начальник «звідки» → начальник «куди» → Голова або заступник;
+# розподіл випускника Академії — Начальник академії (ВКПП) → начальник відділу, куди проситься
+STAGES = {"transfer": ("from", "to", "chief"), "assign": ("from", "to")}
+TRANSFER_STAGES = STAGES["transfer"]
 
 
 def head_of(u: dict, dept: str | None) -> bool:
+    dept = "vkpp" if dept == "academy" else dept  # Начальник академії — начальник ВКПП
     return bool(dept) and u["rank"] == 12 and (u["dept"] == dept or has_dept_role(u, dept))
 
 
@@ -248,7 +255,7 @@ def transfer_stage(r: dict) -> str:
 def can_approve_rap(actor: dict, r: dict) -> bool:
     if r["by_sid"] == actor["sid"] or r["status"] != "wait":
         return False
-    if r["type"] == "transfer":
+    if r["type"] in STAGES:
         st = transfer_stage(r)
         if actor["rank"] >= 14:  # Голова й заступник можуть поставити візу й за відсутності начальника відділу
             return True
@@ -436,6 +443,9 @@ def rap_text(r: dict, data: dict) -> str:
         return ("Прошу звільнити мене зі служби в Службі безпеки штату NG за власним бажанням. "
                 + (data.get("reason", "") + " " if data.get("reason") else "")
                 + "Жетон, посвідчення, табельну зброю та спорядження зобов'язуюсь здати.")
+    if r["type"] == "assign":
+        return (f"Прошу розподілити мене після закінчення Академії СБУ до підрозділу {DEPTS[data['to']]['s']} ({DEPTS[data['to']]['n']})"
+                + (f". Обґрунтування: {data['reason']}" if data.get("reason") else "") + ".")
     if r["type"] == "transfer":
         return (f"Прошу перевести мене з підрозділу {DEPTS[r['dept']]['s']} до підрозділу {DEPTS[data['to']]['s']} "
                 f"({DEPTS[data['to']]['n']})" + (f". Обґрунтування: {data['reason']}" if data.get("reason") else "") + ".")
@@ -444,7 +454,7 @@ def rap_text(r: dict, data: dict) -> str:
 
 def transfer_label(r: dict, st: str) -> str:
     data = json.loads(r["data"] or "{}")
-    return {"from": f"начальник {DEPTS.get(r['dept'], DEPTS['lead'])['s']}", "to": f"начальник {DEPTS.get(data.get('to'), DEPTS['lead'])['s']}",
+    return {"from": "начальник академії" if r["dept"] == "academy" else f"начальник {DEPTS.get(r['dept'], DEPTS['lead'])['s']}", "to": f"начальник {DEPTS.get(data.get('to'), DEPTS['lead'])['s']}",
             "chief": "Голова СБУ або заступник"}[st]
 
 
@@ -453,7 +463,7 @@ def transfer_visas(r: dict) -> list[str]:
     cur = data.get("stage", "from")
     visas = {v["stage"]: v for v in data.get("visas", [])}
     out = [style.c("ВІЗИ ПОГОДЖЕННЯ", "gold", True)]
-    for st in TRANSFER_STAGES:
+    for st in STAGES[r["type"]]:
         label = transfer_label(r, st).upper()[:16]
         v = visas.get(st)
         if v:
@@ -485,7 +495,7 @@ async def rap_embed(r: dict) -> discord.Embed:
         "",
         style.c(f"{style.when(r['t'])}", "gray") + " " * 14 + style.c(f"/{author['name']}/", "white"),
         style.rule(),
-        *(transfer_visas(r) if r["type"] == "transfer" else []),
+        *(transfer_visas(r) if r["type"] in STAGES else []),
         *await resolution(r["status"], r["reviewer"], r["reviewed"]),
     ]
     return style.document(f"РАПОРТ · {RAP_TYPES[r['type']].replace('Рапорт ', '')}", color if r["status"] != "wait" else 0xC9A05A,
@@ -706,8 +716,17 @@ async def create_rap(u: dict, body: dict) -> dict:
         data.update(days=max(1, min(7, int(body.get("days") or 1))), **{"from": str(body.get("from", ""))[:20]})
     elif t == "transfer":
         to = body.get("to")
+        if u["dept"] == "academy":
+            raise Fail("Випускники Академії подають рапорт про розподіл до підрозділу.")
         if to not in OPS_DEPTS or to == u["dept"]:
             raise Fail("Оберіть інший відділ.")
+        data["to"] = to
+    elif t == "assign":
+        if u["dept"] != "academy" or u["rank"] != 4:
+            raise Fail("Рапорт про розподіл подає старший агент — випускник Академії.")
+        to = body.get("to")
+        if to not in OPS_DEPTS:
+            raise Fail("Оберіть підрозділ.")
         data["to"] = to
     elif t == "dismiss" and not data["reason"]:
         raise Fail("Напишіть текст рапорту.")
@@ -725,17 +744,18 @@ async def decide_rap(actor: dict, rap_id: int, decision: str) -> dict:
     if not can_approve_rap(actor, r):
         raise Fail("Ви не можете розглядати цей рапорт.", 403)
     ok = decision == "ok"
-    if r["type"] == "transfer":
+    if r["type"] in STAGES:
         data = json.loads(r["data"] or "{}")
         st = data.get("stage", "from")
+        chain = STAGES[r["type"]]
         data.setdefault("visas", []).append({"stage": st, "sid": actor["sid"], "name": actor["name"], "rank": actor["rank"],
                                              "t": now_ms(), "ok": ok})
-        if ok and st != "chief":
-            data["stage"] = TRANSFER_STAGES[TRANSFER_STAGES.index(st) + 1]
+        if ok and st != chain[-1]:
+            data["stage"] = chain[chain.index(st) + 1]
             await db.run("UPDATE raps SET data=? WHERE id=?", json.dumps(data, ensure_ascii=False), rap_id)
             r = await db.one("SELECT * FROM raps WHERE id=?", rap_id)
             await refresh_card("rap", r)
-            await post_log(r["ch_id"], r["msg_id"], style.doc_no("РАП", rap_id), "Рапорт на переведення · віза",
+            await post_log(r["ch_id"], r["msg_id"], style.doc_no("РАП", rap_id), f"{RAP_TYPES[r['type']]} · віза",
                            who(await user(r["by_sid"])), "ok", who(actor), now_ms(), f"далі: {transfer_label(r, data['stage'])}")
             return r
         await db.run("UPDATE raps SET data=? WHERE id=?", json.dumps(data, ensure_ascii=False), rap_id)
@@ -753,6 +773,9 @@ async def apply_rap(actor: dict, r: dict):
     if r["type"] == "promo":
         await db.run("UPDATE users SET rank=?, since=? WHERE sid=?", data["to"], now_ms(), u["sid"])
         await db.audit(actor["sid"], "Підвищення", u["sid"], f"{rank_name(data['to'] - 1)} → {rank_name(data['to'])}")
+    elif r["type"] == "assign":
+        await db.run("UPDATE users SET dept=? WHERE sid=?", data["to"], u["sid"])
+        await db.audit(actor["sid"], "Розподіл до підрозділу", u["sid"], f"Академія → {DEPTS[data['to']]['s']}")
     elif r["type"] == "transfer":
         await db.run("UPDATE users SET dept=? WHERE sid=?", data["to"], u["sid"])
         await db.audit(actor["sid"], "Переведення", u["sid"], f"{DEPTS[u['dept']]['s']} → {DEPTS[data['to']]['s']}")
@@ -764,7 +787,7 @@ async def apply_rap(actor: dict, r: dict):
         await db.run("UPDATE users SET status='vacation' WHERE sid=?", u["sid"])
         await db.audit(actor["sid"], "Відпустка", u["sid"], f"{data.get('days')} діб")
     u = await user(r["by_sid"])
-    if r["type"] in ("promo", "transfer", "dismiss"):
+    if r["type"] in ("promo", "transfer", "dismiss", "assign"):
         await sync_roles(u, f"Сова: рапорт №{r['id']}")
     if r["type"] == "promo":
         await set_nick(u)

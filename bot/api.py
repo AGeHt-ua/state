@@ -1,4 +1,5 @@
 """HTTP API для сайту (GitHub Pages). Сайт не має своєї бази — усе тут."""
+import asyncio
 import json
 import logging
 import time
@@ -14,7 +15,7 @@ import config
 import core
 from core import ACTS, RAP_TYPES, Fail
 from db import db, now_ms
-from roles import DEPTS, OPS_DEPTS, RANKS, rank_name
+from roles import DEPTS, OPS_DEPTS, PRESS_ROLE, RANKS, rank_name
 
 log = logging.getLogger("sova.api")
 routes = web.RouteTableDef()
@@ -230,7 +231,7 @@ async def raps_get(request):
     data = json.loads(r["data"] or "{}")
     out = rap_out(r, await people_map([r["by_sid"], r["reviewer"]]))
     return web.json_response({**out, "text": core.rap_text(r, data), "canDecide": core.can_approve_rap(u, r), "mine": r["by_sid"] == u["sid"],
-                              "stageLabel": core.transfer_label(r, data.get("stage", "from")) if r["type"] == "transfer" and r["status"] == "wait" else None})
+                              "stageLabel": core.transfer_label(r, data.get("stage", "from")) if r["type"] in core.STAGES and r["status"] == "wait" else None})
 
 
 @routes.post("/api/raps/{id}/decision")
@@ -520,7 +521,18 @@ async def structure(request):
     """Штатна структура: увесь чинний склад (без балів) — для схеми ієрархії відділів."""
     await auth(request)
     rows = await db.all("SELECT * FROM users WHERE status!='dismissed' ORDER BY rank DESC, sid")
-    return web.json_response([public_user(r) for r in rows])
+
+    async def roles(r):
+        try:
+            return await core.member_roles(r["discord_id"]) if r["discord_id"] else None
+        except Exception:
+            return None
+    all_roles = await asyncio.gather(*(roles(r) for r in rows))
+    out = []
+    for r, rs in zip(rows, all_roles):
+        rs = rs or set()
+        out.append({**public_user(r), "press": PRESS_ROLE in rs, "depts": [d for d in OPS_DEPTS if DEPTS[d]["role"] in rs]})
+    return web.json_response(out)
 
 
 @routes.get("/api/audit")
