@@ -55,7 +55,7 @@ mark{background:rgba(226,192,127,.35);color:inherit;padding:0 2px}
 .lib-pills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
 .lib-pills button{font:12px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:7px 12px;background:transparent;color:inherit;border:1px solid var(--line2);cursor:pointer}
 .lib-pills button i{font-style:normal;opacity:.6;margin-left:4px}.lib-pills button.on,.lib-pills button:hover{border-color:var(--gold);color:var(--gold);background:rgba(201,162,77,.08)}
-.lib-sec{margin-bottom:22px}.lib-row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end}
+.lib-sec{margin-bottom:22px}.lib-row{display:flex;flex-wrap:wrap;gap:18px;align-items:stretch}
 .lib-empty{font:12px var(--mono);opacity:.55;padding:14px;border:1px dashed var(--line2)}
 .lib-row button{cursor:pointer;text-align:left;border:0;transition:transform .18s,box-shadow .18s}
 /* книги */
