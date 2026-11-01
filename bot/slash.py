@@ -122,7 +122,7 @@ class Admin(app_commands.Group):
     async def panel(self, interaction: discord.Interaction):
         try:
             await head_only(interaction)
-            await interaction.channel.send(embed=welcome_embed(), view=RegisterView())
+            await interaction.channel.send(view=AccessPanel(await panel_stats()))
             await interaction.response.send_message("Панель розміщено.", ephemeral=True)
         except Fail as e:
             await reply_error(interaction, e)
@@ -295,26 +295,11 @@ class RegisterView(discord.ui.View):
 
     @discord.ui.button(label="Отримати допуск", style=discord.ButtonStyle.success, emoji="🦉", custom_id="sova:register")
     async def create(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = await guild_member(interaction)
-        if not member:
-            return await interaction.response.send_message("Спершу приєднайтеся до сервера «Служба Безпеки NG».", ephemeral=True)
-        if await db.one("SELECT sid FROM users WHERE discord_id=? AND status NOT IN ('removed','dismissed')", str(member.id)):
-            return await interaction.response.send_message("Допуск уже оформлено. Не бачите ролей чи загубили код — натисніть «Перевірити допуск».",
-                                                           ephemeral=True, view=ResetView())
-        await interaction.response.send_modal(RegisterModal(member))
+        await act_register(interaction)
 
     @discord.ui.button(label="Перевірити допуск", style=discord.ButtonStyle.primary, emoji="🔄", custom_id="sova:check")
     async def check(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = await guild_member(interaction)
-        if not member:
-            return await interaction.response.send_message("Спершу приєднайтеся до сервера «Служба Безпеки NG».", ephemeral=True)
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        try:
-            s = await core.access_status(member)
-        except Fail as e:
-            return await interaction.followup.send(str(e), ephemeral=True)
-        view = EnrollView() if s["state"] == "account" and s.get("norank") else ResetView() if s["state"] == "account" else None
-        await interaction.followup.send(embed=status_embed(s), ephemeral=True, **({"view": view} if view else {}))
+        await act_check(interaction)
 
     @discord.ui.button(label="Відновити код доступу", style=discord.ButtonStyle.secondary, emoji="🔑", custom_id="sova:resetpw")
     async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -322,11 +307,39 @@ class RegisterView(discord.ui.View):
 
     @discord.ui.button(label="Змінити дані", style=discord.ButtonStyle.secondary, emoji="✏️", custom_id="sova:rename")
     async def rename(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = await guild_member(interaction)
-        u = await db.one("SELECT * FROM users WHERE discord_id=?", str(member.id)) if member else None
-        if not u:
-            return await interaction.response.send_message("Допуск ще не оформлено. Натисніть «Отримати допуск».", ephemeral=True)
-        await interaction.response.send_modal(NameModal(member, u["name"]))
+        await act_rename(interaction)
+
+
+# дії кнопок панелі допуску (спільні для старої панелі й нової, на картках)
+async def act_register(interaction: discord.Interaction):
+    member = await guild_member(interaction)
+    if not member:
+        return await interaction.response.send_message("Спершу приєднайтеся до сервера «Служба Безпеки NG».", ephemeral=True)
+    if await db.one("SELECT sid FROM users WHERE discord_id=? AND status NOT IN ('removed','dismissed')", str(member.id)):
+        return await interaction.response.send_message("Допуск уже оформлено. Не бачите ролей чи загубили код — натисніть «Перевірити допуск».",
+                                                       ephemeral=True, view=ResetView())
+    await interaction.response.send_modal(RegisterModal(member))
+
+
+async def act_check(interaction: discord.Interaction):
+    member = await guild_member(interaction)
+    if not member:
+        return await interaction.response.send_message("Спершу приєднайтеся до сервера «Служба Безпеки NG».", ephemeral=True)
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        s = await core.access_status(member)
+    except Fail as e:
+        return await interaction.followup.send(str(e), ephemeral=True)
+    view = EnrollView() if s["state"] == "account" and s.get("norank") else ResetView() if s["state"] == "account" else None
+    await interaction.followup.send(embed=status_embed(s), ephemeral=True, **({"view": view} if view else {}))
+
+
+async def act_rename(interaction: discord.Interaction):
+    member = await guild_member(interaction)
+    u = await db.one("SELECT * FROM users WHERE discord_id=? AND status NOT IN ('removed','dismissed')", str(member.id)) if member else None
+    if not u:
+        return await interaction.response.send_message("Допуск ще не оформлено. Натисніть «Отримати допуск».", ephemeral=True)
+    await interaction.response.send_modal(NameModal(member, u["name"]))
 
 
 class NameModal(discord.ui.Modal, title="Зміна персональних даних"):
@@ -373,27 +386,137 @@ def welcome_embed(member: discord.abc.User | None = None) -> discord.Embed:
     return e
 
 
+# ---------------------------------------------------------------- панель допуску: картки (Discord Components V2)
+GOLD, RED, BLUE, GREEN, GREY = 0xC9A05A, 0xD4605A, 0x6F9FD6, 0x5FB37A, 0x5A6272
+
+
+async def panel_stats() -> dict:
+    one = lambda q, *a: db.one(q, *a)
+    day = now_ms() - 86400000
+    return {
+        "staff": (await one("SELECT COUNT(*) AS n FROM users WHERE status='active' AND dept NOT IN ('prosecutor','curator')"))["n"],
+        "today": (await one("SELECT COUNT(DISTINCT sid) AS n FROM sessions WHERE created>?", day))["n"],
+        "vac": (await one("SELECT COUNT(*) AS n FROM users WHERE status='vacation'"))["n"],
+        "wait": (await one("SELECT COUNT(*) AS n FROM access_requests WHERE status='wait'"))["n"],
+        "cand": (await one("SELECT COUNT(*) AS n FROM candidates WHERE status IN ('vvb','vkpp')"))["n"],
+        "acts": (await one("SELECT COUNT(*) AS n FROM acts WHERE status='ok' AND t>?", core.week_start(0)))["n"],
+    }
+
+
+def _btn(label: str, emoji: str, style_: discord.ButtonStyle, cid: str, fn) -> discord.ui.Button:
+    b = discord.ui.Button(label=label, emoji=emoji, style=style_, custom_id=cid)
+    b.callback = fn
+    return b
+
+
+def _card(colour: int, title: str, text: str, accessory: discord.ui.Item) -> discord.ui.Container:
+    return discord.ui.Container(discord.ui.Section(discord.ui.TextDisplay(f"### {title}
+{text}"), accessory=accessory), accent_colour=colour)
+
+
+class AccessPanel(discord.ui.LayoutView):
+    """Панель «Оформлення допуску» у форматі карток: головне меню з живою статистикою + картка на кожну дію."""
+    def __init__(self, st: dict | None = None):
+        super().__init__(timeout=None)
+        st = st or {}
+        site = config.SITE_URL.rstrip("/")
+        n = lambda k: f"`{st.get(k, '—')}`"
+        self.add_item(discord.ui.Container(
+            discord.ui.MediaGallery(discord.MediaGalleryItem(site + "/site/access-panel.png")),
+            discord.ui.TextDisplay("## 🦉 Служба безпеки штату NG · ЄІС «Сова»
+"
+                                   "-# Службовий кабінет особового складу: звіти, рапорти, кейс-файли, бали й премії."),
+            discord.ui.Separator(),
+            discord.ui.TextDisplay("### 📊 Жива статистика
+"
+                                   f"👥 **Особовий склад СБУ:** {n('staff')}
+"
+                                   f"🟢 **У кабінеті за добу:** {n('today')}
+"
+                                   f"🌴 **У відпустці:** {n('vac')}
+"
+                                   f"📋 **Підтверджених звітів за тиждень:** {n('acts')}
+"
+                                   f"📨 **Заявок на допуск у черзі:** {n('wait')} · **анкет кандидатів:** {n('cand')}"),
+            discord.ui.Separator(),
+            discord.ui.TextDisplay("### 🛡️ Панель керування
+Оберіть потрібну дію нижче. Відповіді бота бачите **лише ви**.
+"
+                                   "-# СБУ штату NG · Честь. Закон. Безпека."),
+            discord.ui.ActionRow(discord.ui.Button(label="Кабінет «Сова»", emoji="🌐", url=site + "/site/"),
+                                 discord.ui.Button(label="Анкета кандидата", emoji="📝", url=site + "/site/anketa.html")),
+            accent_colour=GOLD))
+        self.add_item(_card(GREEN, "🦉 Отримати допуск",
+                            "Вкажіть **номер жетона** (Static ID) та **ім'я персонажа** — заявку розгляне **ВКПП**, код доступу прийде в особисті.
+"
+                            "-# Доступ: учасники сервера · новобранцям після підтвердження видається «Стажер»",
+                            _btn("Подати", "🦉", discord.ButtonStyle.success, "sova:register", act_register)))
+        self.add_item(_card(BLUE, "🔄 Перевірити допуск",
+                            "Статус заявки й **нагадування ВКПП**, повторна видача ролей, стан входу на сайт, заявка на зарахування.
+"
+                            "-# Відповідь відкривається приватно",
+                            _btn("Перевірити", "🔄", discord.ButtonStyle.primary, "sova:check", act_check)))
+        self.add_item(_card(GREY, "🔑 Відновити код доступу",
+                            "Новий код, якщо загубили старий або він не дійшов в особисті. Попередні входи завершаться.
+"
+                            "-# Код — службова таємниця, нікому його не передавайте",
+                            _btn("Відновити", "🔑", discord.ButtonStyle.secondary, "sova:resetpw", do_reset)))
+        self.add_item(_card(GREY, "✏️ Змінити дані",
+                            "Нове ім'я персонажа (IC). Нікнейм бот оновить сам, зміна фіксується в кадровому аудиті.
+"
+                            "-# Доступ: співробітники з оформленим допуском",
+                            _btn("Змінити", "✏️", discord.ButtonStyle.secondary, "sova:rename", act_rename)))
+        self.add_item(discord.ui.Container(discord.ui.TextDisplay(
+            "### ⚠️ Важливо
+"
+            "• Відкрийте **особисті повідомлення** від учасників сервера — інакше код не надійде.
+"
+            "• Звання й підрозділ підтягуються з ролей автоматично, **нікнейм бот поставить сам**.
+"
+            "• Допуск діє, доки ви у складі СБУ: при звільненні чи виході із сервера обліковий запис видаляється.
+"
+            "-# Код доступу є службовою таємницею · Положення про захист службової інформації СБУ"), accent_colour=RED))
+
+
 async def ensure_panel():
-    """Панель «Отримати допуск» у каналі панелі: бот розміщує її сам і не дублює після перезапусків."""
+    """Панель допуску в каналі панелі: бот розміщує її сам, не дублює й оновлює статистику."""
     ch = await core.channel("welcome")
     if not ch:
         return
+    view = AccessPanel(await panel_stats())
     mid = await db.get_setting("panel_msg")
     if mid:
         try:
             msg = await ch.fetch_message(int(mid))
-            await msg.edit(embed=welcome_embed(), view=RegisterView())
+            await msg.edit(view=view, embed=None, content=None, attachments=[])
             return
-        except (discord.NotFound, discord.Forbidden):
+        except discord.NotFound:
             pass
+        except discord.HTTPException:  # стару панель (вбудований блок) у картки не перетворити — замінюємо новою
+            try:
+                await (await ch.fetch_message(int(mid))).delete()
+            except discord.HTTPException:
+                pass
     try:
-        msg = await ch.send(embed=welcome_embed(), view=RegisterView())
+        msg = await ch.send(view=view)
         await db.set_setting("panel_msg", str(msg.id))
     except discord.Forbidden:
         core.log.warning("Бот не може писати в канал панелі %s", ch.id)
+
+
+async def panel_loop():
+    """Жива статистика на панелі — оновлення кожні 10 хв."""
+    import asyncio
+    while True:
+        await asyncio.sleep(600)
+        try:
+            await ensure_panel()
+        except Exception:
+            core.log.exception("Оновлення панелі допуску")
 
 
 async def setup(bot: discord.Client):
     bot.tree.add_command(Access())
     bot.tree.add_command(Admin())
     bot.add_view(RegisterView())
+    bot.add_view(AccessPanel())

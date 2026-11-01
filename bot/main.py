@@ -54,6 +54,8 @@ class Sova(commands.Bot):
         self.tree.copy_global_to(guild=g)
         await self.tree.sync(guild=g)
         await slash.ensure_panel()
+        if not getattr(self, "_panel_loop", None):
+            self._panel_loop = asyncio.create_task(slash.panel_loop())
         if not backup_loop.is_running():
             backup_loop.start()
         log.info("Сова на зв'язку як %s · сервер %s", self.user, g.name)
