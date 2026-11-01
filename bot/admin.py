@@ -65,14 +65,23 @@ async def users() -> list[dict]:
                         now_ms())
     return [{"sid": r["sid"], "name": r["name"], "rank": r["rank"], "rankName": "Куратор СБУ" if r["dept"] == "curator" else rank_name(r["rank"]),
              "dept": r["dept"], "deptName": DEPTS.get(r["dept"], {}).get("s", r["dept"]), "status": r["status"], "blocked": bool(r.get("blocked")),
-             "linked": bool(r["discord_id"]), "created": r["created"], "lastLogin": r["last_login"], "sessions": r["sessions"]} for r in rows]
+             "linked": bool(r["discord_id"]), "created": r["created"], "lastLogin": r["last_login"], "sessions": r["sessions"],
+             "inStaff": _in_staff(r)} for r in rows]
 
 
-async def user_action(u: dict, sid: int, act: str) -> dict:
+def _in_staff(r: dict):
+    """Чи є людина в чинному штаті за ролями Discord (None — ще не звірено)."""
+    hit = core._roles_cache.get(str(r.get("discord_id")))
+    if not r.get("discord_id") or not hit:
+        return None
+    return bool(hit[1]) and core.resolve(hit[1])["ok"]
+
+
+async def user_action(u: dict, sid: int, act: str, b: dict | None = None) -> dict:
     t = await db.one("SELECT * FROM users WHERE sid=?", sid)
     if not t:
         raise Fail("Користувача не знайдено.", 404)
-    if t["sid"] == u["sid"] and act in ("block", "unlink"):
+    if t["sid"] == u["sid"] and act in ("block", "unlink", "archive"):
         raise Fail("Цю дію не можна застосувати до себе.")
     out = {"ok": True}
     if act == "block":
@@ -100,6 +109,20 @@ async def user_action(u: dict, sid: int, act: str) -> dict:
         await db.run("UPDATE users SET discord_id=NULL WHERE sid=?", sid)
         await db.run("DELETE FROM sessions WHERE sid=?", sid)
         await note(u, "Відв'язано Discord", sid, t["name"])
+    elif act == "rename":
+        name = " ".join(str((b or {}).get("name") or "").split())[:60]
+        if len(name) < 3:
+            raise Fail("Вкажіть ім'я та прізвище персонажа (IC).")
+        await db.run("UPDATE users SET name=? WHERE sid=?", name, sid)
+        await core.set_nick({**t, "name": name})
+        await note(u, "Змінено ім'я", sid, f"{t['name']} → {name}")
+    elif act == "archive":
+        await db.run("UPDATE users SET status='dismissed' WHERE sid=?", sid)
+        await db.run("DELETE FROM sessions WHERE sid=?", sid)
+        await note(u, "Перенесено в архів (звільнено)", sid, t["name"])
+    elif act == "restore":
+        await db.run("UPDATE users SET status='active' WHERE sid=?", sid)
+        await note(u, "Відновлено з архіву", sid, t["name"])
     elif act == "sync":
         a = await core.access(t, fresh=True)
         out = {"ok": True, "result": "доступ є" if a["ok"] else a["why"], "rankName": rank_name(t["rank"])}

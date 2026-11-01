@@ -881,7 +881,11 @@ async def _build_structure() -> list:
             if not r["discord_id"]:
                 return False
             async with gate:
-                return await core.member_roles(r["discord_id"])  # кеш 60 с, інакше — свіжі ролі з Discord
+                fresh = core._roles_cache.get(str(r["discord_id"]))
+                roles = await core.member_roles(r["discord_id"])  # кеш 60 с, інакше — свіжі ролі з Discord
+                if not fresh or time.time() - fresh[0] >= 60:
+                    await asyncio.sleep(0.35)  # рівномірно, щоб не впертися в ліміт Discord (429)
+                return roles
         except Exception:
             return False  # Discord не відповів — лишаємо дані картки як є
     all_roles = await asyncio.gather(*(roles(r) for r in rows))
@@ -1108,7 +1112,7 @@ async def admin_home(request):
 @routes.post("/api/admin/user/{sid}/{act}")
 async def admin_user(request):
     u = await admin_auth(request)
-    out = await admin.user_action(u, int(request.match_info["sid"]), request.match_info["act"])
+    out = await admin.user_action(u, int(request.match_info["sid"]), request.match_info["act"], await body(request))
     asyncio.create_task(build_structure())
     return web.json_response(out)
 

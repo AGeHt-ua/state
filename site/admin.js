@@ -15,7 +15,7 @@ function usersView(d) {
     ${d.users.map((u) => `<tr class="${u.blocked ? "adm-blocked" : ""}"><td class="mono">${u.sid}</td><td><b>${esc(u.name)}</b>${u.dept === "curator" ? ' <span class="chip info">прихований</span>' : ""}</td>
       <td>${esc(u.rankName)}<div class="muted small">${esc(u.deptName)}</div></td>
       <td>${u.blocked ? '<span class="chip bad">Заблоковано</span>' : u.status === "dismissed" ? '<span class="chip mute">Звільнено</span>' : '<span class="chip ok">Активний</span>'}
-        ${u.linked ? "" : ' <span class="chip warn">без Discord</span>'}${u.sessions ? ` <span class="chip info">входів: ${u.sessions}</span>` : ""}</td>
+        ${u.linked ? "" : ' <span class="chip warn">без Discord</span>'}${u.inStaff === false && u.status !== "dismissed" && !/curator|prosecutor/.test(u.dept) ? ' <span class="chip bad" title="Вийшов із сервера або знято ролі СБУ">поза штатом</span>' : ""}${u.sessions ? ` <span class="chip info">входів: ${u.sessions}</span>` : ""}</td>
       <td class="muted num">${u.lastLogin ? fmtDT(u.lastLogin) : "—"}</td>
       <td class="r"><div class="adm-acts">
         <button class="btn sm" data-a="admu" data-sid="${u.sid}" data-x="sync" title="Звірити ролі з Discord">⟳</button>
@@ -23,8 +23,10 @@ function usersView(d) {
         <button class="btn sm" data-a="admu" data-sid="${u.sid}" data-x="reset" title="Новий код доступу (у Discord)" ${u.linked ? "" : "disabled"}>🔑</button>
         ${u.blocked ? `<button class="btn sm ok" data-a="admu" data-sid="${u.sid}" data-x="unblock">Розблокувати</button>` : `<button class="btn sm bad" data-a="admu" data-sid="${u.sid}" data-x="block">Блок</button>`}
         ${u.linked ? `<button class="btn sm" data-a="admu" data-sid="${u.sid}" data-x="unlink" title="Відв'язати Discord">⛓</button>` : ""}
+        <button class="btn sm" data-a="admu" data-sid="${u.sid}" data-x="rename" data-name="${esc(u.name)}" title="Змінити ім'я (IC)">✎</button>
+        ${u.status === "dismissed" ? `<button class="btn sm" data-a="admu" data-sid="${u.sid}" data-x="restore" title="Відновити з архіву">↺</button>` : `<button class="btn sm" data-a="admu" data-sid="${u.sid}" data-x="archive" title="В архів (звільнено)">🗄</button>`}
       </div></td></tr>`).join("")}</tbody></table></div></div>
-    <p class="muted small">⟳ — звірити ролі з Discord зараз · ⏏ — вийти з усіх пристроїв · 🔑 — новий код доступу в особисті Discord · ⛓ — відв'язати Discord. Заблокований не може увійти на сайт, ролі в Discord не змінюються.</p>`;
+    <p class="muted small">✎ — змінити ім'я · 🗄 — в архів (звільнено), ↺ — повернути · «поза штатом» — вийшов із сервера або зняли ролі СБУ. ⟳ — звірити ролі з Discord зараз · ⏏ — вийти з усіх пристроїв · 🔑 — новий код доступу в особисті Discord · ⛓ — відв'язати Discord. Заблокований не може увійти на сайт, ролі в Discord не змінюються.</p>`;
 }
 
 function nickView(d) {
@@ -115,13 +117,15 @@ S.views.admin = view;
 
 const run = async (b, fn) => { if (b) b.disabled = true; try { await fn(); } catch (e) { toast(e.message, 1); } if (b) b.disabled = false; };
 const ASK = { block: "Заблокувати доступ до сайту? Усі входи буде завершено.", unblock: "Розблокувати доступ?", logout: "Завершити всі входи цього користувача?",
-  reset: "Видати новий код доступу? Старий перестане діяти, код прийде в особисті Discord.", unlink: "Відв'язати Discord? Людина не зможе увійти, доки не оформить допуск знову.", sync: null };
+  reset: "Видати новий код доступу? Старий перестане діяти, код прийде в особисті Discord.", unlink: "Відв'язати Discord? Людина не зможе увійти, доки не оформить допуск знову.", sync: null,
+  archive: "Перенести в архів як звільненого? Вхід на сайт закриється, з особового складу зникне. Ролі в Discord не змінюються.", restore: "Повернути з архіву?" };
 Object.assign(S.actions, {
   admtab: (b) => { st.tab = b.dataset.v; S.render(); },
   admu: (b) => run(b, async () => {
-    const x = b.dataset.x;
-    if (ASK[x] && !confirm(ASK[x])) return;
-    const r = await call(`/api/admin/user/${b.dataset.sid}/${x}`, { json: {} });
+    const x = b.dataset.x, body = {};
+    if (x === "rename") { const n = prompt("Ім'я та прізвище персонажа (IC):", b.dataset.name || ""); if (!n) return; body.name = n; }
+    else if (ASK[x] && !confirm(ASK[x])) return;
+    const r = await call(`/api/admin/user/${b.dataset.sid}/${x}`, { json: body });
     if (x === "reset" && r.code) alert(`Особисті повідомлення закриті. Передайте код особисто:\n\n${r.code}`);
     toast(x === "sync" ? `Ролі звірено: ${r.result}` : x === "reset" ? (r.sent ? "Новий код надіслано в Discord" : "Код показано") : "Готово");
     S.render();
