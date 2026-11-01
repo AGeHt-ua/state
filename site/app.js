@@ -183,9 +183,11 @@ async function verifyCard(btn, tries = 0) {
   if (!box) { if (tries < 40) setTimeout(() => verifyCard(btn, tries + 1), 150); return; }  // сторінка ще вставляється
   if (box.dataset.done && !btn) return;
   box.dataset.done = "1";
+  const box0 = box;
   if (btn) btn.disabled = true;
   try {
     const v = await call("/api/me/verify");
+    const box = document.getElementById("idver") || box0;  // сторінка могла перемалюватися, поки йшла звірка
     if (v.changed) { toast("Звання або підрозділ оновлено з Discord"); await refreshMe(); return render(); }
     const bad = v.items.filter((i) => !i.ok && !i.soft).length;
     box.className = `idcard-ver ${v.ok ? "ok" : "bad"}`;
