@@ -397,9 +397,16 @@ function rapDesc(r) {
   if (r.type === "promo") return `→ <b>${esc(META.ranks[d.to - 1] ? META.ranks[d.to - 1].n : d.to)}</b>`;
   if (r.type === "vac") return `${d.days} діб${d.from ? " з " + esc(d.from) : ""}${d.reason ? " · " + esc(d.reason) : ""}`;
   if (r.type === "assign") return `Академія → ${deptTag(d.to)}${d.reason ? " · " + esc(d.reason) : ""}${trVisas(r)}`;
-  if (r.type === "transfer") return `${deptTag(r.dept)} → ${deptTag(d.to)}${d.reason ? " · " + esc(d.reason) : ""}${trVisas(r)}`;
-  return esc(d.reason || "");
+  if (r.type === "transfer") return `${deptTag(r.dept)} → ${deptTag(d.to)}${d.reason ? " · " + esc(d.reason) : ""}${trVisas(r)}${evTag(d)}`;
+  if (r.type === "refund") return `<b class="mono">$${(d.amount || 0).toLocaleString("uk-UA")}</b> · ${esc(d.reason || "")}${evTag(d)}`;
+  return esc(d.reason || "") + evTag(d);
 }
+// позначка «є докази» в списку рапортів
+const evTag = (d) => (d.files || []).length || d.evidence ? ` <span class="chip info">📎 доказів: ${(d.files || []).length + (d.evidence ? 1 : 0)}</span>` : "";
+// докази в повному бланку рапорту: на екрані — кнопки, у PDF — перелік
+const rapEvidence = (d) => (d.files || []).length || d.evidence ? `<div class="rap-evd"><b>Додатки (докази):</b>
+  ${d.evidence ? `<div class="mono small">▶ ${esc(d.evidence)}</div>` : ""}${(d.files || []).length ? `<div class="small">Файлів: ${d.files.length} (зберігаються в ЄІС «Сова»)</div>` : ""}
+  <div class="files">${d.evidence ? `<a class="btn sm" href="${esc(d.evidence)}" target="_blank" rel="noopener">▶ Відкрити відео</a>` : ""}${(d.files || []).map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}">📎 Файл ${i + 1}</button>`).join("")}</div></div>` : "";
 
 const RAP_STAMP = { ok: ["ПОГОДЖЕНО", "ok"], rej: ["ВІДМОВЛЕНО", "bad"], wait: ["НА РОЗГЛЯДІ", "wait"], cancel: ["ВІДКЛИКАНО", "mute"] };
 async function vRapView(id) {
@@ -417,6 +424,8 @@ async function vRapView(id) {
       <div class="blank-title">Р А П О Р Т</div>
       <div class="rap-sub">${esc((META.rapTypes[r.type] || "").replace("Рапорт ", ""))}</div>
       <p>${esc(r.text)}</p>
+      ${r.type === "refund" ? `<div class="rap-sum">До відшкодування: <b>$${((r.data || {}).amount || 0).toLocaleString("uk-UA")}</b></div>` : ""}
+      ${rapEvidence(r.data || {})}
       <div class="blank-sign"><span>${new Date(r.t).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span><span class="kf-sign">${esc(a.name)}</span></div>
       ${["transfer", "assign"].includes(r.type) ? `<div class="rap-visas"><b>Візи погодження</b>${trVisas(r)}</div>` : ""}
       <div class="rap-res"><b>Резолюція:</b> ${r.status === "wait" ? `очікує розгляду${r.stageLabel ? " · зараз: " + esc(r.stageLabel) : ""}` : esc(sw.toLowerCase())}
@@ -443,7 +452,7 @@ async function vRap() {
     </article>`).join("")}</div>`;
 }
 
-const RAP_ICONS = { assign: "M12 3l8 4-8 4-8-4zM6 9.5V14c0 1.7 2.7 3 6 3s6-1.3 6-3V9.5M20 7v6", promo: "M12 4l6 6h-4v10h-4V10H6z", vac: "M4 20h16M7 20V9l5-5 5 5v11M10 14h4", dismiss: "M6 6l12 12M18 6L6 18", transfer: "M4 8h13l-3-3M20 16H7l3 3" };
+const RAP_ICONS = { refund: "M3 7h18v10H3zM7 12h.01M17 12h.01M12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z", assign: "M12 3l8 4-8 4-8-4zM6 9.5V14c0 1.7 2.7 3 6 3s6-1.3 6-3V9.5M20 7v6", promo: "M12 4l6 6h-4v10h-4V10H6z", vac: "M4 20h16M7 20V9l5-5 5 5v11M10 14h4", dismiss: "M6 6l12 12M18 6L6 18", transfer: "M4 8h13l-3-3M20 16H7l3 3" };
 function rapForm() {
   const t = UI.rapType;
   let body = "", ok = true;
@@ -464,6 +473,11 @@ function rapForm() {
     body = `<div class="form-grid"><label class="f"><span>Підрозділ, до якого проситесь</span><select class="i" id="r-to">${META.opsDepts.map((k) => `<option value="${k}">${esc(META.depts[k].n)}</option>`).join("")}</select></label>
       <label class="f wide"><span>Чому саме цей підрозділ</span><input class="i" id="r-reason"></label></div>
       <p class="note">Погодження: Начальник академії → начальник обраного відділу. Після погодження бот видасть роль відділу.</p>`;
+  } else if (t === "refund") {
+    body = `<div class="form-grid"><label class="f"><span>Сума, $</span><input class="i mono" type="number" id="r-amount" min="1" step="1" placeholder="напр. 15000"></label>
+      <label class="f"><span>Коли витрачено</span><input class="i" type="date" id="r-spent" value="${new Date().toISOString().slice(0, 10)}"></label>
+      <label class="f wide"><span>На що витрачено (службова потреба)</span><textarea class="i" id="r-reason" placeholder="напр. заправка службового авто під час операції, ремонт після погоні, купівля спецзасобів…"></textarea></label></div>
+      <p class="note">Докази витрат обов'язкові: скріни чеків, банківських переказів або відео. Розглядає Голова СБУ або Заступник.</p>`;
   } else if (t === "transfer") {
     const opts = META.opsDepts.filter((k) => k !== ME.me.dept);
     body = `<div class="form-grid"><label class="f"><span>До відділу</span><select class="i" id="r-to">${opts.map((k) => `<option value="${k}">${esc(META.depts[k].n)}</option>`).join("")}</select></label>
@@ -475,18 +489,22 @@ function rapForm() {
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="${RAP_ICONS[k] || RAP_ICONS.promo}"/></svg><span>${esc(n)}</span></button>`).join("")}</div>
   <div class="grid2 rap-wrap">
     <div class="card"><header><h3>${esc(META.rapTypes[t])}</h3></header><form data-f="rap" style="display:grid;gap:14px">${body}
+      <fieldset class="rap-ev"><legend>Докази ${t === "refund" ? "(обов'язково)" : "(за потреби)"}</legend>
+        <label class="f"><span>Посилання на відео / відкат</span><input class="i" id="r-ev" placeholder="https://…"></label>
+        <label class="f"><span>Файли: скріни, чеки, PDF (до 5)</span><input class="i" id="r-files" type="file" multiple accept="image/*,video/mp4,application/pdf"></label></fieldset>
       <div><button class="btn gold" type="submit" id="r-btn" ${ok ? "" : "disabled"}>Подати рапорт</button></div></form></div>
     <div class="blank" id="rap-prev">${rapPreview()}</div>
   </div>`;
 }
 
-const RAP_ASK = { assign: "розподілити мене після закінчення Академії СБУ до підрозділу", promo: "присвоїти мені чергове спеціальне звання", vac: "надати мені відпустку", dismiss: "звільнити мене зі служби в Службі безпеки штату NG", transfer: "перевести мене до іншого підрозділу" };
+const RAP_ASK = { refund: "відшкодувати мені власні кошти", assign: "розподілити мене після закінчення Академії СБУ до підрозділу", promo: "присвоїти мені чергове спеціальне звання", vac: "надати мені відпустку", dismiss: "звільнити мене зі служби в Службі безпеки штату NG", transfer: "перевести мене до іншого підрозділу" };
 function rapPreview() {
   const t = UI.rapType, v = (id) => ($(id) ? $(id).value.trim() : "");
   let ask = RAP_ASK[t] || "";
   if (t === "promo" && ME.promo) ask += ` «${ME.promo.name}»`;
   if (t === "vac") ask += ` тривалістю ${v("#r-days") || "3"} діб з ${v("#r-from") || new Date().toISOString().slice(0, 10)}`;
   if ((t === "transfer" || t === "assign") && $("#r-to")) ask += ` — ${META.depts[$("#r-to").value].n}`;
+  if (t === "refund") ask += ` у сумі $${(+v("#r-amount") || 0).toLocaleString("uk-UA")}, витрачені ${v("#r-spent") || "…"} на службові потреби`;
   const why = v("#r-reason");
   return `<div class="blank-to">Голові Служби безпеки штату NG<br>від ${esc(ME.me.rankName.toLowerCase())}<br>${esc(META.depts[ME.me.dept].n)}<br><b>${esc(ME.me.name)}</b>, жетон №${ME.me.sid}</div>
     <div class="blank-title">Р А П О Р Т</div>
@@ -830,7 +848,9 @@ const F = {
     btn.disabled = true;
     const v = (id) => ($(id) ? $(id).value.trim() : "");
     try {
-      await call("/api/raps", { json: { type: UI.rapType, reason: v("#r-reason"), days: +v("#r-days") || undefined, from: v("#r-from"), to: v("#r-to") } });
+      const files = $("#r-files") && $("#r-files").files.length ? await uploadFiles($("#r-files")) : [];
+      await call("/api/raps", { json: { type: UI.rapType, reason: v("#r-reason"), days: +v("#r-days") || undefined, from: v("#r-from"), to: v("#r-to"),
+        amount: v("#r-amount") || undefined, spent: v("#r-spent") || undefined, evidence: v("#r-ev"), files } });
       toast("Рапорт подано");
       UI.tabs.rap = "mine";
       await refreshMe();

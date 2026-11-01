@@ -207,3 +207,9 @@
 .idcard-ver li::before{content:"✔ ";color:var(--ok)}.idcard-ver li.no::before{content:"✖ ";color:var(--bad)}.idcard-ver li.soft::before{content:"! ";color:var(--warn)}
 .idcard-ver.ok ul{display:none}.idcard-ver.ok:hover ul{display:grid}
 .idcard-ver p{flex-basis:100%;margin:0;color:var(--bad)}
+/* докази до рапортів */
+.rap-ev{border:1px dashed var(--line2);padding:10px 12px 12px;display:grid;gap:10px;margin:0}
+.rap-ev legend{font:10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--gold2);padding:0 6px}
+.rap-evd{margin-top:16px;padding-top:10px;border-top:1px dashed rgba(42,36,24,.35);display:grid;gap:4px;font-size:14px}
+.rap-evd .files{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.rap-sum{margin-top:10px;font-size:16px}.rap-sum b{font:700 20px var(--mono)}

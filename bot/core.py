@@ -48,7 +48,7 @@ ACTS = {  # id: (назва, бали, відділи або "all"/"instr", по
 }
 RAP_TYPES = {"promo": "Рапорт на підвищення", "vac": "Рапорт на відпустку",
              "dismiss": "Рапорт на звільнення (ПСЖ)", "transfer": "Рапорт на переведення між відділами",
-             "assign": "Рапорт про розподіл до підрозділу"}
+             "assign": "Рапорт про розподіл до підрозділу", "refund": "Рапорт на відшкодування коштів"}
 
 
 class Fail(Exception):
@@ -316,6 +316,8 @@ def can_approve_rap(actor: dict, r: dict) -> bool:
         if actor["rank"] >= ov.P("rap_override"):  # Голова й заступник можуть поставити візу й за відсутності начальника відділу
             return True
         return (st == "from" and head_of(actor, r["dept"])) or (st == "to" and head_of(actor, json.loads(r["data"] or "{}").get("to")))
+    if r["type"] == "refund":  # відшкодування з бюджету СБУ — Голова або Заступник
+        return actor["rank"] >= ov.P("rap_override") and not actor.get("curator_ro")
     if r["type"] == "vac":  # відпустку погоджує начальник або заступник начальника свого відділу (Голова й заступник — за відсутності)
         if actor["rank"] >= ov.P("rap_override"):
             return True
@@ -488,7 +490,8 @@ async def act_embed(a: dict) -> discord.Embed:
                           desc=desc, no=style.doc_no("ЗВТ", a["id"]), footer=style.STATUS[a["status"]][0])
 
 
-RAP_HEAD = {"promo": "на підвищення у званні", "vac": "на відпустку", "dismiss": "на звільнення зі служби", "transfer": "на переведення"}
+RAP_HEAD = {"promo": "на підвищення у званні", "vac": "на відпустку", "dismiss": "на звільнення зі служби", "transfer": "на переведення",
+            "refund": "на відшкодування витрат"}
 
 
 def rap_text(r: dict, data: dict) -> str:
@@ -507,6 +510,10 @@ def rap_text(r: dict, data: dict) -> str:
     if r["type"] == "assign":
         return (f"Прошу розподілити мене після закінчення Академії СБУ до підрозділу {DEPTS[data['to']]['s']} ({DEPTS[data['to']]['n']})"
                 + (f". Обґрунтування: {data['reason']}" if data.get("reason") else "") + ".")
+    if r["type"] == "refund":
+        return (f"Прошу відшкодувати мені власні кошти у сумі ${data.get('amount', 0):,}".replace(",", " ")
+                + f", витрачені {data.get('spent') or 'під час служби'} на службові потреби: {data.get('reason', '')}. "
+                + "Підтвердні докази додаю до рапорту.")
     if r["type"] == "transfer":
         return (f"Прошу перевести мене з підрозділу {DEPTS[r['dept']]['s']} до підрозділу {DEPTS[data['to']]['s']} "
                 f"({DEPTS[data['to']]['n']})" + (f". Обґрунтування: {data['reason']}" if data.get("reason") else "") + ".")
@@ -559,8 +566,21 @@ async def rap_embed(r: dict) -> discord.Embed:
         *(transfer_visas(r) if r["type"] in STAGES else []),
         *await resolution(r["status"], r["reviewer"], r["reviewed"]),
     ]
-    return style.document(f"РАПОРТ · {RAP_TYPES[r['type']].replace('Рапорт ', '')}", color if r["status"] != "wait" else 0xC9A05A,
-                          desc=style.block(*lines), no=style.doc_no("РАП", r["id"]), footer=style.STATUS[r["status"]][0])
+    e = style.document(f"РАПОРТ · {RAP_TYPES[r['type']].replace('Рапорт ', '')}", color if r["status"] != "wait" else 0xC9A05A,
+                       desc=style.block(*lines), no=style.doc_no("РАП", r["id"]), footer=style.STATUS[r["status"]][0])
+    e.add_field(name="Подав", value=(f"<@{author['discord_id']}> · " if author.get("discord_id") else "") + f"{author['name']} · №{author['sid']}", inline=True)
+    if r["type"] == "refund":
+        e.add_field(name="Сума", value=f"**${data.get('amount', 0):,}**".replace(",", " "), inline=True)
+    ev = []
+    if data.get("evidence"):
+        ev.append(f"▶ [Відео / посилання]({data['evidence']})")
+    for i, fid in enumerate(data.get("files") or []):
+        f = await db.one("SELECT ch_id, msg_id, filename FROM files WHERE id=?", fid)
+        if f and guild():
+            ev.append(f"📎 [{(f['filename'] or f'Файл {i + 1}')[:40]}](https://discord.com/channels/{guild().id}/{f['ch_id']}/{f['msg_id']})")
+    if ev:
+        e.add_field(name="Докази", value="\n".join(ev)[:1024], inline=False)
+    return e
 
 
 class ActButton(discord.ui.DynamicItem[discord.ui.Button], template=r"sova:act:(?P<id>\d+):(?P<d>ok|rej)"):
@@ -640,11 +660,14 @@ async def post_card(kind: str, row: dict):
     special = f"rap:{row['type']}" if kind == "rap" else None
     if kind == "rap" and row["type"] == "transfer":
         special = f"rapdept:{row['dept']}"  # рапорт на переведення — лише в канали начальників відділів (звідки й куди)
-    ch = (await channel(special) if special in config.CHANNELS else None) or await channel(row["dept"]) or await channel("lead")
+    ch = (await channel(special) if special in config.CHANNELS or special in ov.channels else None) or await channel(row["dept"]) or await channel("lead")
     if not ch:
         return
     embed = await (act_embed(row) if kind == "act" else rap_embed(row))
-    msg = await ch.send(embed=embed, **(mention(f"rap:{row['type']}") if kind == "rap" else {}))  # рішення ухвалюються лише в ЄІС «Сова»
+    # згадується той, хто подав документ, і ролі, яким він адресований; рішення ухвалюються лише в ЄІС «Сова»
+    sender = await user(row["by_sid"])
+    who = [sender["discord_id"]] if kind == "rap" and sender and sender.get("discord_id") else []
+    msg = await ch.send(embed=embed, **mention(f"rap:{row['type']}" if kind == "rap" else None, who))
     table = "acts" if kind == "act" else "raps"
     await db.run(f"UPDATE {table} SET ch_id=?, msg_id=? WHERE id=?", str(ch.id), str(msg.id), row["id"])
     if kind == "rap" and row["type"] in STAGES:
@@ -657,7 +680,7 @@ async def post_card(kind: str, row: dict):
                 continue
             try:
                 c = bot.get_channel(cid) or await bot.fetch_channel(cid)
-                m = await c.send(embed=embed, **mention(f"rap:{row['type']}"))
+                m = await c.send(embed=embed, **mention(f"rap:{row['type']}", who))
                 copies.append([str(c.id), str(m.id)])
             except (discord.NotFound, discord.Forbidden, discord.HTTPException) as ex:
                 log.warning("Копія рапорту в канал відділу %s: %s", d, ex)
@@ -799,9 +822,18 @@ async def create_rap(u: dict, body: dict) -> dict:
     t = body.get("type")
     if t not in RAP_TYPES:
         raise Fail("Невідомий тип рапорту.")
-    if await db.one("SELECT id FROM raps WHERE by_sid=? AND type=? AND status='wait'", u["sid"], t):
+    if t != "refund" and await db.one("SELECT id FROM raps WHERE by_sid=? AND type=? AND status='wait'", u["sid"], t):
         raise Fail("Такий рапорт уже на розгляді.")
     data = {"reason": str(body.get("reason", ""))[:1500]}
+    # докази до будь-якого рапорту: файли (зберігаються в Discord) і посилання на відео
+    files = [str(f)[:40] for f in (body.get("files") or []) if f][:10]
+    ev = str(body.get("evidence") or "").strip()[:500]
+    if ev and not ev.startswith(("http://", "https://")):
+        raise Fail("Посилання на доказ має починатися з http:// або https://")
+    if files:
+        data["files"] = files
+    if ev:
+        data["evidence"] = ev
     if t == "promo":
         pc = await promo_check(u)
         if not pc or not pc["eligible"]:
@@ -825,6 +857,18 @@ async def create_rap(u: dict, body: dict) -> dict:
         data["to"] = to
     elif t == "dismiss" and not data["reason"]:
         raise Fail("Напишіть текст рапорту.")
+    elif t == "refund":
+        try:
+            amount = int(float(str(body.get("amount") or 0).replace(" ", "").replace("$", "")))
+        except ValueError:
+            amount = 0
+        if not 1 <= amount <= 10_000_000:
+            raise Fail("Вкажіть суму відшкодування в доларах.")
+        if len(data["reason"]) < 5:
+            raise Fail("Опишіть, на що витрачено кошти.")
+        if not files and not ev:
+            raise Fail("Додайте докази витрат: скріни чеків, переказів або посилання на відео.")
+        data.update(amount=amount, spent=str(body.get("spent") or "")[:20])
     rid = await db.run("INSERT INTO raps(by_sid,dept,type,data,t) VALUES(?,?,?,?,?)",
                        u["sid"], u["dept"], t, json.dumps(data, ensure_ascii=False), now_ms())
     row = await db.one("SELECT * FROM raps WHERE id=?", rid)
@@ -881,6 +925,8 @@ async def apply_rap(actor: dict, r: dict):
     elif r["type"] == "vac":
         await db.run("UPDATE users SET status='vacation' WHERE sid=?", u["sid"])
         await db.audit(actor["sid"], "Відпустка", u["sid"], f"{data.get('days')} діб")
+    elif r["type"] == "refund":
+        await db.audit(actor["sid"], "Відшкодування коштів", u["sid"], f"${data.get('amount', 0):,} · рапорт №{r['id']}".replace(",", " "))
     u = await user(r["by_sid"])
     if r["type"] in ("promo", "transfer", "dismiss", "assign"):
         await sync_roles(u, f"Сова: рапорт №{r['id']}")
