@@ -5,7 +5,7 @@ const { esc, call, toast, fmtDT } = S;
 const st = { tab: "users", d: null };
 const kb = (n) => n > 1048576 ? `${(n / 1048576).toFixed(1)} МБ` : `${Math.round(n / 1024)} КБ`;
 const ago = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? `${h} год ${m} хв` : `${m} хв`; };
-const TABS = [["users", "Користувачі"], ["nick", "Нікнейми й позивні"], ["perms", "Доступи"], ["roles", "Ролі Discord"], ["chan", "Канали й згадки"], ["sys", "Система"], ["log", "Журнал адміністрування"]];
+const TABS = [["users", "Користувачі"], ["promo", "Підвищення"], ["nick", "Нікнейми й позивні"], ["perms", "Доступи"], ["roles", "Ролі Discord"], ["chan", "Канали й згадки"], ["sys", "Система"], ["log", "Журнал адміністрування"]];
 
 function usersView(d) {
   const blocked = d.users.filter((u) => u.blocked).length;
@@ -49,6 +49,21 @@ function nickView(d) {
     ${n.people.map((p) => `<tr><td class="mono">${p.sid}</td><td><b>${esc(p.name)}</b><div class="muted small">${esc(p.rankName)}</div></td><td>${esc(p.deptS)}</td>
       <td>${n.depts.includes(p.dept) ? `<div class="adm-in"><input class="i mono adm-cs" id="cs-${p.sid}" maxlength="16" value="${esc(p.callsign || "")}" placeholder="—"><button class="btn sm" data-a="admcs" data-sid="${p.sid}" title="Зберегти позивний">✔</button></div>` : `<span class="muted small">${p.callsign ? esc(p.callsign) + " (не діє у відділі)" : "—"}</span>`}</td>
       <td class="mono small">${esc(p.nick)}</td><td class="r"><button class="btn sm" data-a="admnick1" data-sid="${p.sid}" title="Поставити цей нікнейм у Discord зараз">↻</button></td></tr>`).join("")}</tbody></table></div></div>`;
+}
+
+function promoView(p) {
+  const rows = Object.entries(p.cfg);
+  return `<form class="card" data-f="admpromo"><header><h3>Єдина система підвищення</h3></header>
+    <p class="note">Бали — підтверджені звіти. Для кожного звання — поріг балів. Надлишок переходить на наступне звання: після підвищення списується лише поріг.
+      Іспит — обов'язкова умова (зарахована спроба з прохідним балом). «Наказ» — рапорт не подається, звання присвоює Голова. Активна догана блокує рапорт. Погоджує ВКПП.</p>
+    <div class="tbl-wrap"><table class="t adm-promo"><thead><tr><th>Звання</th><th>Поріг балів</th><th>Обов'язковий іспит</th><th>Спосіб</th></tr></thead><tbody>
+    ${rows.map(([r, c]) => `<tr><td><b>${r}. ${esc(p.ranks[r - 1])}</b></td>
+      <td><input class="i mono" type="number" min="0" name="pts-${r}" value="${c.pts}"></td>
+      <td><select class="i" name="exam-${r}"><option value="">— без іспиту —</option>${p.exams.map((e) => `<option value="${e.id}" ${c.exam === e.id ? "selected" : ""}>${esc(e.title)}${e.status !== "published" ? " (чернетка)" : ""}</option>`).join("")}</select></td>
+      <td><select class="i" name="mode-${r}"><option value="rap" ${c.mode === "rap" ? "selected" : ""}>рапорт за балами</option><option value="order" ${c.mode === "order" ? "selected" : ""}>лише наказом</option></select></td></tr>`).join("")}</tbody></table></div>
+    <h4 class="adm-sub">Вартість звітів у балах</h4>
+    <div class="adm-ranks">${p.acts.map((a) => `<label><span>${esc(a.name)} <i class="muted">· стандарт ${a.default}</i></span><input class="i mono" type="number" min="0" max="100" name="act-${a.key}" value="${a.value}"></label>`).join("")}</div>
+    <div class="acts"><button class="btn gold" type="submit">Зберегти систему підвищення</button></div></form>`;
 }
 
 function permsView(d) {
@@ -109,7 +124,8 @@ function logView(d) {
 
 async function view() {
   const d = st.d = await call("/api/admin");
-  const body = { users: usersView, nick: nickView, perms: permsView, roles: rolesView, chan: chanView, sys: sysView, log: logView }[st.tab](d);
+  if (st.tab === "promo") st.promo = await call("/api/admin/promo");
+  const body = { users: usersView, promo: () => promoView(st.promo), nick: nickView, perms: permsView, roles: rolesView, chan: chanView, sys: sysView, log: logView }[st.tab](d);
   return `<div class="adm-head"><div><div class="eyebrow">Керування ЄІС «Сова»</div><b>Адмін-панель</b></div><span class="muted small">Доступ: Голова СБУ та Куратор</span></div>
     <div class="tabs">${TABS.map(([k, l]) => `<button class="tb ${st.tab === k ? "on" : ""}" data-a="admtab" data-v="${k}">${l}</button>`).join("")}</div>${body}`;
 }
@@ -155,6 +171,12 @@ S.forms.admnick = (f) => run(f.querySelector("[type=submit]"), async () => {
     ranks: [...f.querySelectorAll("[name=rank]")].map((el) => el.value.trim() || el.placeholder),
     depts: [...f.querySelectorAll("[name=dept]:checked")].map((el) => el.value) };
   await call("/api/admin/nick", { json: body }); toast("Формат нікнеймів збережено"); S.render();
+});
+S.forms.admpromo = (f) => run(f.querySelector("[type=submit]"), async () => {
+  const v = (n) => (f.querySelector(`[name="${n}"]`) || {}).value;
+  const cfg = Object.fromEntries(Object.keys(st.promo.cfg).map((r) => [r, { pts: v(`pts-${r}`), exam: v(`exam-${r}`), mode: v(`mode-${r}`) }]));
+  const acts = Object.fromEntries(st.promo.acts.map((a) => [a.key, v(`act-${a.key}`)]));
+  await call("/api/admin/promo", { json: { cfg, acts } }); toast("Систему підвищення збережено"); await S.refreshMe(); S.render();
 });
 S.forms.admchan = (f) => run(f.querySelector("[type=submit]"), async () => { await call("/api/admin/channels", { json: formData(f) }); toast("Канали збережено"); S.render(); });
 // лише змінені поля: решта лишаються стандартними

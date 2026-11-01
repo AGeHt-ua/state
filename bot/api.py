@@ -8,6 +8,7 @@ from aiohttp import web
 
 import admin
 import callsigns
+import promo
 import finance
 import candidates
 import bonus
@@ -1179,6 +1180,26 @@ async def admin_nick_apply_one(request):
 async def admin_callsign(request):
     u = await admin_auth(request)
     return web.json_response(await callsigns.set_direct(u, int(request.match_info["sid"]), (await body(request)).get("callsign")))
+
+
+@routes.get("/api/admin/promo")
+async def admin_promo(request):
+    await admin_auth(request)
+    c = await core.coef()
+    return web.json_response({"cfg": await promo.cfg(), "ranks": [n for n, _, _ in RANKS],
+                              "exams": await db.all("SELECT id, title, status FROM exams WHERE status!='deleted' ORDER BY id"),
+                              "acts": [{"key": k, "name": v[0], "default": v[1], "value": c[k]} for k, v in ACTS.items()]})
+
+
+@routes.post("/api/admin/promo")
+async def admin_promo_save(request):
+    u = await admin_auth(request)
+    b = await body(request)
+    await promo.save(u, b.get("cfg") or {})
+    if isinstance(b.get("acts"), dict):  # вартість звітів у балах
+        clean = {k: max(0, min(100, int(float(v)))) for k, v in b["acts"].items() if k in ACTS and str(v).strip() != ""}
+        await db.set_setting("coef", {k: v for k, v in clean.items() if v != ACTS[k][1]})
+    return web.json_response({"ok": True})
 
 
 @routes.post("/api/admin/backup")

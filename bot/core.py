@@ -338,6 +338,11 @@ def has_dept_role(u: dict, dept: str) -> bool:
 
 
 async def promo_check(u: dict) -> dict | None:
+    import promo  # єдина система підвищення за балами (налаштування — адмін-панель)
+    return await promo.check(u)
+
+
+async def _promo_check_old(u: dict) -> dict | None:
     if u["dept"] in ("prosecutor", "curator"):
         return None
     nxt = u["rank"] + 1
@@ -498,6 +503,11 @@ RAP_HEAD = {"promo": "на підвищення у званні", "vac": "на �
 
 def rap_text(r: dict, data: dict) -> str:
     if r["type"] == "promo":
+        if "need" in data:
+            done = ", ".join(f"{ACTS[k][0].lower()} — {v}" for k, v in (data.get("acts") or {}).items() if k in ACTS)
+            return (f"Прошу присвоїти мені чергове спеціальне звання «{rank_name(data['to'])}» у зв'язку з виконанням вимог єдиної системи "
+                    f"підвищення: набрано {data['balance']} балів при порозі {data['need']}. Дисциплінарних стягнень не маю."
+                    + (f" Підтверджені звіти на поточному званні: {done}." if done else ""))
         return (f"Прошу присвоїти мені чергове спеціальне звання «{rank_name(data['to'])}» у зв'язку з виконанням "
                 f"вимог щодо вислуги. Дисциплінарних стягнень не маю. За поточний тиждень набрано {data.get('points', 0)} "
                 f"балів, за минулий — {data.get('points_prev', 0)}.")
@@ -816,6 +826,12 @@ async def decide_act(actor: dict, act_id: int, decision: str) -> dict:
     await db.run("UPDATE acts SET status=?, reviewer=?, reviewed=? WHERE id=?", "ok" if decision == "ok" else "rej", actor["sid"], now_ms(), act_id)
     a = await db.one("SELECT * FROM acts WHERE id=?", act_id)
     await refresh_card("act", a)
+    if decision == "ok":
+        import promo
+        try:
+            await promo.notify_if_ready(a["by_sid"])
+        except Exception:
+            log.exception("Повідомлення про підвищення")
     return a
 
 
@@ -840,7 +856,14 @@ async def create_rap(u: dict, body: dict) -> dict:
         pc = await promo_check(u)
         if not pc or not pc["eligible"]:
             raise Fail("Умови для підвищення не виконано.")
-        data.update(to=pc["next"], points=await week_points(u["sid"]), points_prev=await week_points(u["sid"], 1))
+        if pc.get("mode") == "order":
+            raise Fail("Це звання присвоюється наказом Голови СБУ.")
+        rows = await db.all("SELECT type, qty FROM acts WHERE by_sid=? AND status='ok' AND t>=?", u["sid"], u["since"] or 0)
+        acts = {}
+        for a in rows:
+            acts[a["type"]] = acts.get(a["type"], 0) + (a["qty"] or 1)
+        data.update(to=pc["next"], balance=pc["points"], need=pc["need"], acts=acts,
+                    points=await week_points(u["sid"]), points_prev=await week_points(u["sid"], 1))
     elif t == "vac":
         data.update(days=max(1, min(7, int(body.get("days") or 1))), **{"from": str(body.get("from", ""))[:20]})
     elif t == "transfer":
@@ -912,6 +935,8 @@ async def apply_rap(actor: dict, r: dict):
     u = await user(r["by_sid"])
     data = json.loads(r["data"] or "{}")
     if r["type"] == "promo":
+        import promo
+        await promo.promoted(u["sid"], data["to"])  # поріг списується з балансу до зміни звання
         await db.run("UPDATE users SET rank=?, since=? WHERE sid=?", data["to"], now_ms(), u["sid"])
         await db.audit(actor["sid"], "Підвищення", u["sid"], f"{rank_name(data['to'] - 1)} → {rank_name(data['to'])}")
     elif r["type"] == "assign":

@@ -232,3 +232,7 @@
 .fin-page{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px;align-items:start}.fin-page>div:first-child{display:flex;justify-content:center}
 @media (max-width:1100px){.fin-page{grid-template-columns:1fr}}
 @media (max-width:640px){.fin-blank{padding:28px 18px}.fin-item{grid-template-columns:1fr 90px auto}}
+.promo-pts{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:6px 0 2px}
+.promo-pts b{font:700 26px var(--display);color:var(--gold2)}.promo-pts span{color:var(--muted);font-size:13px}
+.promo-pts em{font-style:normal;font:11px var(--mono);color:var(--ok);border:1px solid rgba(95,179,122,.4);padding:1px 6px}
+.adm-promo td{vertical-align:middle}.adm-promo .i{min-width:90px}

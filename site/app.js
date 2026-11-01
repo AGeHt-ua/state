@@ -261,7 +261,8 @@ async function vHome() {
   <div class="grid2">
     <div class="card"><header><h3>Наступне звання</h3>${pc ? `<span class="sp chip ${pc.eligible ? "ok" : "wait"}">${pc.eligible ? "Можна подати рапорт" : "Умови ще не виконано"}</span>` : ""}</header>
       ${pc ? `<div class="promo"><span class="from">${esc(me.rankName)}</span><i></i><span class="to">${esc(pc.name)}</span></div>
-        ${pc.items[0] && pc.items[0].pct !== undefined ? `<div class="bar ${pc.items[0].ok ? "ok" : ""}"><i style="width:${Math.round(pc.items[0].pct * 100)}%"></i></div>` : ""}
+        ${pc.need !== undefined ? `<div class="promo-pts"><b class="num">${pc.points}</b><span>/ ${pc.need} балів на званні</span>${pc.points > pc.need ? `<em>+${pc.points - pc.need} перейде далі</em>` : ""}</div>` : ""}
+        ${(pc.items.find((i) => i.pct !== undefined)) ? `<div class="bar ${pc.items.find((i) => i.pct !== undefined).ok ? "ok" : ""}"><i style="width:${Math.round(pc.items.find((i) => i.pct !== undefined).pct * 100)}%"></i></div>` : ""}
         <ul class="checklist">${pc.items.map((i) => `<li class="${i.ok ? "" : i.soft ? "soft" : "no"}">${esc(i.t)}</li>`).join("")}</ul>
         <div><button class="btn ${pc.eligible ? "gold" : ""}" data-a="go" data-v="rap" data-tab="new" ${pc.eligible ? "" : "disabled"}>Подати рапорт на підвищення</button></div>`
       : '<p class="muted">Найвище звання у відомстві.</p>'}
@@ -462,7 +463,7 @@ function rapForm() {
     const pc = ME.promo;
     ok = !!(pc && pc.eligible);
     body = pc ? `<div class="promo"><span class="from">${esc(ME.me.rankName)}</span><i></i><span class="to">${esc(pc.name)}</span></div><ul class="checklist">${pc.items.map((i) => `<li class="${i.ok ? "" : i.soft ? "soft" : "no"}">${esc(i.t)}</li>`).join("")}</ul>
-      <p class="muted small" style="margin:0">До рапорту автоматично додаються бали за цей і минулий тиждень. Після погодження бот змінить роль звання в Discord.</p>` : '<p class="muted">Найвище звання.</p>';
+      <p class="muted small" style="margin:0">До рапорту автоматично додаються бали на поточному званні й перелік підтверджених звітів. Надлишок балів перейде на наступне звання. Після погодження бот змінить роль звання в Discord.</p>` : '<p class="muted">Найвище звання.</p>';
   } else if (t === "vac") {
     body = `<div class="form-grid"><label class="f"><span>З дати</span><input class="i" type="date" id="r-from" value="${new Date().toISOString().slice(0, 10)}"></label>
       <label class="f"><span>Кількість діб (до 7, ст. 19 ТК)</span><input class="i" type="number" id="r-days" min="1" max="7" value="3"></label>
