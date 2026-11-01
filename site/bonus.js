@@ -26,7 +26,12 @@ function mineView(m) {
 
 function listView(d) {
   const r = S.ME().bonus;
-  return `<div class="bn-actions"><button class="btn gold" data-a="bnnew" data-o="1">Сформувати за минулий тиждень</button><button class="btn" data-a="bnnew" data-o="0">За поточний тиждень</button></div>
+  const n = d.now, c = d.cfg;
+  const hint = n ? `<div class="note ${n.reached ? "" : "warn"}" style="margin-bottom:12px"><b>Поточний тиждень:</b> звіти мають ${n.active} співробітників,
+    поріг ${c.min_pts} б. набрали <b>${n.reached}</b> (найбільше — ${n.best} б.), разом до виплати ≈ <b>${$$(n.total)}</b>.
+    ${n.reached ? "" : ` Премія нараховується лише тим, хто набрав за тиждень щонайменше ${c.min_pts} балів, тому зараз суми нульові. Поріг змінює Голова у вкладці «Ліміти».`}
+    ${n.wait ? ` Ще ${n.wait} звітів чекають перевірки — бали з них зарахуються лише після підтвердження.` : ""}</div>` : "";
+  return hint + `<div class="bn-actions"><button class="btn gold" data-a="bnnew" data-o="1">Сформувати за минулий тиждень</button><button class="btn" data-a="bnnew" data-o="0">За поточний тиждень</button></div>
     ${d.list.length ? `<div class="docs">${d.list.map((s) => `<article class="doc st-${s.status === "paid" ? "ok" : s.status === "draft" ? "wait" : "info"}" data-a="bnopen" data-id="${s.id}" style="cursor:pointer">
       <div class="doc-no"><b>ВП-${String(s.id).padStart(4, "0")}</b><span>${fmtDT(s.updated)}</span></div>
       <div class="doc-main"><div class="doc-title">Відомість преміювання · тиждень ${esc(s.label)}</div><div class="doc-line">Премійовано: ${s.count} осіб</div></div>

@@ -70,7 +70,8 @@ async def calc_rows(ws: int, c: dict) -> list[dict]:
         cap = c["caps"][tier(p["rank"])]
         auto = min(cap, pt * c["rate"]) if pt >= c["min_pts"] and p["sid"] not in blocked else 0
         rows.append({"sid": p["sid"], "name": p["name"], "rank": p["rank"], "dept": p["dept"], "tier": tier(p["rank"]),
-                     "pts": pt, "auto": auto, "amount": auto, "note": "активна догана (п. 1.2)" if p["sid"] in blocked and pt else ""})
+                     "pts": pt, "auto": auto, "amount": auto, "note": "активна догана (п. 1.2)" if p["sid"] in blocked and pt
+                     else f"менше порогу: {pt} з {c['min_pts']} б." if 0 < pt < c["min_pts"] else ""})
     total = sum(r["amount"] for r in rows)
     if total > c["limit"] > 0:  # пропорційне зменшення до ліміту організації, округлення вниз до $100
         k = c["limit"] / total

@@ -425,6 +425,11 @@ async def bonus_home(request):
                         "total": sum(r["amount"] for r in json.loads(s["rows"] or "[]")),
                         "count": len([r for r in json.loads(s["rows"] or "[]") if r["amount"] > 0])} for s in rows]
         out["cfg"] = await bonus.cfg()
+        # підказка: хто вже набрав поріг цього тижня (рахуються лише підтверджені звіти)
+        cur = await bonus.calc_rows(core.week_start(0), out["cfg"])
+        out["now"] = {"active": len([r for r in cur if r["pts"] > 0]), "reached": len([r for r in cur if r["auto"] > 0]),
+                      "best": max([r["pts"] for r in cur] or [0]), "total": sum(r["amount"] for r in cur),
+                      "wait": (await db.one("SELECT COUNT(*) AS n FROM acts WHERE status='wait' AND t>=?", core.week_start(0)))["n"]}
     return web.json_response(out)
 
 
