@@ -265,3 +265,18 @@
 /* поле гри завжди вміщається в екран (пропорція 16:10) */
 .gm-wrap{width:min(100%,calc((100vh - 190px) * 1.36));margin:0 auto;scroll-margin-top:90px}
 .gm-legend{grid-template-columns:auto auto;align-items:center;column-gap:6px}
+/* «Штурм»: люди, правова довідка, повний екран */
+.gm-law{display:grid;gap:5px;margin-top:6px;padding:10px 12px;border:1px solid rgba(201,162,77,.3);background:rgba(201,162,77,.05);font-size:13px}
+.gm-law>b{color:var(--gold2);font-size:12px;letter-spacing:.06em}
+.gm-law span{display:block;line-height:1.45}.gm-law i{font-style:normal;font:700 12px var(--mono);color:var(--gold2);margin-right:6px}
+.gm-brief{width:min(640px,100%)}.gm-brief p{margin:0;font-size:14px}
+.gm-mate{display:flex;align-items:center;gap:8px;margin:4px 0 8px;font-size:13px}.gm-mate .i{max-width:340px}
+.gm-badges{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
+.gm-badges span{font-size:12px;padding:4px 10px;border:1px solid rgba(201,162,77,.5);background:rgba(201,162,77,.1);color:var(--gold2)}
+.gm-weekly{border-color:rgba(201,162,77,.6);background:linear-gradient(160deg,rgba(201,162,77,.16),transparent 60%),var(--panel)}
+.gm-law-card .gm-law{border:0;background:none;padding:0}
+.gm-bar .sp{flex:1}
+.gm-wrap:fullscreen{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;background:#000;border:0}
+.gm-wrap:fullscreen #gm-canvas{width:min(100vw,calc(100vh * 1.3545));height:auto}
+.idcard-badges{display:flex;flex-wrap:wrap;gap:5px;padding:0 18px 12px}
+.idcard-badges span{font-size:11px;padding:2px 8px;border:1px solid rgba(201,162,77,.45);color:var(--gold2);background:rgba(201,162,77,.08)}

@@ -8,6 +8,7 @@ from aiohttp import web
 
 import admin
 import callsigns
+import games
 import promo
 import finance
 import candidates
@@ -185,6 +186,7 @@ async def me(request):
         "appoint": {"prepare": orders.can_prepare(u), "sign": orders.can_sign(u)} if orders.can_prepare(u) else None,
         "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
         "bonus": {"manage": bonus.can_manage(u) or bool(u.get("curator")), "finalize": bonus.can_finalize(u)},
+        "gameBadges": await games.badges(u["sid"]),
     })
 
 
@@ -222,25 +224,20 @@ async def _game_board(game: str, since: int = 0) -> list[dict]:
     return [{"sid": r["sid"], "score": r["score"], "name": (people.get(r["sid"]) or {}).get("name", f"№{r['sid']}")} for r in rows]
 
 
+@routes.get("/api/game/people")
+async def game_people(request):
+    return web.json_response(await games.people(await auth(request)))
+
+
 @routes.get("/api/game/{game}")
 async def game_board(request):
-    u = await auth(request)
-    g = request.match_info["game"][:20]
-    mine = await db.all("SELECT level, MAX(score) AS best FROM game_scores WHERE game=? AND sid=? GROUP BY level", g, u["sid"])
-    return web.json_response({"week": await _game_board(g, core.week_start(0)), "all": await _game_board(g), "mine": {r["level"]: r["best"] for r in mine}})
+    return web.json_response(await games.board(await auth(request)))
 
 
 @routes.post("/api/game/score")
 async def game_score(request):
     u = await auth(request)
-    b = await body(request)
-    g, lvl, sc, ms = str(b.get("game") or "")[:20], int(b.get("level") or 0), int(b.get("score") or 0), int(b.get("ms") or 0)
-    if g != "assault" or not 0 <= lvl <= 2 or not 0 <= sc <= 12000 or ms < 8000:  # грубий захист від підробки
-        raise Fail("Некоректний результат.")
-    prev = await db.one("SELECT MAX(score) AS m FROM game_scores WHERE game=? AND sid=? AND level=?", g, u["sid"], lvl)
-    await db.run("INSERT INTO game_scores(sid,game,level,score,ms,data,t) VALUES(?,?,?,?,?,?,?)", u["sid"], g, lvl, sc, ms,
-                 json.dumps(b.get("data") or {}, ensure_ascii=False)[:2000], now_ms())
-    return web.json_response({"ok": True, "record": sc > ((prev or {}).get("m") or 0)})
+    return web.json_response(await games.save(u, await body(request)))
 
 
 @routes.get("/api/callsign")
@@ -1124,6 +1121,7 @@ async def start() -> web.AppRunner:
     await ov.load(db)
     core.ROLES_CHANGED.append(build_structure)
     asyncio.create_task(finance.reminder_loop())
+    asyncio.create_task(games.weekly_loop())
     asyncio.create_task(structure_loop())
     asyncio.create_task(kb.ensure_seeded())
     return runner

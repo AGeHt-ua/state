@@ -248,6 +248,7 @@ async function vHome() {
         <dl><dt>Звання</dt><dd>${esc(me.rankName)}</dd><dt>Підрозділ</dt><dd>${esc(d.n)}</dd><dt>Жетон</dt><dd class="mono">${me.sid}</dd><dt>На званні з</dt><dd>${fmtDT(me.since)}</dd></dl>
       </div>
       <div class="idcard-foot"><span class="mono">SBU-NG · ${String(me.sid).padStart(8, "0")}</span><span class="idcard-rank">${me.rank}<small>/15</small></span></div>
+      ${(ME.gameBadges || []).length ? `<div class="idcard-badges">${ME.gameBadges.map((b) => `<span title="Тренажер «Штурм»">${b.icon} ${esc(b.t)}</span>`).join("")}</div>` : ""}
       <div class="idcard-ver" id="idver"><span class="iv-st">⟳ Звіряю з Discord…</span></div>
     </div>
     <div class="hero-stats">
