@@ -223,9 +223,30 @@ async function libView() {
   S.cache.libcats = d.cats;
   const by = {};
   d.items.forEach((x) => (by[x.cat] = by[x.cat] || []).push(x));
-  return `${can ? '<div class="bn-actions"><button class="btn gold" data-a="libnew">+ Додати матеріал</button></div>' : ""}
-    ${Object.entries(d.cats).map(([k, v]) => `<section class="lib-sec"><h3 class="bn-h">${esc(v)} <span class="muted small">${(by[k] || []).length}</span></h3>
-      ${(by[k] || []).length ? `<div class="lib-grid">${by[k].map((x) => `<button class="lib-card" data-a="libopen" data-id="${x.id}"><b>${x.fmt === "html" ? "▶ " : ""}${esc(x.title)}</b><span>${esc(x.authorName || "")} · ${fmtDT(x.updated)}</span></button>`).join("")}</div>` : '<div class="muted small">Порожньо.</div>'}</section>`).join("")}`;
+  // архів: лекції — книги на полиці, внутрішні — теки ДСК, пам'ятки — картки, матеріали — папки-реєстратори
+  const no = (x) => String(x.id).padStart(4, "0");
+  const item = {
+    lecture: (x) => { const lv = (x.title.match(/^([IVX]+)\s+рівень/) || [])[1] || "★"; const t = x.title.replace(/^[IVX]+\s+рівень\s*·\s*/, "");
+      return `<button class="lib-book" data-a="libopen" data-id="${x.id}" data-t="${esc(x.title.toLowerCase())}"><span class="lb-spine"></span><span class="lb-lv">${esc(lv)}</span><span class="lb-rank">рівень</span>
+        <img src="sbu-logo.webp" alt="" width="40" height="40"><b>${esc(t)}</b><span class="lb-foot">${x.fmt === "html" ? "▶ Презентація" : "Лекція"} · Академія СБУ</span></button>`; },
+    internal: (x) => `<button class="lib-folder" data-a="libopen" data-id="${x.id}" data-t="${esc(x.title.toLowerCase())}"><span class="lf-tab">ВД-${no(x)}</span>
+      <span class="lf-stamp">ДСК</span><span class="lf-org">Служба безпеки штату NG</span><b>${esc(x.title)}</b><span class="lf-meta">${esc(x.authorName || "")} · ${fmtDT(x.updated)}</span></button>`,
+    memo: (x) => `<button class="lib-memo" data-a="libopen" data-id="${x.id}" data-t="${esc(x.title.toLowerCase())}"><span class="lm-clip"></span><span class="lm-kind">Пам'ятка · П-${no(x)}</span>
+      <b>${esc(x.title.replace(/^Пам'ятка:\s*/, ""))}</b><span class="lm-meta">${fmtDT(x.updated)}</span></button>`,
+    material: (x) => `<button class="lib-binder" data-a="libopen" data-id="${x.id}" data-t="${esc(x.title.toLowerCase())}"><span class="lbd-ring"></span><span class="lbd-label"><i>НМ-${no(x)}</i><b>${esc(x.title)}</b></span>
+      <span class="lbd-meta">${fmtDT(x.updated)}</span></button>`,
+  };
+  const icon = { lecture: "📚", internal: "🗂", memo: "📋", material: "📁" };
+  const cats = Object.entries(d.cats).filter(([k]) => !st.libCat || st.libCat === k);
+  return `<div class="lib-arch">
+    <div class="lib-top"><div><div class="eyebrow">Архів · Бібліотека СБУ</div><b>${d.items.length} матеріалів</b></div>
+      <input class="i lib-q" id="lib-q" placeholder="Пошук у бібліотеці…" autocomplete="off">
+      ${can ? '<button class="btn gold" data-a="libnew">+ Додати матеріал</button>' : ""}</div>
+    <div class="lib-pills"><button class="${st.libCat ? "" : "on"}" data-a="libcat" data-v="">Усе <i>${d.items.length}</i></button>
+      ${Object.entries(d.cats).map(([k, v]) => `<button class="${st.libCat === k ? "on" : ""}" data-a="libcat" data-v="${k}">${icon[k] || ""} ${esc(v)} <i>${(by[k] || []).length}</i></button>`).join("")}</div>
+    ${cats.map(([k, v]) => `<section class="lib-sec lib-${k}"><div class="kb-sec-h"><span>${icon[k] || ""} ${esc(v)}</span><i></i></div>
+      ${(by[k] || []).length ? `<div class="lib-row">${by[k].map(item[k] || item.material).join("")}</div>${k === "lecture" ? '<div class="lib-shelf"></div>' : ""}` : '<div class="lib-empty">Розділ порожній.</div>'}</section>`).join("")}
+    <div class="lib-empty" id="lib-none" hidden>Нічого не знайдено.</div></div>`;
 }
 
 /* ---------- іспити ---------- */
@@ -341,6 +362,7 @@ Object.assign(S.actions, {
     setTimeout(poll, 4000); R();
   }),
   libopen: (b) => { st.lib = +b.dataset.id; R(); scrollTo(0, 0); },
+  libcat: (b) => { st.libCat = b.dataset.v || null; R(); },
   libback: () => { st.lib = null; st.libEdit = null; R(); },
   libfs: () => { const f = document.getElementById("lib-frame"); if (f && f.requestFullscreen) f.requestFullscreen(); },
   libnew: () => { st.libEdit = { cat: "lecture" }; R(); },
@@ -396,7 +418,16 @@ document.addEventListener("change", (e) => {
   if (e.target.hasAttribute && e.target.hasAttribute("data-kbsbu")) { st.sbu = e.target.checked; R(); }
   if (e.target.dataset && e.target.dataset.kbsel) { e.target.checked ? st.sel.add(e.target.dataset.kbsel) : st.sel.delete(e.target.dataset.kbsel); const b = document.querySelector("[data-a=kbextmake]"); if (b) { b.disabled = !st.sel.size; b.textContent = `Сформувати витяг (${st.sel.size})`; } }
 });
-document.addEventListener("input", (e) => { if (e.target.id === "kb-find") { st.find = e.target.value; markIn(st.find.trim()); } });
+document.addEventListener("input", (e) => {
+  if (e.target.id === "kb-find") { st.find = e.target.value; markIn(st.find.trim()); }
+  if (e.target.id === "lib-q") {
+    const q = e.target.value.trim().toLowerCase();
+    let shown = 0;
+    document.querySelectorAll(".lib-arch [data-t]").forEach((el) => { const ok = !q || el.dataset.t.includes(q); el.hidden = !ok; shown += ok; });
+    document.querySelectorAll(".lib-arch .lib-sec").forEach((s) => { s.hidden = !!q && !s.querySelector("[data-t]:not([hidden])"); });
+    document.getElementById("lib-none").hidden = shown > 0;
+  }
+});
 document.addEventListener("keydown", (e) => { if (e.target.id === "kb-find" && e.key === "Enter") { e.preventDefault(); findIn(e.shiftKey ? -1 : 1); } });
 document.addEventListener("click", (e) => {
   const a = e.target.closest("[data-kbgo]");
