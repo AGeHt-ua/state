@@ -255,6 +255,9 @@ async def staff(request):
     if u["rank"] < 8:
         raise Fail("Недостатній рівень допуску.", 403)
     rows = await db.all("SELECT * FROM users WHERE status!='dismissed' ORDER BY rank DESC, sid")
+    if _structure_cache[1] is not None:  # картки звіряються з Discord у build_structure: беремо свіжі звання й лише чинний склад
+        live = {x["sid"]: x for x in _structure_cache[1]}
+        rows = [{**r, "rank": live[r["sid"]]["rank"], "dept": live[r["sid"]]["dept"]} for r in rows if r["sid"] in live]
     if u["dept"] != "lead":
         rows = [r for r in rows if r["dept"] == u["dept"]]
     out = []
@@ -753,14 +756,19 @@ async def build_structure() -> list:
 
     async def roles(r):
         try:
-            return await core.member_roles(r["discord_id"]) if r["discord_id"] else None
+            return await core.member_roles(r["discord_id"], fresh=True) if r["discord_id"] else False
         except Exception:
-            return None
+            return False  # Discord не відповів — лишаємо дані картки як є
     all_roles = await asyncio.gather(*(roles(r) for r in rows))
     out = []
     for r, rs in zip(rows, all_roles):
+        if rs is None or (rs is not False and not core.resolve(rs)["ok"]):
+            continue  # вийшов із сервера або зняли ролі СБУ — у структурі не показуємо
         rs = rs or set()
+        if rs:
+            await core.apply_roles(r, rs)  # звання й відділ — як у Discord, навіть якщо людина не заходила на сайт
         out.append({**public_user(r), "press": PRESS_ROLE in rs, "depts": [d for d in OPS_DEPTS if DEPTS[d]["role"] in rs]})
+    out.sort(key=lambda x: (-x["rank"], x["sid"]))
     _structure_cache[:] = [time.time(), out]
     return out
 

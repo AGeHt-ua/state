@@ -182,14 +182,22 @@ async def access(u: dict, fresh: bool = False) -> dict:
     roles = await member_roles(u["discord_id"], fresh)
     if roles is None:
         return {"ok": False, "why": "Вас немає на Discord-сервері СБУ"}
+    a = await apply_roles(u, roles)
+    if a.get("changed"):
+        await set_nick(u)
+    return a
+
+
+async def apply_roles(u: dict, roles: set[int]) -> dict:
+    """Ролі в Discord — джерело правди: звання й відділ у картці приводяться до них (без входу людини на сайт)."""
     a = resolve(roles)
     if a["ok"] and (a["rank"] != u["rank"] or a["dept"] != u["dept"]):
         since = now_ms() if a["rank"] != u["rank"] else u["since"]
         await db.run("UPDATE users SET rank=?, dept=?, since=? WHERE sid=?", a["rank"], a["dept"], since, u["sid"])
         await db.audit(0, "Синхронізація з Discord", u["sid"],
-                       f"{rank_name(u['rank'])} / {DEPTS[u['dept']]['s']} → {rank_name(a['rank'])} / {DEPTS[a['dept']]['s']}")
+                       f"{rank_name(u['rank'])} / {DEPTS.get(u['dept'], {}).get('s', u['dept'])} → {rank_name(a['rank'])} / {DEPTS[a['dept']]['s']}")
         u.update(rank=a["rank"], dept=a["dept"], since=since)
-        await set_nick(u)
+        a["changed"] = True
     return a
 
 
