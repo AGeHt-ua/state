@@ -233,8 +233,9 @@ def status_embed(s: dict) -> discord.Embed:
             lines += [style.kv("ВИДАНО РОЛІ", ", ".join(s["given"])[:40], "green", True)]
         if s["failed"]:
             lines += [style.c("Бот не зміг видати ролі: його роль нижча.", "red"), style.c("Повідомте керівництво сервера.", "gray")]
-        if not a.get("ok") and not s["given"]:
-            lines += [style.c("Звання й підрозділ видає ВКПП —", "gray"), style.c("після зарахування вхід відкриється сам.", "gray")]
+        if s.get("norank"):
+            lines += [style.c("Звання ще немає. Натисніть «Подати заявку", "gold"), style.c("на зарахування» — її розгляне ВКПП, після", "gold"),
+                      style.c("підтвердження бот видасть роль «Стажер».", "gold")]
         lines += [style.c("Загубили код — «Відновити код доступу».", "gray")]
         return style.document("ДОПУСК ДО ЄІС «СОВА» · ПЕРЕВІРКА", 0x5FB37A if a.get("ok") else 0xD9A23D, desc=style.block(*lines))
     if s["state"] == "wait":
@@ -252,6 +253,29 @@ def status_embed(s: dict) -> discord.Embed:
             style.c("Перевірте номер жетона та ім'я і подайте", "gray"), style.c("заявку знову кнопкою «Отримати допуск».", "gray")))
     return style.document("ДОПУСК НЕ ОФОРМЛЕНО", 0x9AA7B8, desc=style.block(
         style.c("Заявок від вас немає.", "white"), style.c("Натисніть «Отримати допуск» і вкажіть", "gray"), style.c("номер жетона та ім'я персонажа.", "gray")))
+
+
+class EnrollView(discord.ui.View):
+    """Допуск є, звання немає: заявка ВКПП на зарахування + відновлення коду."""
+    def __init__(self):
+        super().__init__(timeout=600)
+
+    @discord.ui.button(label="Подати заявку на зарахування", style=discord.ButtonStyle.success, emoji="📨")
+    async def enroll(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            member = await guild_member(interaction)
+            if not member:
+                raise Fail("Спершу приєднайтеся до сервера «Служба Безпеки NG».")
+            rid = await core.request_enroll(member)
+            button.disabled = True
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send(f"Заявку {style.doc_no('ЗД', rid)} на зарахування передано ВКПП. Після підтвердження бот видасть роль «Стажер», а вхід на сайт відкриється.", ephemeral=True)
+        except Fail as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
+
+    @discord.ui.button(label="Відновити код доступу", style=discord.ButtonStyle.secondary)
+    async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await do_reset(interaction)
 
 
 class ResetView(discord.ui.View):
@@ -289,7 +313,8 @@ class RegisterView(discord.ui.View):
             s = await core.access_status(member)
         except Fail as e:
             return await interaction.followup.send(str(e), ephemeral=True)
-        await interaction.followup.send(embed=status_embed(s), ephemeral=True, **({"view": ResetView()} if s["state"] == "account" else {}))
+        view = EnrollView() if s["state"] == "account" and s.get("norank") else ResetView() if s["state"] == "account" else None
+        await interaction.followup.send(embed=status_embed(s), ephemeral=True, **({"view": view} if view else {}))
 
     @discord.ui.button(label="Відновити код доступу", style=discord.ButtonStyle.secondary, emoji="🔑", custom_id="sova:resetpw")
     async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):

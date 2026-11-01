@@ -1041,7 +1041,8 @@ async def access_status(member: discord.Member) -> dict:
         roles_changed()
         a = await access(u, fresh=True)
         await set_nick(u, member)
-        return {"state": "account", "user": u, "access": a, "given": [r.name for r in give] if not failed else [], "failed": failed}
+        norank = not (({r.id for r in member.roles} | {r.id for r in give}) & set(RANK_ROLES)) and u["dept"] not in ("prosecutor", "curator")
+        return {"state": "account", "user": u, "access": a, "given": [r.name for r in give] if not failed else [], "failed": failed, "norank": norank}
     req = await db.one("SELECT * FROM access_requests WHERE discord_id=? ORDER BY id DESC LIMIT 1", str(member.id))
     if req and req["status"] == "wait":
         waited = (now_ms() - req["t"]) / 60000
@@ -1136,15 +1137,20 @@ async def decide_access(req_id: int, reviewer: discord.Member, decision: str) ->
     if not req or req["status"] != "wait":
         raise Fail("Цю заявку вже розглянуто.")
     member = await member_of(req["discord_id"])
-    note = ""
+    note, pw = "", None
     if decision == "ok":
         if not member:
             decision, note = "rej", "Людина вже не на сервері."
         else:
-            # Кандидат, чию анкету погодили ВВБ і ВКПП, при оформленні допуску отримує ще й звання «Стажер»
+            # Хто ще не має звання (новобранець), після підтвердження ВКПП отримує «Стажер»; хто вже служить — лише стартові ролі
             cand = await approved_candidate(req["sid"])
+            no_rank = not ({r.id for r in member.roles} & set(RANK_ROLES))
+            existing = await db.one("SELECT * FROM users WHERE discord_id=? AND status NOT IN ('removed','dismissed')", str(member.id))
             try:
-                _, pw = await register(member, req["sid"], req["name"], reviewer, extra_roles=(RANK_ROLES[0],) if cand else ())
+                if existing:  # допуск уже є, але без звання — заявка на зарахування: лише видаємо ролі
+                    await enroll_roles(member, existing, reviewer)
+                else:
+                    _, pw = await register(member, req["sid"], req["name"], reviewer, extra_roles=(RANK_ROLES[0],) if cand or no_rank else ())
                 if cand:
                     await db.run("UPDATE candidates SET discord_id=? WHERE id=?", str(member.id), cand)
             except Fail as e:
@@ -1166,8 +1172,14 @@ async def decide_access(req_id: int, reviewer: discord.Member, decision: str) ->
     if decision == "ok":
         sent = False
         try:
-            await member.send(embed=credentials_embed(req["sid"], pw, req["name"], title="ДОПУСК ДО ЄІС «СОВА» ПІДТВЕРДЖЕНО"),
-                              view=style.site_view())
+            if pw:
+                await member.send(embed=credentials_embed(req["sid"], pw, req["name"], title="ДОПУСК ДО ЄІС «СОВА» ПІДТВЕРДЖЕНО"),
+                                  view=style.site_view())
+            else:
+                await member.send(embed=style.document("ВАС ЗАРАХОВАНО ДО СКЛАДУ СБУ", 0x5FB37A, desc=style.block(
+                    style.kv("НОМЕР ЖЕТОНА", f"№{req['sid']}", "cyan", True), style.kv("ЗВАННЯ", "Стажер", "white", True), style.rule(),
+                    style.c("Вхід на сайт відкрито — ваш код доступу той самий.", "white"),
+                    style.c("Загубили код — «Відновити код доступу» в панелі.", "gray"))), view=style.site_view())
             sent = True
         except discord.Forbidden:
             pass
@@ -1198,6 +1210,46 @@ async def delete_access(u: dict, req_id: int):
             pass
         await post_log(req["ch_id"], req["msg_id"], style.doc_no("ЗД", req_id), "Заявка на допуск до ЄІС",
                        f"{req['name']} · №{req['sid']}", "deleted", u["name"], req["reviewed"])
+
+
+async def enroll_roles(member: discord.Member, u: dict, reviewer: discord.Member | None = None):
+    """Зарахування людини, яка вже має обліковий запис, але не має звання: стартові ролі + «Стажер»."""
+    roles = {r.id for r in member.roles}
+    want = set(config.JOIN_ROLES) | ({RANK_ROLES[0]} if not roles & set(RANK_ROLES) else set())
+    give = [r for r in (member.guild.get_role(rid) for rid in want - roles) if r]
+    if give:
+        try:
+            await member.add_roles(*give, reason="Сова: зарахування до складу СБУ")
+        except discord.Forbidden:
+            raise Fail("Бот не може видати ролі: його роль на сервері нижча за ролі СБУ.")
+    _roles_cache.pop(str(member.id), None)
+    roles_changed()
+    await access(u, fresh=True)
+    await set_nick(u, member)
+    approver = await db.one("SELECT sid FROM users WHERE discord_id=?", str(reviewer.id)) if reviewer else None
+    await db.audit(approver["sid"] if approver else 0, "Зараховано до складу СБУ", u["sid"], "видано ролі: " + (", ".join(r.name for r in give) or "вже були"))
+    await send_audit(u)
+
+
+async def request_enroll(member: discord.Member) -> int:
+    """Обліковий запис є, а звання немає: заявка ВКПП на зарахування (та сама черга заявок на допуск)."""
+    u = await db.one("SELECT * FROM users WHERE discord_id=? AND status NOT IN ('removed','dismissed')", str(member.id))
+    if not u:
+        raise Fail("Допуск ще не оформлено. Натисніть «Отримати допуск».")
+    if {r.id for r in member.roles} & set(RANK_ROLES):
+        raise Fail("У вас уже є звання СБУ — заявка не потрібна. Натисніть «Перевірити допуск».")
+    if await db.one("SELECT id FROM access_requests WHERE status='wait' AND discord_id=?", str(member.id)):
+        raise Fail("Заявку вже подано, вона на розгляді у ВКПП. «Перевірити допуск» покаже статус і нагадає ВКПП.")
+    rid = await db.run("INSERT INTO access_requests(discord_id,sid,name,t) VALUES(?,?,?,?)", str(member.id), u["sid"], u["name"], now_ms())
+    req = await db.one("SELECT * FROM access_requests WHERE id=?", rid)
+    req["cand_id"] = await approved_candidate(u["sid"])
+    ch = await channel("access")
+    if ch:
+        m = mention("access")
+        msg = await ch.send(content=(m.get("content", "") + " Заявка на **зарахування**: допуск уже оформлено, потрібне звання «Стажер».").strip(),
+                            embed=access_embed(req, member), allowed_mentions=m.get("allowed_mentions"))
+        await db.run("UPDATE access_requests SET ch_id=?, msg_id=? WHERE id=?", str(ch.id), str(msg.id), rid)
+    return rid
 
 
 async def register(member: discord.Member, sid: int, name: str, reviewer: discord.Member | None = None,
