@@ -28,7 +28,9 @@ class _Catch(logging.Handler):
             ERRORS.append({"t": int(rec.created * 1000), "lvl": rec.levelname, "src": rec.name, "msg": rec.getMessage()[:400]})
 
 
-logging.getLogger().addHandler(_Catch())
+# не кореневий логер: інакше logging.basicConfig у main.py вважає логи налаштованими і консоль бота мовчить
+for _name in ("sova", "discord", "aiohttp"):
+    logging.getLogger(_name).addHandler(_Catch())
 
 CHANNEL_LABELS = {
     "rap:promo": "Рапорти на підвищення", "rap:dismiss": "Рапорти на звільнення", "rap:vac": "Рапорти на відпустку",
