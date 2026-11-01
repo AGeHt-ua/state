@@ -419,7 +419,7 @@ const CST = { vvb: ["chip wait", "Перевірка ВВБ"], vkpp: ["chip wait
 const candChip = (c) => `<span class="${CST[c.status][0]}">${CST[c.status][1]}</span>`;
 const docNo = (p, n) => `${p}-${String(n).padStart(4, "0")}`;
 
-const CDOCS = { passport: "Паспорт громадянина", med: "Медична карта", military: "Військовий квиток", idcard: "Посвідчення особи" };
+const CDOCS = { passport: "Паспорт громадянина", med: "Медична карта", military: "Військовий квиток", kmb: "КМБ у НГУ (замість квитка)", idcard: "Посвідчення особи" };
 const CDRIVE = { A: "A", B: "B", CD: "C/D", water: "Водний", air: "Повітряний" };
 const CLICS = { weapon: "На зброю", hunt: "На полювання", fish: "На рибальство" };
 const CHOUSE = { none: "Немає", flat: "Квартира", house: "Будинок", rent: "Орендоване" };
@@ -429,7 +429,7 @@ const dash = (v) => esc(v && String(v).trim() && !/^(немає|нема|-|—)$
 function candChecks(x) {
   const d = x.docs || [];
   return [
-    ["Паспорт громадянина", d.includes("passport")], ["Медична карта", d.includes("med")], ["Військовий квиток", d.includes("military")],
+    ["Паспорт громадянина", d.includes("passport")], ["Медична карта", d.includes("med")], [d.includes("kmb") && !d.includes("military") ? "Військовий квиток → КМБ у НГУ" : "Військовий квиток", d.includes("military") || d.includes("kmb")],
     ["Не перебуває в розшуку", !x.wanted], ["Без активного Warn", !x.warn], ["Не звільнявся протягом доби", !x.fired_1d],
   ];
 }
@@ -479,8 +479,8 @@ function candCard(c, r) {
   </div>
   <div class="dz-grid">
     <section><h4><b>I</b>Документи</h4>
-      <div class="dz-docs">${["passport", "med", "military", "idcard"].filter((k) => k !== "idcard" || (x.docs || []).includes(k))
-        .map((k) => `<span class="${(x.docs || []).includes(k) ? "ok" : "bad"}">${CDOCS[k]}</span>`).join("")}</div>
+      <div class="dz-docs">${["passport", "med", (x.docs || []).includes("kmb") && !(x.docs || []).includes("military") ? "kmb" : "military", "idcard"].filter((k) => k !== "idcard" || (x.docs || []).includes(k))
+        .map((k) => `<span class="${k === "kmb" ? "warn" : (x.docs || []).includes(k) ? "ok" : "bad"}">${CDOCS[k]}</span>`).join("")}</div>
       <dl class="dz-kv"><dt>Посвідчення водія</dt><dd>${esc((x.drive || []).map((d) => CDRIVE[d]).join(" · ") || "—")}</dd>
         <dt>Ліцензії</dt><dd>${esc((x.lics || []).map((l) => CLICS[l]).join(" · ") || "—")}</dd></dl></section>
     <section><h4><b>II</b>Майно</h4>

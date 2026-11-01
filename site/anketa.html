@@ -9,8 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="sova.css?v=5">
-<link rel="stylesheet" href="fx.css?v=5">
+<link rel="stylesheet" href="sova.css?v=9">
+<link rel="stylesheet" href="fx.css?v=9">
 <style>
   .login-card.wide{max-width:760px;text-align:left;justify-items:stretch}
   .login-card.wide>.top{display:grid;justify-items:center;text-align:center;gap:10px}
@@ -45,6 +45,7 @@
   .done .no{font:28px var(--display);color:var(--gold2);letter-spacing:.06em}
   .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line2);border-top-color:var(--gold);border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
   @keyframes sp{to{transform:rotate(360deg)}}
+  .chk label.kmb:has(input:checked){border-color:var(--warn);background:var(--warn-soft)}
   [hidden]{display:none!important}
   @media (max-width:620px){.ank .two,.ank .three{grid-template-columns:1fr}.photo{grid-template-columns:1fr;justify-items:center}}
 </style>
@@ -81,11 +82,12 @@
 
     <fieldset>
       <legend><b>II</b>Документи</legend>
-      <div class="sub">Згідно з п. 1.4 Положення про стажування СБУ та ст. 8 Закону «Про державні документи» для вступу обов'язкові паспорт, медична карта й військовий квиток.</div>
+      <div class="sub">Згідно з п. 1.4 Положення про стажування СБУ та ст. 8 Закону «Про державні документи» для вступу обов'язкові паспорт, медична карта й військовий квиток. Якщо військового квитка ще немає, його можна отримати, пройшовши КМБ (курс молодого бійця) у Національній гвардії.</div>
       <div class="chk">
         <label class="req"><input type="checkbox" name="docs" value="passport"> Паспорт громадянина</label>
         <label class="req"><input type="checkbox" name="docs" value="med"> Медична карта</label>
-        <label class="req"><input type="checkbox" name="docs" value="military"> Військовий квиток</label>
+        <label class="req" id="mil"><input type="checkbox" name="docs" value="military"> Військовий квиток</label>
+        <label class="kmb"><input type="checkbox" name="docs" value="kmb"> Квитка немає — пройду / проходжу КМБ у НГУ</label>
         <label><input type="checkbox" name="docs" value="idcard"> Посвідчення особи</label>
       </div>
       <div class="sub">Посвідчення водія (категорії)</div>
@@ -99,7 +101,7 @@
         <label><input type="checkbox" name="lics" value="weapon"> На зброю</label><label><input type="checkbox" name="lics" value="hunt"> На полювання</label>
         <label><input type="checkbox" name="lics" value="fish"> На рибальство</label>
       </div>
-      <p class="warnbox" id="docwarn" hidden>Без паспорта, медичної карти й військового квитка анкету буде відхилено. Отримайте документи й подайте анкету повторно.</p>
+      <p class="warnbox" id="docwarn" hidden>Без паспорта, медичної карти та військового квитка (або згоди пройти КМБ у НГУ) анкету буде відхилено.</p>
     </fieldset>
 
     <fieldset>
@@ -167,10 +169,16 @@
     pv.style.backgroundImage = `url("${URL.createObjectURL(file)}")`;
     pv.classList.add("has");
   });
-  const docsOk = () => ["passport", "med", "military"].every((v) => f.querySelector(`input[name=docs][value=${v}]`).checked);
+  const has = (v) => f.querySelector(`input[name=docs][value=${v}]`).checked;
+  const docsOk = () => has("passport") && has("med") && (has("military") || has("kmb"));
   f.addEventListener("change", (e) => {
     if (e.target.name === "record") $("#recnote").hidden = e.target.value !== "1";
-    if (e.target.name === "docs") $("#docwarn").hidden = docsOk();
+    if (e.target.name === "docs") {
+      if (e.target.value === "military" && e.target.checked) f.querySelector("input[value=kmb]").checked = false;
+      if (e.target.value === "kmb" && e.target.checked) f.querySelector("input[value=military]").checked = false;
+      $("#mil").classList.toggle("req", !has("kmb"));
+      $("#docwarn").hidden = docsOk();
+    }
   });
   function fail(m) { err.textContent = m; err.hidden = false; err.scrollIntoView({ behavior: "smooth", block: "center" }); }
 

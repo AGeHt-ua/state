@@ -64,8 +64,17 @@ async def submit_public(username: str, sid: int, name: str, age: str, exp: str, 
 IMG_MAGIC = {b"\x89PNG": "png", b"\xff\xd8\xff": "jpg", b"RIFF": "webp"}
 
 # Документи й ліцензії — за Законом «Про державні документи» штату NG
-DOCS = {"passport": "Паспорт громадянина", "med": "Медична карта", "military": "Військовий квиток", "idcard": "Посвідчення особи"}
-REQUIRED_DOCS = ("passport", "med", "military")  # п. 1.4 Положення про стажування СБУ, ст. 8 Закону «Про державні документи»
+DOCS = {"passport": "Паспорт громадянина", "med": "Медична карта", "military": "Військовий квиток", "kmb": "КМБ у НГУ (для військового квитка)",
+        "idcard": "Посвідчення особи"}
+# п. 1.4 Положення про стажування СБУ, ст. 8 Закону «Про державні документи»: військовий квиток або проходження КМБ у НГУ для його отримання
+REQUIRED_DOCS = ("passport", "med", "military")
+
+
+def missing_docs(docs: list) -> list[str]:
+    out = [DOCS[d] for d in ("passport", "med") if d not in docs]
+    if "military" not in docs and "kmb" not in docs:
+        out.append("військовий квиток або КМБ у НГУ")
+    return out
 DRIVE = {"A": "A", "B": "B", "CD": "C/D", "water": "водний", "air": "повітряний"}
 LICS = {"weapon": "на зброю", "hunt": "на полювання", "fish": "на рибальство"}
 HOUSING = {"none": "немає", "flat": "квартира", "house": "будинок", "rent": "орендоване"}
@@ -212,11 +221,15 @@ def dossier(x: dict) -> list[str]:
     out.append(style.c("ДОКУМЕНТИ", "gold", True))
     for k, label in DOCS.items():
         mark, col = yn(k in x.get("docs", []))
+        if k == "military" and "kmb" in x.get("docs", []):
+            continue  # замість квитка — КМБ у НГУ
+        if k == "kmb" and k in x.get("docs", []):
+            mark, col = "◐", "gold"
         if k in REQUIRED_DOCS or k in x.get("docs", []):
             out.append(style.c(f" {mark} ", col, True) + style.c(label + (" *" if k in REQUIRED_DOCS else ""), "white"))
     out.append(style.kv("ПОСВ. ВОДІЯ", ", ".join(DRIVE[d] for d in x.get("drive", [])) or "немає", "white"))
     out.append(style.kv("ЛІЦЕНЗІЇ", ", ".join(LICS[l] for l in x.get("lics", [])) or "немає", "white"))
-    missing = [DOCS[d] for d in REQUIRED_DOCS if d not in x.get("docs", [])]
+    missing = missing_docs(x.get("docs", []))
     if missing:
         out.append(style.c("⚠ Не відповідає вимогам: " + ", ".join(missing).lower(), "red", True))
     out += [style.rule(), style.c("МАЙНО", "gold", True),

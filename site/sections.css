@@ -152,3 +152,5 @@
 .todo-item .ico,.quick .ico{flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .doc.st-cancel{--sc:var(--dim);opacity:.7}
 .doc-side .btn{margin-top:2px}
+.dz-docs span.warn{color:var(--warn);border-color:rgba(217,162,61,.5);background:var(--warn-soft)}
+.dz-docs span.warn::before{content:"◐ "}
