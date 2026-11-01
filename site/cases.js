@@ -108,7 +108,12 @@ async function vCase(id) {
     ${c.canDecide ? `<button class="btn ok" data-a="kfdec" data-d="ok">${pros ? "Затвердити" : "Погодити"}</button><button class="btn" data-a="kfdec" data-d="return">Повернути на доопрацювання</button><button class="btn bad" data-a="kfdec" data-d="rej">Відмовити</button>` : ""}
     ${c.status === "approved" ? '<button class="btn gold" data-a="kfpdf">⬇ Завантажити PDF</button>' : ""}
     ${c.canDelete && c.status !== "deleted" ? '<button class="btn bad" data-a="kfdelete">🗑 Видалити справу</button>' : ""}</div>`;
-  return bar + `<div class="kd-wrap">${docHtml(c, false)}</div>` + history(c);
+  // автор не може погоджувати власну справу (навіть якщо пізніше отримав роль прокурора чи керівника)
+  const me = S.ME().me;
+  const self = !c.canDecide && c.author === me.sid && ["head", "chief", "prosecutor"].includes(c.status)
+    && ((c.status === "prosecutor" && me.dept === "prosecutor") || (c.status === "chief" && me.rank >= 14) || c.status === "head");
+  const note = self ? `<p class="note warn">Ви — автор цієї справи, тому погодити чи затвердити її не можете (конфлікт інтересів). Справу має розглянути інша посадова особа${c.status === "prosecutor" ? " — Генеральний прокурор або його заступник" : ""}.</p>` : "";
+  return bar + note + `<div class="kd-wrap">${docHtml(c, false)}</div>` + history(c);
 }
 
 /* ---------- редактор ---------- */

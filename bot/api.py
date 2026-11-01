@@ -817,9 +817,14 @@ async def _build_structure() -> list:
         raise Fail("Бот ще не підключився до Discord. Спробуйте за хвилину.", 503)
     rows = await db.all("SELECT * FROM users WHERE status!='dismissed' AND dept!='curator' ORDER BY rank DESC, sid")
 
+    gate = asyncio.Semaphore(2)  # не більше 2 запитів до Discord одночасно — інакше ліміти (429) гальмують увесь сайт
+
     async def roles(r):
         try:
-            return await core.member_roles(r["discord_id"], fresh=True) if r["discord_id"] else False
+            if not r["discord_id"]:
+                return False
+            async with gate:
+                return await core.member_roles(r["discord_id"])  # кеш 60 с, інакше — свіжі ролі з Discord
         except Exception:
             return False  # Discord не відповів — лишаємо дані картки як є
     all_roles = await asyncio.gather(*(roles(r) for r in rows))
@@ -837,7 +842,7 @@ async def _build_structure() -> list:
 
 
 async def structure_loop():
-    """Фонове оновлення штатної структури кожні 2 хв (і одразу після змін ролей ботом) — сторінка відкривається миттєво."""
+    """Фонове оновлення штатної структури кожні 3 хв (і одразу після змін ролей ботом) — сторінка відкривається миттєво."""
     await asyncio.sleep(20)
     while True:
         try:
@@ -846,7 +851,7 @@ async def structure_loop():
             pass  # бот ще не на зв'язку з Discord
         except Exception:
             log.exception("Оновлення штатної структури")
-        await asyncio.sleep(120)
+        await asyncio.sleep(180)
 
 
 @routes.get("/api/structure")
@@ -855,7 +860,7 @@ async def structure(request):
     await auth(request)
     if _structure_cache[1] is None:
         await build_structure()
-    elif time.time() - _structure_cache[0] > 150:
+    elif time.time() - _structure_cache[0] > 240:
         asyncio.create_task(build_structure())  # віддаємо збережене, оновлюємо у фоні
     return web.json_response(_structure_cache[1])
 
