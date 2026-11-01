@@ -232,7 +232,7 @@ async function libView() {
     internal: (x) => `<button class="lib-folder" data-a="libopen" data-id="${x.id}" data-t="${esc(x.title.toLowerCase())}"><span class="lf-tab">ВД-${no(x)}</span>
       <span class="lf-stamp">ДСК</span><span class="lf-org">Служба безпеки штату NG</span><b>${esc(x.title)}</b><span class="lf-meta">${esc(x.authorName || "")} · ${fmtDT(x.updated)}</span></button>`,
     memo: (x) => `<button class="lib-memo" data-a="libopen" data-id="${x.id}" data-t="${esc(x.title.toLowerCase())}"><span class="lm-clip"></span><span class="lm-kind">Пам'ятка · П-${no(x)}</span>
-      <b>${esc(x.title.replace(/^Пам'ятка:\s*/, ""))}</b><span class="lm-meta">${fmtDT(x.updated)}</span></button>`,
+      <b>${esc(x.title.replace(/^Пам'ятка:\s*(.)/, (m, c) => c.toUpperCase()))}</b><span class="lm-meta">${fmtDT(x.updated)}</span></button>`,
     material: (x) => `<button class="lib-binder" data-a="libopen" data-id="${x.id}" data-t="${esc(x.title.toLowerCase())}"><span class="lbd-ring"></span><span class="lbd-label"><i>НМ-${no(x)}</i><b>${esc(x.title)}</b></span>
       <span class="lbd-meta">${fmtDT(x.updated)}</span></button>`,
   };
