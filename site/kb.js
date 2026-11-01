@@ -90,9 +90,9 @@ async function lawView() {
     }
     if (k === "sbu") {  // закони про СБУ — томами на полиці, внутрішні документи — теками
       const books = list.filter((d) => ["const", "code", "law"].includes(kind(d))), docs = list.filter((d) => !books.includes(d));
-      return `${books.length ? `<div class="lib-row law-shelf">${books.map((d) => book(d, kind(d))).join("")}</div>` : ""}<div class="lib-row" style="margin-top:22px">${docs.map(folder).join("")}</div>`;
+      return `${books.length ? `<div class="lib-row shelf law">${books.map((d) => book(d, kind(d))).join("")}</div>` : ""}<div class="lib-row" style="margin-top:22px">${docs.map(folder).join("")}</div>`;
     }
-    return k === "rules" ? `<div class="lib-row">${list.map(folder).join("")}</div>` : `<div class="lib-row law-shelf">${list.map((d) => book(d, k)).join("")}</div>`;
+    return k === "rules" ? `<div class="lib-row">${list.map(folder).join("")}</div>` : `<div class="lib-row shelf law">${list.map((d) => book(d, k)).join("")}</div>`;
   };
   return `<div class="lib-arch law-arch">
     <div class="law-top"><img src="ng-logo.png" alt="NG" width="120" height="59"><div><div class="eyebrow">Державний архів · Законодавча база</div><b>Штат NG</b>
@@ -271,7 +271,7 @@ async function libView() {
     <div class="lib-pills"><button class="${st.libCat ? "" : "on"}" data-a="libcat" data-v="">Усе <i>${d.items.length}</i></button>
       ${Object.entries(d.cats).map(([k, v]) => `<button class="${st.libCat === k ? "on" : ""}" data-a="libcat" data-v="${k}">${icon[k] || ""} ${esc(v)} <i>${(by[k] || []).length}</i></button>`).join("")}</div>
     ${cats.map(([k, v]) => `<section class="lib-sec lib-s-${k}"><div class="kb-sec-h"><span>${icon[k] || ""} ${esc(v)}</span><i></i></div>
-      ${(by[k] || []).length ? `<div class="lib-row">${by[k].map(item[k] || item.material).join("")}</div>${k === "lecture" ? '<div class="lib-shelf"></div>' : ""}` : '<div class="lib-empty">Розділ порожній.</div>'}</section>`).join("")}
+      ${(by[k] || []).length ? `<div class="lib-row ${k === "lecture" ? "shelf lec" : ""}">${by[k].map(item[k] || item.material).join("")}</div>` : '<div class="lib-empty">Розділ порожній.</div>'}</section>`).join("")}
     <div class="lib-empty" id="lib-none" hidden>Нічого не знайдено.</div></div>`;
 }
 
