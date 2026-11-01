@@ -244,7 +244,7 @@ async function libView() {
       ${can ? '<button class="btn gold" data-a="libnew">+ Додати матеріал</button>' : ""}</div>
     <div class="lib-pills"><button class="${st.libCat ? "" : "on"}" data-a="libcat" data-v="">Усе <i>${d.items.length}</i></button>
       ${Object.entries(d.cats).map(([k, v]) => `<button class="${st.libCat === k ? "on" : ""}" data-a="libcat" data-v="${k}">${icon[k] || ""} ${esc(v)} <i>${(by[k] || []).length}</i></button>`).join("")}</div>
-    ${cats.map(([k, v]) => `<section class="lib-sec lib-${k}"><div class="kb-sec-h"><span>${icon[k] || ""} ${esc(v)}</span><i></i></div>
+    ${cats.map(([k, v]) => `<section class="lib-sec lib-s-${k}"><div class="kb-sec-h"><span>${icon[k] || ""} ${esc(v)}</span><i></i></div>
       ${(by[k] || []).length ? `<div class="lib-row">${by[k].map(item[k] || item.material).join("")}</div>${k === "lecture" ? '<div class="lib-shelf"></div>' : ""}` : '<div class="lib-empty">Розділ порожній.</div>'}</section>`).join("")}
     <div class="lib-empty" id="lib-none" hidden>Нічого не знайдено.</div></div>`;
 }

@@ -59,7 +59,7 @@ mark{background:rgba(226,192,127,.35);color:inherit;padding:0 2px}
 .lib-empty{font:12px var(--mono);opacity:.55;padding:14px;border:1px dashed var(--line2)}
 .lib-row button{cursor:pointer;text-align:left;border:0;transition:transform .18s,box-shadow .18s}
 /* книги */
-.lib-lecture .lib-row{padding:0 14px;gap:22px}
+.lib-s-lecture .lib-row{padding:0 14px;gap:22px}
 .lib-book{position:relative;width:170px;height:240px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px 12px 12px 22px;text-align:center!important;color:#e9d9a8;
   background:linear-gradient(135deg,#3a1d17,#24110d 70%);border-radius:2px 6px 6px 2px;box-shadow:inset -6px 0 10px rgba(0,0,0,.4),6px 8px 18px rgba(0,0,0,.55)}
 .lib-book:nth-child(3n+2){background:linear-gradient(135deg,#1c2b3f,#0f1826 70%)}.lib-book:nth-child(3n){background:linear-gradient(135deg,#21331f,#121e11 70%)}
