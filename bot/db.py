@@ -186,6 +186,10 @@ CREATE TABLE IF NOT EXISTS fin_docs (
   parent INTEGER, author INTEGER, status TEXT DEFAULT 'draft', data TEXT, history TEXT,
   approver INTEGER, approved INTEGER, forum_url TEXT, funded_amount INTEGER, funded_at INTEGER, created INTEGER, updated INTEGER
 );
+CREATE TABLE IF NOT EXISTS game_scores (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, sid INTEGER, game TEXT, level INTEGER, score INTEGER, ms INTEGER, data TEXT, t INTEGER
+);
+CREATE INDEX IF NOT EXISTS game_sid ON game_scores(game, sid);
 CREATE INDEX IF NOT EXISTS disc_sid ON discipline(sid);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);
 CREATE INDEX IF NOT EXISTS acts_status ON acts(status);

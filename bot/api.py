@@ -214,6 +214,35 @@ async def fin_act(request):
     return web.json_response(await finance.act(u, int(request.match_info["id"]), request.match_info["action"], await body(request)))
 
 
+# ---------------------------------------------------------------- тренажер «Штурм»: рейтинг (на бали підвищення й премії не впливає)
+async def _game_board(game: str, since: int = 0) -> list[dict]:
+    rows = await db.all("SELECT sid, SUM(best) AS score FROM (SELECT sid, level, MAX(score) AS best FROM game_scores WHERE game=? AND t>=? GROUP BY sid, level) "
+                        "GROUP BY sid ORDER BY score DESC LIMIT 10", game, since)
+    people = await people_map([r["sid"] for r in rows])
+    return [{"sid": r["sid"], "score": r["score"], "name": (people.get(r["sid"]) or {}).get("name", f"№{r['sid']}")} for r in rows]
+
+
+@routes.get("/api/game/{game}")
+async def game_board(request):
+    u = await auth(request)
+    g = request.match_info["game"][:20]
+    mine = await db.all("SELECT level, MAX(score) AS best FROM game_scores WHERE game=? AND sid=? GROUP BY level", g, u["sid"])
+    return web.json_response({"week": await _game_board(g, core.week_start(0)), "all": await _game_board(g), "mine": {r["level"]: r["best"] for r in mine}})
+
+
+@routes.post("/api/game/score")
+async def game_score(request):
+    u = await auth(request)
+    b = await body(request)
+    g, lvl, sc, ms = str(b.get("game") or "")[:20], int(b.get("level") or 0), int(b.get("score") or 0), int(b.get("ms") or 0)
+    if g != "assault" or not 0 <= lvl <= 2 or not 0 <= sc <= 12000 or ms < 8000:  # грубий захист від підробки
+        raise Fail("Некоректний результат.")
+    prev = await db.one("SELECT MAX(score) AS m FROM game_scores WHERE game=? AND sid=? AND level=?", g, u["sid"], lvl)
+    await db.run("INSERT INTO game_scores(sid,game,level,score,ms,data,t) VALUES(?,?,?,?,?,?,?)", u["sid"], g, lvl, sc, ms,
+                 json.dumps(b.get("data") or {}, ensure_ascii=False)[:2000], now_ms())
+    return web.json_response({"ok": True, "record": sc > ((prev or {}).get("m") or 0)})
+
+
 @routes.get("/api/callsign")
 async def callsign_home(request):
     return web.json_response(await callsigns.home(await auth(request)))
