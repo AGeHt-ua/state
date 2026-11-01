@@ -231,3 +231,13 @@ pre.report{white-space:pre-wrap;font:12.5px/1.6 var(--mono);background:var(--bg2
 }
 @media (max-width:460px){.tiles{grid-template-columns:minmax(0,1fr)}.demo-row{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* пошук за SID / ім'ям (search.js) */
+[hidden]{display:none!important}
+.sq-box{position:relative;display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.sq-box .sq-in{flex:1;min-width:0;padding-left:12px;border-color:rgba(201,162,77,.35);background:rgba(201,162,77,.05)}
+.sq-box .sq-in:focus{border-color:var(--gold)}
+.sq-n{font:11px var(--mono);letter-spacing:.06em;color:var(--muted);white-space:nowrap}
+.sq-list{margin-bottom:12px;max-width:560px}
+select.sq-open{height:auto;padding:4px;background:var(--panel)}
+select.sq-open option{padding:6px 8px}
+select.sq-open option:checked{background:rgba(201,162,77,.25)}
