@@ -262,3 +262,6 @@
 .gm-lb{list-style:none;margin:0;padding:0;display:grid;gap:4px}.gm-lb li{display:grid;grid-template-columns:28px 1fr auto;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line)}
 .gm-lb li.me{border-color:var(--gold)}.gm-lb li b{font:700 14px var(--mono);color:var(--gold2)}.gm-lb li em{font-style:normal;font:700 14px var(--mono)}
 @media (max-width:760px){.gm-hero{grid-template-columns:1fr}.gm-hero h2{font-size:34px}}
+/* поле гри завжди вміщається в екран (пропорція 16:10) */
+.gm-wrap{width:min(100%,calc((100vh - 190px) * 1.6));margin:0 auto;scroll-margin-top:90px}
+.gm-legend{grid-template-columns:auto auto;align-items:center;column-gap:6px}

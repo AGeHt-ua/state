@@ -429,7 +429,8 @@ function start(i) {
     st.raf = requestAnimationFrame(loop);
   };
   st.raf = requestAnimationFrame(loop);
-  cv.focus();
+  cv.focus({ preventScroll: true });
+  document.querySelector(".gm-wrap").scrollIntoView({ block: "start", behavior: "smooth" });
 }
 
 // ---------------------------------------------------------------- сторінка
@@ -449,7 +450,7 @@ async function view() {
       <p>Тактичний штурм будівлі з видом згори. Ви бачите лише те, що в полі зору. Спершу — <b>вимога здатися</b>, вогонь — лише по озброєних. За поранених цивільних — штраф і перевірка ВВБ.</p>
       <div class="gm-keys"><span><b>WASD</b> рух</span><span><b>Shift</b> тихо</span><span><b>ЛКМ</b> вогонь</span><span><b>R</b> перезарядка</span><span><b>E</b> двері · кайданки · заручник</span><span><b>F</b> «Руки вгору!»</span><span><b>G</b> світлошумова</span><span><b>Esc</b> пауза</span></div>
       <p class="muted small">Результати не впливають на бали підвищення й премії. Потрібні клавіатура й миша.</p></div>
-      <div class="gm-legend"><span class="c-me">●</span> ви <span class="c-foe">●</span> озброєний <span class="c-civ">●</span> цивільний <span class="c-host">●</span> заручник</div></div>
+      <div class="gm-legend"><span class="c-me">●</span><i>ви</i><span class="c-foe">●</span><i>озброєний</i><span class="c-civ">●</span><i>цивільний</i><span class="c-host">●</span><i>заручник</i></div></div>
     <div class="gm-levels">${LEVELS.map((L, i) => `<button class="gm-lvl" data-a="gmplay" data-l="${i}"><span class="eyebrow">Операція ${i + 1} · ${["легка", "середня", "складна"][i]}</span><b>${esc(L.name)}</b><p>${esc(L.brief)}</p>
       <span class="gm-best">Ваш рекорд: <b>${st.best[i] || "—"}</b></span></button>`).join("")}</div>
     <div class="grid2"><div class="card"><header><h3>🏆 Рейтинг тижня</h3><span class="muted small">сума найкращих результатів</span></header>${lb(b.week || [])}</div>
