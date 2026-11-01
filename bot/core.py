@@ -211,7 +211,10 @@ async def set_nick(u: dict, member: discord.Member | None = None) -> bool:
     m = member or await member_of(u["discord_id"])
     if not m:
         return False
-    nick = nickname(u["rank"], u["name"], u["sid"])
+    if "callsign" not in u:  # картку могли зібрати без позивного — беремо з бази
+        row = await db.one("SELECT callsign FROM users WHERE sid=?", u["sid"])
+        u = {**u, "callsign": row["callsign"] if row else None}
+    nick = nickname(u["rank"], u["name"], u["sid"], u.get("dept"), u.get("callsign"))
     if m.nick == nick:
         return True
     try:

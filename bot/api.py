@@ -7,6 +7,7 @@ import time
 from aiohttp import web
 
 import admin
+import callsigns
 import candidates
 import bonus
 import cases
@@ -169,7 +170,9 @@ async def me(request):
             "disc": await disc_pending(u),
             "exams": (await db.one("SELECT COUNT(*) AS n FROM attempts WHERE status='submitted'"))["n"] if library.is_examiner(u) else 0,
             "orders": (await db.one("SELECT COUNT(*) AS n FROM orders WHERE status='draft'"))["n"] if orders.can_sign(u) else 0,
+            "callsign": await callsigns.pending(u),
         },
+        "callsign": {"eligible": callsigns.eligible(u), "current": u.get("callsign")},
         "hr": hr_rights(u),
         "cases": cases.rights(u),
         "control": depts.control_depts(u),
@@ -179,6 +182,31 @@ async def me(request):
         "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
         "bonus": {"manage": bonus.can_manage(u) or bool(u.get("curator")), "finalize": bonus.can_finalize(u)},
     })
+
+
+@routes.get("/api/callsign")
+async def callsign_home(request):
+    return web.json_response(await callsigns.home(await auth(request)))
+
+
+@routes.post("/api/callsign")
+async def callsign_request(request):
+    u = await auth(request)
+    return web.json_response(await callsigns.request(u, (await body(request)).get("callsign")), status=201)
+
+
+@routes.post("/api/callsign/{id}/withdraw")
+async def callsign_withdraw(request):
+    u = await auth(request)
+    await callsigns.withdraw(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/callsign/{id}/decide")
+async def callsign_decide(request):
+    u = await auth(request)
+    b = await body(request)
+    return web.json_response(await callsigns.decide(u, int(request.match_info["id"]), b.get("decision") == "ok", str(b.get("note") or "")))
 
 
 @routes.get("/api/me/verify")
@@ -192,7 +220,7 @@ async def me_verify(request):
     roles = {r.id for r in m.roles} if m else set()
     core._roles_cache[str(u["discord_id"])] = (time.time(), roles if m else None)
     a = await core.apply_roles(u, roles) if m else {"ok": False}
-    nick_ok = bool(m) and m.nick == nickname(u["rank"], u["name"], u["sid"])
+    nick_ok = bool(m) and m.nick == nickname(u["rank"], u["name"], u["sid"], u["dept"], u.get("callsign"))
     if m and not nick_ok:
         nick_ok = await core.set_nick(u, m)
     rank_roles = [i + 1 for i, rid in enumerate(RANK_ROLES) if rid in roles]
@@ -1041,7 +1069,7 @@ async def admin_home(request):
     people = await people_map([r["actor"] for r in log_rows] + [r["target"] for r in log_rows])
     return web.json_response({
         "users": await admin.users(), "roles": admin.roles_report(), "channels": await admin.channels_view(),
-        "mentions": admin.mentions_view(), "perms": ov.perms_view(), "system": await admin.system(),
+        "mentions": admin.mentions_view(), "perms": ov.perms_view(), "system": await admin.system(), "nick": await admin.nick_view(),
         "log": [{**r, "actorUser": people.get(r["actor"]), "targetUser": people.get(r["target"])} for r in log_rows],
         "ranks": [n for n, _, _ in RANKS],
     })
@@ -1082,6 +1110,31 @@ async def admin_sync(request):
     s = await build_structure()
     await admin.note(u, "Синхронізація ролей усіх", 0, f"{len(s)} співробітників у штаті")
     return web.json_response({"count": len(s)})
+
+
+@routes.post("/api/admin/nick")
+async def admin_nick(request):
+    u = await admin_auth(request)
+    await admin.save_nick(u, await body(request))
+    return web.json_response(await admin.nick_view())
+
+
+@routes.post("/api/admin/nick/apply")
+async def admin_nick_apply(request):
+    u = await admin_auth(request)
+    return web.json_response(await admin.apply_all(u))
+
+
+@routes.post("/api/admin/nick/apply/{sid}")
+async def admin_nick_apply_one(request):
+    u = await admin_auth(request)
+    return web.json_response(await admin.apply_one(u, int(request.match_info["sid"])))
+
+
+@routes.post("/api/admin/callsign/{sid}")
+async def admin_callsign(request):
+    u = await admin_auth(request)
+    return web.json_response(await callsigns.set_direct(u, int(request.match_info["sid"]), (await body(request)).get("callsign")))
 
 
 @routes.post("/api/admin/backup")

@@ -198,8 +198,31 @@ async function verifyCard(btn, tries = 0) {
   if (btn) btn.disabled = false;
 }
 
+// Позивний: подання (АТЦ, ДЕБ, ЦСО «А», ВВБ) і затвердження начальником відділу
+const CS_ST = { wait: ["На розгляді", "wait"], ok: ["Затверджено", "ok"], rej: ["Відмовлено", "bad"] };
+function callsignCard(c) {
+  if (!c || (!c.eligible && !c.todo.length && !c.current)) return "";
+  const wait = c.mine.find((r) => r.status === "wait");
+  return `<div class="card cs-card" id="cs-card"><header><h3>Позивний</h3>${c.current ? `<span class="sp cs-badge">${esc(c.current)}</span>` : ""}</header>
+    ${c.eligible ? `<div class="cs-nick"><span>Ваш нікнейм у Discord</span><b class="mono">${esc(c.nick || "")}</b></div>
+      ${wait ? `<div class="note">Заявка на позивний <b>${esc(wait.callsign)}</b> на розгляді у начальника відділу · ${fmtDT(wait.t)}
+          <button class="btn sm" data-a="cswd" data-id="${wait.id}">↩ Відкликати</button></div>`
+        : `<form class="cs-form" data-f="cs"><input class="i mono" id="cs-in" maxlength="16" placeholder="${c.current ? "Новий позивний" : "Напр. LEO, ВОВК-7"}" autocomplete="off">
+          <button class="btn gold" type="submit">${c.current ? "Подати зміну" : "Подати на затвердження"}</button></form>
+          <p class="muted small">2–16 символів: літери, цифри, дефіс. Після затвердження начальником відділу нікнейм стане: <b class="mono" id="cs-prev" data-s="${esc(c.sample || "")}">${esc(c.sample || "")}</b></p>`}
+      ${c.mine.filter((r) => r.status !== "wait").slice(0, 3).map((r) => `<div class="cs-hist"><span class="chip ${CS_ST[r.status][1]}">${CS_ST[r.status][0]}</span><b class="mono">${esc(r.callsign)}</b><span class="muted small">${fmtDT(r.reviewed || r.t)}${r.reviewerName ? " · " + esc(r.reviewerName) : ""}${r.note ? " · «" + esc(r.note) + "»" : ""}</span></div>`).join("")}`
+      : ""}
+    ${c.todo.length ? `<div class="cs-todo"><div class="eyebrow">На затвердження · ${c.todo.length}</div>${c.todo.map((r) => `<div class="cs-req">
+        <div><b>${esc(r.name || "№" + r.sid)}</b> <span class="muted small">${esc(r.rankName)} · №${r.sid} · ${esc((META.depts[r.dept] || {}).s || "")}</span>
+          <div>Позивний: <b class="mono cs-badge">${esc(r.callsign)}</b> → нікнейм <span class="mono">${esc(r.preview)}</span></div></div>
+        <div class="acts"><button class="btn sm ok" data-a="csdec" data-id="${r.id}" data-d="ok">Затвердити</button><button class="btn sm bad" data-a="csdec" data-id="${r.id}" data-d="rej">Відмовити</button></div></div>`).join("")}</div>` : ""}
+  </div>`;
+}
+
 async function vHome() {
+  const cs = (ME.callsign && ME.callsign.eligible) || (ME.pending && ME.pending.callsign) ? call("/api/callsign").catch(() => null) : null;
   const acts = await call("/api/acts");
+  const csData = await cs;
   setTimeout(() => verifyCard(), 60);  // після вставки сторінки (render вставляє HTML одразу після цього return)
   const pc = ME.promo;
   const pend = ME.pending || {};
@@ -210,6 +233,7 @@ async function vHome() {
     pend.acts && ["act", "review", "Звіти на перевірку", pend.acts],
     pend.raps && ["rap", "review", "Рапорти на розгляд", pend.raps],
     pend.hr && ["hr", "cand", "Кадрові справи", pend.hr],
+    pend.callsign && ["home", "cs", "Позивні на затвердження", pend.callsign],
   ].filter(Boolean);
   return `
   <section class="hero" style="--dc:${deptColor(me.dept)}">
@@ -230,7 +254,8 @@ async function vHome() {
     </div>
   </section>
   ${todo.length ? `<section class="todo"><div class="eyebrow">Потребує вашого рішення</div><div class="todo-row">
-    ${todo.map(([v, t, l, n]) => `<button class="todo-item" data-a="go" data-v="${v}" data-tab="${t}">${ico(v)}<span>${l}</span><b class="num">${n}</b></button>`).join("")}</div></section>` : ""}
+    ${todo.map(([v, t, l, n]) => `<button class="todo-item" data-a="${v === "home" ? "csgo" : "go"}" data-v="${v}" data-tab="${t}">${ico(v === "home" ? "staff" : v)}<span>${l}</span><b class="num">${n}</b></button>`).join("")}</div></section>` : ""}
+  ${callsignCard(csData)}
   <div class="grid2">
     <div class="card"><header><h3>Наступне звання</h3>${pc ? `<span class="sp chip ${pc.eligible ? "ok" : "wait"}">${pc.eligible ? "Можна подати рапорт" : "Умови ще не виконано"}</span>` : ""}</header>
       ${pc ? `<div class="promo"><span class="from">${esc(me.rankName)}</span><i></i><span class="to">${esc(pc.name)}</span></div>
@@ -718,6 +743,20 @@ const A = {
   },
   // універсальна кнопка PDF: data-sel — селектор бланка на сторінці, data-name — назва файлу
   verify: (b) => verifyCard(b),
+  csgo: () => document.getElementById("cs-card")?.scrollIntoView({ behavior: "smooth", block: "center" }),
+  cswd: async (b) => {
+    if (!confirm("Відкликати заявку на позивний?")) return;
+    b.disabled = true;
+    try { await call(`/api/callsign/${b.dataset.id}/withdraw`, { json: {} }); toast("Заявку відкликано"); await refreshMe(); render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
+  csdec: async (b) => {
+    let note = "";
+    if (b.dataset.d === "rej") { note = prompt("Причина відмови (співробітник її побачить):", ""); if (note === null) return; }
+    b.disabled = true;
+    try { await call(`/api/callsign/${b.dataset.id}/decide`, { json: { decision: b.dataset.d, note } }); toast(b.dataset.d === "ok" ? "Позивний затверджено — нікнейм змінено" : "Відмовлено"); await refreshMe(); render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
   pdfel: (b) => window.SOVA.pdfBtn(b, b.dataset.sel, b.dataset.name),
   actopen: (b) => { UI.actId = +b.dataset.id; UI.view = "act"; render(); scrollTo(0, 0); },
   actback: () => { UI.actId = null; render(); },
@@ -763,6 +802,13 @@ const A = {
 };
 
 const F = {
+  cs: async (f) => {
+    const b = f.querySelector("[type=submit]"), v = $("#cs-in").value.trim();
+    if (!v) return toast("Вкажіть позивний", 1);
+    b.disabled = true;
+    try { await call("/api/callsign", { json: { callsign: v } }); toast("Позивний подано начальнику відділу"); await refreshMe(); render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
   login: doLogin,
   act: async () => {
     const btn = $("#a-btn");
@@ -793,6 +839,12 @@ const F = {
   },
 };
 
+// живий приклад нікнейму під полем позивного
+document.addEventListener("input", (e) => {
+  if (e.target.id !== "cs-in") return;
+  const p = document.getElementById("cs-prev");
+  if (p) p.textContent = p.dataset.s.replace("ПОЗИВНИЙ", e.target.value.replace(/\s+/g, "").toUpperCase() || "ПОЗИВНИЙ").slice(0, 32);
+});
 document.addEventListener("click", (e) => { const b = e.target.closest("[data-a]"); if (!b || b.disabled) return; const ln = e.target.closest("a[href]"); if (ln && ln !== b && b.contains(ln)) return; const f = A[b.dataset.a]; if (f) { e.preventDefault(); f(b); } });
 document.addEventListener("submit", (e) => { const f = e.target.closest("[data-f]"); if (!f) return; e.preventDefault(); const h = F[f.dataset.f]; if (h) h(f, e); });
 document.addEventListener("input", (e) => {

@@ -1,4 +1,5 @@
 """Ролі Discord-сервера СБУ та правила доступу до кабінету."""
+import overrides as ov
 
 SBU_ROLE = 1553695043947077686      # основна роль, обов'язкова для всіх
 PRESS_ROLE = 1564014095836119140    # Прес-секретар
@@ -54,14 +55,32 @@ RANK_SHORT = ["Стажер", "Мол. агент", "Агент", "Ст. аге�
               "Кер. групи", "Кер. сектору", "Заст. нач. від.", "Нач. відділу", "Нач. управл.", "Заст. Голови", "Голова СБУ"]
 
 
-def nickname(rank: int, name: str, sid: int) -> str:
-    """«Звання | Ім'я Прізвище | Static ID», за потреби ім'я скорочується до «І. Прізвище»."""
-    short = RANK_SHORT[rank - 1] if 1 <= rank <= len(RANK_SHORT) else "СБУ"
-    nick = f"{short} | {name} | {sid}"
+NICK_TPL = "{rank} | {name} | {sid}"            # звичайний нікнейм
+CALLSIGN_TPL = "{dept} | {callsign} | {sid}"    # з затвердженим позивним (АТЦ | LEO | 256)
+CALLSIGN_DEPTS = ["atc", "deb", "alpha", "vvb"]
+
+
+def callsign_depts() -> list[str]:
+    return ov.nick.get("depts") or CALLSIGN_DEPTS
+
+
+def rank_short(rank: int) -> str:
+    shorts = ov.nick.get("ranks") or RANK_SHORT
+    return shorts[rank - 1] if 1 <= rank <= len(shorts) and shorts[rank - 1] else (RANK_SHORT[rank - 1] if 1 <= rank <= 15 else "СБУ")
+
+
+def nickname(rank: int, name: str, sid: int, dept: str | None = None, callsign: str | None = None) -> str:
+    """Службовий нікнейм за шаблоном з адмін-панелі. Позивний — лише у відділах із позивними.
+    Discord дозволяє 32 символи: довге ім'я скорочується до «І. Прізвище»."""
+    use_cs = bool(callsign) and dept in callsign_depts()
+    tpl = (ov.nick.get("callsign_tpl") or CALLSIGN_TPL) if use_cs else (ov.nick.get("tpl") or NICK_TPL)
+    d = DEPTS.get(dept or "", {}).get("s", "СБУ")
+    fill = lambda n: tpl.replace("{rank}", rank_short(rank)).replace("{name}", n).replace("{sid}", str(sid)).replace("{dept}", d).replace("{callsign}", callsign or "")
+    nick = fill(name)
     if len(nick) > 32:
         parts = name.split()
         if len(parts) >= 2:
-            nick = f"{short} | {parts[0][0]}. {' '.join(parts[1:])} | {sid}"
+            nick = fill(f"{parts[0][0]}. {' '.join(parts[1:])}")
     return nick[:32]
 
 

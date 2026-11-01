@@ -176,6 +176,11 @@ CREATE TABLE IF NOT EXISTS attempts (
   status TEXT,                                                                  -- progress | submitted | graded | deleted
   started INTEGER, finished INTEGER, late INTEGER DEFAULT 0, grader INTEGER, graded INTEGER, note TEXT
 );
+CREATE TABLE IF NOT EXISTS callsigns (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, sid INTEGER NOT NULL, dept TEXT, callsign TEXT NOT NULL,
+  status TEXT DEFAULT 'wait',                                                   -- wait | ok | rej | cancel
+  t INTEGER, reviewer INTEGER, reviewed INTEGER, note TEXT
+);
 CREATE INDEX IF NOT EXISTS disc_sid ON discipline(sid);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);
 CREATE INDEX IF NOT EXISTS acts_status ON acts(status);
@@ -202,7 +207,8 @@ class DB:
                     "ALTER TABLE orders ADD COLUMN signed_by INTEGER", "ALTER TABLE orders ADD COLUMN signed INTEGER", "ALTER TABLE orders ADD COLUMN note TEXT",
                     "ALTER TABLE raps ADD COLUMN copies TEXT",
                     "ALTER TABLE orders ADD COLUMN title TEXT", "ALTER TABLE orders ADD COLUMN body TEXT",
-                    "ALTER TABLE kb_items ADD COLUMN fmt TEXT DEFAULT 'text'", "ALTER TABLE users ADD COLUMN blocked INTEGER DEFAULT 0"):
+                    "ALTER TABLE kb_items ADD COLUMN fmt TEXT DEFAULT 'text'", "ALTER TABLE users ADD COLUMN blocked INTEGER DEFAULT 0",
+                    "ALTER TABLE users ADD COLUMN callsign TEXT"):
             try:
                 await self.conn.execute(sql)
             except Exception:

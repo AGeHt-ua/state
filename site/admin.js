@@ -5,7 +5,7 @@ const { esc, call, toast, fmtDT } = S;
 const st = { tab: "users", d: null };
 const kb = (n) => n > 1048576 ? `${(n / 1048576).toFixed(1)} МБ` : `${Math.round(n / 1024)} КБ`;
 const ago = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? `${h} год ${m} хв` : `${m} хв`; };
-const TABS = [["users", "Користувачі"], ["perms", "Доступи"], ["roles", "Ролі Discord"], ["chan", "Канали й згадки"], ["sys", "Система"], ["log", "Журнал адміністрування"]];
+const TABS = [["users", "Користувачі"], ["nick", "Нікнейми й позивні"], ["perms", "Доступи"], ["roles", "Ролі Discord"], ["chan", "Канали й згадки"], ["sys", "Система"], ["log", "Журнал адміністрування"]];
 
 function usersView(d) {
   const blocked = d.users.filter((u) => u.blocked).length;
@@ -25,6 +25,28 @@ function usersView(d) {
         ${u.linked ? `<button class="btn sm" data-a="admu" data-sid="${u.sid}" data-x="unlink" title="Відв'язати Discord">⛓</button>` : ""}
       </div></td></tr>`).join("")}</tbody></table></div></div>
     <p class="muted small">⟳ — звірити ролі з Discord зараз · ⏏ — вийти з усіх пристроїв · 🔑 — новий код доступу в особисті Discord · ⛓ — відв'язати Discord. Заблокований не може увійти на сайт, ролі в Discord не змінюються.</p>`;
+}
+
+function nickView(d) {
+  const n = d.nick, cs = n.people.filter((p) => n.depts.includes(p.dept));
+  return `<form class="card" data-f="admnick"><header><h3>Формат нікнеймів у Discord</h3></header>
+    <p class="note">Підстановки: <span class="mono">{rank}</span> — скорочене звання, <span class="mono">{name}</span> — ім'я, <span class="mono">{sid}</span> — Static ID,
+      <span class="mono">{dept}</span> — відділ, <span class="mono">{callsign}</span> — позивний. Discord дозволяє 32 символи: довге ім'я скорочується до «І. Прізвище».</p>
+    <div class="form-grid">
+      <label class="f"><span>Звичайний нікнейм <i class="muted">· стандарт: ${esc(n.defTpl)}</i></span><input class="i mono" name="tpl" value="${esc(n.tpl)}"></label>
+      <label class="f"><span>Нікнейм із позивним <i class="muted">· стандарт: ${esc(n.defCallsignTpl)}</i></span><input class="i mono" name="callsignTpl" value="${esc(n.callsignTpl)}"></label>
+      <div class="f wide"><span>Відділи з позивними</span><div class="adm-checks">${n.allDepts.map((x) => `<label><input type="checkbox" name="dept" value="${x.key}" ${n.depts.includes(x.key) ? "checked" : ""}> ${esc(x.s)}</label>`).join("")}</div></div>
+    </div>
+    <h4 class="adm-sub">Скорочення звань у нікнеймі</h4>
+    <div class="adm-ranks">${n.ranks.map((r, i) => `<label><span>${i + 1}. ${esc(d.ranks[i])}</span><input class="i mono" name="rank" maxlength="16" value="${esc(r)}" placeholder="${esc(n.defRanks[i])}"></label>`).join("")}</div>
+    <div class="acts"><button class="btn" type="button" data-a="admnickdef">Стандартний формат</button><button class="btn gold" type="submit">Зберегти формат</button></div>
+    <p class="muted small">Новий формат застосовується, коли бот наступного разу оновлює нікнейм людини (наказ, звірка посвідчення). Щоб перейменувати всіх одразу — кнопка нижче.</p></form>
+  <div class="card"><header><h3>Нікнейми співробітників</h3><span class="sp"></span><button class="btn gold sm" data-a="admnickall">↻ Застосувати всім зараз</button></header>
+    <p class="muted small">Позивний можна призначити чи зняти вручну — без заявки (у відділах з позивними: ${n.depts.map((k) => esc((n.allDepts.find((x) => x.key === k) || {}).s || k)).join(", ")}; з позивними зараз ${cs.filter((p) => p.callsign).length}).</p>
+    <div class="tbl-wrap"><table class="t"><thead><tr><th>Жетон</th><th>Співробітник</th><th>Відділ</th><th>Позивний</th><th>Нікнейм за форматом</th><th class="r"></th></tr></thead><tbody>
+    ${n.people.map((p) => `<tr><td class="mono">${p.sid}</td><td><b>${esc(p.name)}</b><div class="muted small">${esc(p.rankName)}</div></td><td>${esc(p.deptS)}</td>
+      <td>${n.depts.includes(p.dept) ? `<div class="adm-in"><input class="i mono adm-cs" id="cs-${p.sid}" maxlength="16" value="${esc(p.callsign || "")}" placeholder="—"><button class="btn sm" data-a="admcs" data-sid="${p.sid}" title="Зберегти позивний">✔</button></div>` : `<span class="muted small">${p.callsign ? esc(p.callsign) + " (не діє у відділі)" : "—"}</span>`}</td>
+      <td class="mono small">${esc(p.nick)}</td><td class="r"><button class="btn sm" data-a="admnick1" data-sid="${p.sid}" title="Поставити цей нікнейм у Discord зараз">↻</button></td></tr>`).join("")}</tbody></table></div></div>`;
 }
 
 function permsView(d) {
@@ -85,7 +107,7 @@ function logView(d) {
 
 async function view() {
   const d = st.d = await call("/api/admin");
-  const body = { users: usersView, perms: permsView, roles: rolesView, chan: chanView, sys: sysView, log: logView }[st.tab](d);
+  const body = { users: usersView, nick: nickView, perms: permsView, roles: rolesView, chan: chanView, sys: sysView, log: logView }[st.tab](d);
   return `<div class="adm-head"><div><div class="eyebrow">Керування ЄІС «Сова»</div><b>Адмін-панель</b></div><span class="muted small">Доступ: Голова СБУ та Куратор</span></div>
     <div class="tabs">${TABS.map(([k, l]) => `<button class="tb ${st.tab === k ? "on" : ""}" data-a="admtab" data-v="${k}">${l}</button>`).join("")}</div>${body}`;
 }
@@ -107,10 +129,29 @@ Object.assign(S.actions, {
   admsync: (b) => run(b, async () => { const r = await call("/api/admin/sync", { json: {} }); toast(`Ролі звірено: ${r.count} у штаті`); S.render(); }),
   admbackup: (b) => run(b, async () => { const r = await call("/api/admin/backup", { json: {} }); toast(`Копію ${r.name} збережено`); S.render(); }),
   admpermreset: (b) => run(b, async () => { if (!confirm("Повернути всі доступи до стандартних?")) return; await call("/api/admin/perms", { json: {} }); toast("Доступи стандартні"); await S.refreshMe(); S.render(); }),
+  admcs: (b) => run(b, async () => {
+    const v = document.getElementById(`cs-${b.dataset.sid}`).value.trim();
+    const r = await call(`/api/admin/callsign/${b.dataset.sid}`, { json: { callsign: v } });
+    toast(`${r.callsign ? "Позивний " + r.callsign : "Позивний знято"} · нікнейм ${r.applied ? "змінено" : "не вдалося змінити"}: ${r.nick}`);
+    S.render();
+  }),
+  admnick1: (b) => run(b, async () => { const r = await call(`/api/admin/nick/apply/${b.dataset.sid}`, { json: {} }); toast(r.applied ? "Нікнейм поставлено" : "Не вдалося: роль людини вища за роль бота або вона не на сервері", !r.applied); }),
+  admnickall: (b) => run(b, async () => {
+    if (!confirm("Перейменувати всіх співробітників у Discord за поточним форматом? Бот робитиме це поступово, ~1 людина на секунду.")) return;
+    const r = await call("/api/admin/nick/apply", { json: {} });
+    toast(`Перейменування запущено: ${r.total} співробітників, ~${Math.ceil(r.total * 1.2 / 60)} хв`);
+  }),
+  admnickdef: (b) => run(b, async () => { if (!confirm("Повернути стандартний формат нікнеймів?")) return; await call("/api/admin/nick", { json: {} }); toast("Формат стандартний"); S.render(); }),
   admmdef: (b) => run(b, async () => { await call("/api/admin/mentions", { json: { [b.dataset.k]: null } }); toast("Повернено стандартні згадки"); S.render(); }),
 });
 const formData = (f) => Object.fromEntries([...f.querySelectorAll("[name]")].map((el) => [el.name, el.value]));
 S.forms.admperms = (f) => run(f.querySelector("[type=submit]"), async () => { await call("/api/admin/perms", { json: formData(f) }); toast("Доступи збережено"); await S.refreshMe(); S.render(); });
+S.forms.admnick = (f) => run(f.querySelector("[type=submit]"), async () => {
+  const body = { tpl: f.querySelector("[name=tpl]").value, callsignTpl: f.querySelector("[name=callsignTpl]").value,
+    ranks: [...f.querySelectorAll("[name=rank]")].map((el) => el.value.trim() || el.placeholder),
+    depts: [...f.querySelectorAll("[name=dept]:checked")].map((el) => el.value) };
+  await call("/api/admin/nick", { json: body }); toast("Формат нікнеймів збережено"); S.render();
+});
 S.forms.admchan = (f) => run(f.querySelector("[type=submit]"), async () => { await call("/api/admin/channels", { json: formData(f) }); toast("Канали збережено"); S.render(); });
 // лише змінені поля: решта лишаються стандартними
 const changed = (f) => Object.fromEntries([...f.querySelectorAll("[name]")].filter((el) => el.value !== el.defaultValue).map((el) => [el.name, el.value]));

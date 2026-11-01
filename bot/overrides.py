@@ -21,6 +21,7 @@ PERMS = {
 _perms: dict[str, int] = {}
 channels: dict[str, int] = {}
 mentions: dict[str, list[int]] = {}
+nick: dict = {}  # шаблони нікнеймів, скорочення звань, відділи з позивними
 
 
 def P(key: str) -> int:
@@ -36,6 +37,7 @@ async def load(db):
     _perms.clear(); _perms.update({k: int(v) for k, v in (await db.get_setting("admin_perms", {})).items() if k in PERMS})
     channels.clear(); channels.update({k: int(v) for k, v in (await db.get_setting("admin_channels", {})).items() if v})
     mentions.clear(); mentions.update({k: [int(x) for x in v] for k, v in (await db.get_setting("admin_mentions", {})).items()})
+    nick.clear(); nick.update(await db.get_setting("admin_nick", {}))
 
 
 async def save_perms(db, data: dict) -> dict:

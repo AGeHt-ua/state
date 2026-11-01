@@ -223,3 +223,71 @@ async def make_backup(u: dict) -> dict:
 
 async def admin_log() -> list[dict]:
     return await db.all("SELECT * FROM audit WHERE action LIKE '⚙%' ORDER BY id DESC LIMIT 150")
+
+
+# ---------------------------------------------------------------- нікнейми й позивні
+async def nick_view() -> dict:
+    from roles import CALLSIGN_DEPTS, CALLSIGN_TPL, NICK_TPL, RANK_SHORT, callsign_depts, nickname, rank_short
+    rows = await db.all("SELECT * FROM users WHERE status!='dismissed' AND dept NOT IN ('prosecutor','curator') ORDER BY rank DESC, sid")
+    return {
+        "tpl": ov.nick.get("tpl") or NICK_TPL, "callsignTpl": ov.nick.get("callsign_tpl") or CALLSIGN_TPL,
+        "defTpl": NICK_TPL, "defCallsignTpl": CALLSIGN_TPL, "defRanks": RANK_SHORT, "defDepts": CALLSIGN_DEPTS,
+        "ranks": [rank_short(i + 1) for i in range(15)], "depts": callsign_depts(),
+        "allDepts": [{"key": k, "s": DEPTS[k]["s"]} for k in ("orv", "vvb", "atc", "alpha", "deb", "vkpp")],
+        "people": [{"sid": r["sid"], "name": r["name"], "rank": r["rank"], "rankName": rank_name(r["rank"]), "dept": r["dept"],
+                    "deptS": DEPTS.get(r["dept"], {}).get("s", ""), "callsign": r.get("callsign"),
+                    "nick": nickname(r["rank"], r["name"], r["sid"], r["dept"], r.get("callsign"))} for r in rows],
+    }
+
+
+async def save_nick(u: dict, b: dict):
+    from roles import CALLSIGN_DEPTS, CALLSIGN_TPL, NICK_TPL, RANK_SHORT
+    tpl = str(b.get("tpl") or "").strip()[:60] or NICK_TPL
+    ctpl = str(b.get("callsignTpl") or "").strip()[:60] or CALLSIGN_TPL
+    if "{name}" not in tpl and "{sid}" not in tpl:
+        raise Fail("У шаблоні звичайного нікнейму має бути {name} або {sid}.")
+    if "{callsign}" not in ctpl:
+        raise Fail("У шаблоні з позивним має бути {callsign}.")
+    ranks = [str(x or "").strip()[:16] for x in (b.get("ranks") or [])][:15]
+    ranks = ranks + RANK_SHORT[len(ranks):]
+    depts = [d for d in (b.get("depts") or []) if d in DEPTS and DEPTS[d].get("role")]
+    cfg = {k: v for k, v in {"tpl": tpl if tpl != NICK_TPL else None, "callsign_tpl": ctpl if ctpl != CALLSIGN_TPL else None,
+                             "ranks": ranks if ranks != RANK_SHORT else None, "depts": depts if sorted(depts) != sorted(CALLSIGN_DEPTS) else None}.items() if v}
+    await db.set_setting("admin_nick", cfg)
+    ov.nick.clear(); ov.nick.update(cfg)
+    await note(u, "Змінено формат нікнеймів", 0, f"{tpl} · з позивним: {ctpl} · позивні: {', '.join(DEPTS[d]['s'] for d in (depts or CALLSIGN_DEPTS))}")
+
+
+_applying = {"busy": False, "done": 0, "total": 0}
+
+
+async def apply_all(u: dict) -> dict:
+    """Перейменувати всіх за поточним форматом — у фоні, по одному, щоб не впертися в ліміти Discord."""
+    import asyncio
+    if _applying["busy"]:
+        return dict(_applying)
+    rows = await db.all("SELECT * FROM users WHERE status!='dismissed' AND discord_id IS NOT NULL AND dept NOT IN ('prosecutor','curator')")
+    _applying.update(busy=True, done=0, total=len(rows))
+
+    async def go():
+        try:
+            for r in rows:
+                try:
+                    await core.set_nick(r)
+                except Exception:
+                    log.exception("Нікнейм %s", r["sid"])
+                _applying["done"] += 1
+                await asyncio.sleep(1.2)
+        finally:
+            _applying["busy"] = False
+    asyncio.get_running_loop().create_task(go())
+    await note(u, "Нікнейми застосовано всім", 0, f"{len(rows)} співробітників")
+    return dict(_applying)
+
+
+async def apply_one(u: dict, sid: int) -> dict:
+    p = await db.one("SELECT * FROM users WHERE sid=?", sid)
+    if not p:
+        raise Fail("Співробітника не знайдено.", 404)
+    ok = await core.set_nick(p)
+    return {"applied": ok}
