@@ -598,13 +598,15 @@ async def button_decision(interaction: discord.Interaction, kind: str, rid: int,
         await interaction.response.send_message(str(e), ephemeral=True)
 
 
-def mention(key: str) -> dict:
-    """Згадка ролей для документа (config.MENTIONS): content + дозвіл пінгувати лише ці ролі."""
-    ids = config.MENTIONS.get(key) or []
-    if not ids:
-        return {}
-    return {"content": " ".join(f"<@&{r}>" for r in ids),
-            "allowed_mentions": discord.AllowedMentions(everyone=False, users=False, roles=[discord.Object(r) for r in ids])}
+def mention(key: str | None, users: list | None = None) -> dict:
+    """Згадка ролей для документа (config.MENTIONS) і, за потреби, конкретних людей (Discord ID):
+    content + дозвіл пінгувати лише їх."""
+    ids = config.MENTIONS.get(key) or [] if key else []
+    uids = [int(x) for x in (users or []) if x]
+    if not ids and not uids:
+        return {"allowed_mentions": discord.AllowedMentions.none()}
+    return {"content": " ".join([f"<@{x}>" for x in uids] + [f"<@&{r}>" for r in ids]),
+            "allowed_mentions": discord.AllowedMentions(everyone=False, users=[discord.Object(x) for x in uids], roles=[discord.Object(r) for r in ids])}
 
 
 async def post_card(kind: str, row: dict):
