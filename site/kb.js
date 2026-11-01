@@ -98,13 +98,20 @@ async function libView() {
     return `<form class="card" data-f="libsave" style="max-width:980px"><header><h3>${it.id ? "Редагування матеріалу" : "Новий матеріал"}</h3></header>
       <div class="form-grid"><label class="f"><span>Розділ</span><select class="i" id="lb-cat">${Object.entries(cats).map(([k, v]) => `<option value="${k}" ${k === it.cat ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
         <label class="f"><span>Назва</span><input class="i" id="lb-title" maxlength="150" value="${esc(it.title || "")}"></label>
-        <label class="f wide"><span>Текст (абзаци через порожній рядок; рядки з «# » стануть заголовками)</span><textarea class="i kb-edit" id="lb-body">${esc(it.body || "")}</textarea></label>
+        <label class="f wide"><span>Готова презентація чи сторінка (.html) — замість тексту</span><input class="i" id="lb-html" type="file" accept=".html,text/html">${it.fmt === "html" ? '<small class="muted">Зараз завантажено HTML-презентацію. Оберіть новий файл, щоб замінити.</small>' : ""}</label>
+        <label class="f wide"><span>Текст (абзаци через порожній рядок; рядки з «# » стануть заголовками)</span><textarea class="i kb-edit" id="lb-body" ${it.fmt === "html" ? "disabled" : ""}>${it.fmt === "html" ? "" : esc(it.body || "")}</textarea></label>
         <label class="f wide"><span>Файли (PDF, зображення) — до 10</span><input class="i" id="lb-files" type="file" multiple accept="application/pdf,image/*"></label></div>
       <div class="acts"><button class="btn" type="button" data-a="libback">Скасувати</button><button class="btn gold" type="submit">Зберегти</button></div></form>`;
   }
   if (st.lib) {
     const it = await call(`/api/lib/${st.lib}`);
     S.cache.libitem = it;
+    if (it.fmt === "html") {
+      // готова презентація: ізольоване вікно без доступу до сайту (sandbox без allow-same-origin)
+      return `<div class="kd-bar"><button class="btn" data-a="libback">← До бібліотеки</button><b class="lib-h">${esc(it.title)}</b><span class="sp"></span>
+        <button class="btn" data-a="libfs">⛶ На весь екран</button>${can ? `<button class="btn" data-a="libedit">Редагувати</button><button class="btn bad" data-a="libdel">🗑 Видалити</button>` : ""}</div>
+        <iframe class="lib-frame" id="lib-frame" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" srcdoc="${esc(it.body)}" title="${esc(it.title)}"></iframe>`;
+    }
     const body = esc(it.body || "").split(/\n{2,}/).map((p) => p.startsWith("# ") ? `<h3>${p.slice(2)}</h3>` : `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
     return `<div class="kd-bar"><button class="btn" data-a="libback">← До бібліотеки</button><span class="sp"></span>
       ${can ? `<button class="btn" data-a="libedit">Редагувати</button><button class="btn bad" data-a="libdel">🗑 Видалити</button>` : ""}</div>
@@ -118,7 +125,7 @@ async function libView() {
   d.items.forEach((x) => (by[x.cat] = by[x.cat] || []).push(x));
   return `${can ? '<div class="bn-actions"><button class="btn gold" data-a="libnew">+ Додати матеріал</button></div>' : ""}
     ${Object.entries(d.cats).map(([k, v]) => `<section class="lib-sec"><h3 class="bn-h">${esc(v)} <span class="muted small">${(by[k] || []).length}</span></h3>
-      ${(by[k] || []).length ? `<div class="lib-grid">${by[k].map((x) => `<button class="lib-card" data-a="libopen" data-id="${x.id}"><b>${esc(x.title)}</b><span>${esc(x.authorName || "")} · ${fmtDT(x.updated)}</span></button>`).join("")}</div>` : '<div class="muted small">Порожньо.</div>'}</section>`).join("")}`;
+      ${(by[k] || []).length ? `<div class="lib-grid">${by[k].map((x) => `<button class="lib-card" data-a="libopen" data-id="${x.id}"><b>${x.fmt === "html" ? "▶ " : ""}${esc(x.title)}</b><span>${esc(x.authorName || "")} · ${fmtDT(x.updated)}</span></button>`).join("")}</div>` : '<div class="muted small">Порожньо.</div>'}</section>`).join("")}`;
 }
 
 /* ---------- іспити ---------- */
@@ -227,6 +234,7 @@ Object.assign(S.actions, {
   }),
   libopen: (b) => { st.lib = +b.dataset.id; R(); scrollTo(0, 0); },
   libback: () => { st.lib = null; st.libEdit = null; R(); },
+  libfs: () => { const f = document.getElementById("lib-frame"); if (f && f.requestFullscreen) f.requestFullscreen(); },
   libnew: () => { st.libEdit = { cat: "lecture" }; R(); },
   libedit: () => { st.libEdit = { ...S.cache.libitem }; R(); },
   libdel: (b) => run(b, async () => { if (!confirm("Видалити матеріал з бібліотеки?")) return; await call(`/api/lib/${st.lib}/delete`, { json: {} }); st.lib = null; toast("Видалено"); R(); }),
@@ -245,7 +253,10 @@ S.forms.kbsearch = () => { st.q = document.getElementById("kb-q").value.trim(); 
 S.forms.libsave = async (f) => run(f.querySelector("button[type=submit]"), async () => {
   const it = st.libEdit;
   const files = (it.files || []).concat(await S.uploadFiles(document.getElementById("lb-files")));
-  const body = { cat: document.getElementById("lb-cat").value, title: document.getElementById("lb-title").value, body: document.getElementById("lb-body").value, files };
+  const hf = document.getElementById("lb-html").files[0];
+  const html = hf ? await hf.text() : null;
+  const body = { cat: document.getElementById("lb-cat").value, title: document.getElementById("lb-title").value, files,
+    ...(html ? { fmt: "html", body: html } : it.fmt === "html" ? { fmt: "html", body: it.body } : { body: document.getElementById("lb-body").value }) };
   const r = await call(it.id ? `/api/lib/${it.id}` : "/api/lib", { json: body });
   st.libEdit = null; st.lib = r.id; toast("Збережено"); R();
 });

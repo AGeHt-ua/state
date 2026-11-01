@@ -19,7 +19,7 @@ def is_examiner(u: dict) -> bool:
 
 # ---------------------------------------------------------------- бібліотека
 async def lib_list() -> list[dict]:
-    rows = await db.all("SELECT id, cat, title, author, t, updated, length(body) AS size FROM kb_items WHERE status!='deleted' ORDER BY cat, title")
+    rows = await db.all("SELECT id, cat, title, author, t, updated, fmt, length(body) AS size FROM kb_items WHERE status!='deleted' ORDER BY cat, title")
     return [{**r, "authorName": (await core.user(r["author"]) or {}).get("name")} for r in rows]
 
 
@@ -35,16 +35,17 @@ async def lib_save(u: dict, b: dict, iid: int | None = None) -> dict:
     if not can_edit_lib(u):
         raise Fail("Додавати матеріали можуть ВКПП, інструктори й керівництво.", 403)
     cat = b.get("cat") if b.get("cat") in CATS else "lecture"
-    title, body = str(b.get("title") or "").strip()[:150], str(b.get("body") or "").strip()[:60000]
+    fmt = "html" if b.get("fmt") == "html" else "text"  # html — готова презентація, показується в ізольованому вікні
+    title, body = str(b.get("title") or "").strip()[:150], str(b.get("body") or "").strip()[:(600000 if fmt == "html" else 60000)]
     files = [str(f)[:40] for f in (b.get("files") or [])][:10]
     if not title or (not body and not files):
         raise Fail("Вкажіть назву й текст (або додайте файл).")
     if iid:
         await lib_get(iid)
-        await db.run("UPDATE kb_items SET cat=?, title=?, body=?, files=?, updated=? WHERE id=?", cat, title, body, json.dumps(files), now_ms(), iid)
+        await db.run("UPDATE kb_items SET cat=?, title=?, body=?, files=?, fmt=?, updated=? WHERE id=?", cat, title, body, json.dumps(files), fmt, now_ms(), iid)
     else:
-        iid = await db.run("INSERT INTO kb_items(cat,title,body,files,author,t,updated,status) VALUES(?,?,?,?,?,?,?,?)",
-                           cat, title, body, json.dumps(files), u["sid"], now_ms(), now_ms(), "active")
+        iid = await db.run("INSERT INTO kb_items(cat,title,body,files,fmt,author,t,updated,status) VALUES(?,?,?,?,?,?,?,?,?)",
+                           cat, title, body, json.dumps(files), fmt, u["sid"], now_ms(), now_ms(), "active")
     return await lib_get(iid)
 
 

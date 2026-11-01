@@ -201,7 +201,8 @@ class DB:
                     "ALTER TABLE candidates ADD COLUMN photo TEXT",
                     "ALTER TABLE orders ADD COLUMN signed_by INTEGER", "ALTER TABLE orders ADD COLUMN signed INTEGER", "ALTER TABLE orders ADD COLUMN note TEXT",
                     "ALTER TABLE raps ADD COLUMN copies TEXT",
-                    "ALTER TABLE orders ADD COLUMN title TEXT", "ALTER TABLE orders ADD COLUMN body TEXT"):
+                    "ALTER TABLE orders ADD COLUMN title TEXT", "ALTER TABLE orders ADD COLUMN body TEXT",
+                    "ALTER TABLE kb_items ADD COLUMN fmt TEXT DEFAULT 'text'"):
             try:
                 await self.conn.execute(sql)
             except Exception:

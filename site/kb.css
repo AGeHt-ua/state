@@ -80,3 +80,5 @@ mark{background:rgba(226,192,127,.35);color:inherit;padding:0 2px}
 .ex-rq li.chosen.right{font-weight:600}
 .ex-txt{white-space:pre-wrap;border:1px dashed var(--line2);padding:8px;margin:6px 0}
 @media (max-width:1000px){.kb-law,.kb-doc-wrap{grid-template-columns:1fr}.kb-side,.kb-toc{position:static;max-height:none}}
+.lib-frame{display:block;width:100%;height:calc(100vh - 210px);min-height:520px;border:1px solid var(--line2);background:#0a0d13}
+.lib-h{font:15px var(--display);margin-left:8px}
