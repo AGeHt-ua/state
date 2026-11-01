@@ -576,6 +576,15 @@ async def button_decision(interaction: discord.Interaction, kind: str, rid: int,
         await interaction.response.send_message(str(e), ephemeral=True)
 
 
+def mention(key: str) -> dict:
+    """Згадка ролей для документа (config.MENTIONS): content + дозвіл пінгувати лише ці ролі."""
+    ids = config.MENTIONS.get(key) or []
+    if not ids:
+        return {}
+    return {"content": " ".join(f"<@&{r}>" for r in ids),
+            "allowed_mentions": discord.AllowedMentions(everyone=False, users=False, roles=[discord.Object(r) for r in ids])}
+
+
 async def post_card(kind: str, row: dict):
     special = f"rap:{row['type']}" if kind == "rap" else None
     if kind == "rap" and row["type"] == "transfer":
@@ -584,7 +593,7 @@ async def post_card(kind: str, row: dict):
     if not ch:
         return
     embed = await (act_embed(row) if kind == "act" else rap_embed(row))
-    msg = await ch.send(embed=embed)  # Discord — журнал: рішення ухвалюються лише в ЄІС «Сова»
+    msg = await ch.send(embed=embed, **(mention(f"rap:{row['type']}") if kind == "rap" else {}))  # рішення ухвалюються лише в ЄІС «Сова»
     table = "acts" if kind == "act" else "raps"
     await db.run(f"UPDATE {table} SET ch_id=?, msg_id=? WHERE id=?", str(ch.id), str(msg.id), row["id"])
     if kind == "rap" and row["type"] in STAGES:

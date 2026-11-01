@@ -171,7 +171,9 @@ async def journal(o: dict, u: dict, label: str):
               style.kv("ХТО", f"{u['name']} · №{u['sid']}", "white"), style.kv("ДАТА", style.when(), "gray")]
     e = style.document("НАКАЗ ПРО ПРИЗНАЧЕННЯ НА ПОСАДУ", 0xC9A05A, desc=style.block(*lines), footer="Статут СБУ, р. V · п. 5.2: призначення наказом Голови СБУ")
     try:
-        await ch.send(embed=e, allowed_mentions=discord.AllowedMentions.none())
+        # підписаний наказ Голови / Заступника — згадка ролі СБУ; проєкти й відхилення — без згадок
+        await ch.send(embed=e, **(core.mention("order") if o["status"] == "active" and "підписано" in label
+                                  else {"allowed_mentions": discord.AllowedMentions.none()}))
     except discord.HTTPException as ex:
         log.warning("Журнал наказів: %s", ex)
 

@@ -155,7 +155,7 @@ async def submit(member: discord.Member | None, sid: int, name: str, age: str, e
     ch = await core.channel("cand:vvb")
     if ch:
         f = await photo_file(c)
-        msg = await ch.send(embed=await card(c, member), **({"file": f} if f else {}))
+        msg = await ch.send(embed=await card(c, member), **({"file": f} if f else {}), **core.mention("cand:vvb"))
         await db.run("UPDATE candidates SET vvb_ch=?, vvb_msg=? WHERE id=?", str(ch.id), str(msg.id), cid)
     else:
         log.warning("Канал ВВБ не знайдено — анкету №%s збережено без картки", cid)
@@ -295,7 +295,7 @@ async def decide(cid: int, reviewer: discord.Member, decision: str, note: str = 
         ch = await core.channel("cand:vkpp")
         if ch:
             f = await photo_file(c)
-            msg = await ch.send(embed=await card(c, None), **({"file": f} if f else {}))
+            msg = await ch.send(embed=await card(c, None), **({"file": f} if f else {}), **core.mention("cand:vkpp"))
             await db.run("UPDATE candidates SET vkpp_ch=?, vkpp_msg=? WHERE id=?", str(ch.id), str(msg.id), cid)
         return "Анкету погоджено й передано до ВКПП."
     if new == "ok":

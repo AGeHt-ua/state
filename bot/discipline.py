@@ -254,7 +254,9 @@ async def journal(o: dict, target: dict | None, u: dict, label: str):
     e = style.document("НАКАЗ ПРО ДИСЦИПЛІНАРНЕ СТЯГНЕННЯ", col, desc=style.block(*lines),
                        footer="Регламент «Дисциплінарні стягнення СБУ» · п. 4.3: реєстрація в журналі кадрового обліку")
     try:
-        await ch.send(embed=e, allowed_mentions=discord.AllowedMentions.none())
+        # наказ, оголошений Головою чи Заступником, — згадка ролі СБУ
+        await ch.send(embed=e, **(core.mention("order") if label == "Оголошено наказ" and u["rank"] >= 14
+                                  else {"allowed_mentions": discord.AllowedMentions.none()}))
     except discord.HTTPException as ex:
         log.warning("Журнал дисципліни: %s", ex)
 
