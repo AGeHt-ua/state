@@ -272,6 +272,11 @@ def can_approve_rap(actor: dict, r: dict) -> bool:
         if actor["rank"] >= 14:  # Голова й заступник можуть поставити візу й за відсутності начальника відділу
             return True
         return (st == "from" and head_of(actor, r["dept"])) or (st == "to" and head_of(actor, json.loads(r["data"] or "{}").get("to")))
+    if r["type"] == "vac":  # відпустку погоджує начальник або заступник начальника свого відділу (Голова й заступник — за відсутності)
+        if actor["rank"] >= 14:
+            return True
+        dept = "vkpp" if r["dept"] == "academy" else r["dept"]
+        return bool(dept) and actor["rank"] in (11, 12) and (actor["dept"] == dept or has_dept_role(actor, dept))
     # Усі кадрові рапорти розглядає ВКПП або керівництво (Начальник управління, Заступник Голови, Голова)
     return actor["rank"] >= 13 or has_dept_role(actor, "vkpp")
 
