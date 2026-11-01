@@ -25,7 +25,8 @@ function blank(staff) {
     <p style="text-indent:0"><b>НАКАЗУЮ:</b> ${p ? `${esc(p.rankName.toLowerCase())} ${esc(p.name)}, жетон №${p.sid},` : "________________,"}
       призначити на посаду <b>${r ? esc(R[r - 1].n.toLowerCase()) : "________"}</b>${d && D[d] && d !== "lead" ? ` (${esc(D[d].n)}${r === 12 && f.extra && f.extra !== d ? `, ${esc(D[f.extra].n)}` : ""})` : ""}.</p>
     <p style="text-indent:0">Відділу кадрів та підготовки персоналу внести зміни до особової справи.</p>
-    <div class="blank-sign"><span>Голова Служби безпеки штату NG</span><span class="kf-sign">${esc(me.name)}</span></div>
+    <div class="blank-sign"><span>Голова Служби безпеки штату NG</span><span>${S.ME().appoint.sign ? `<span class="kf-sign">${esc(me.name)}</span>` : "__________ (підпис)"}</span></div>
+    ${S.ME().appoint.sign ? "" : `<div class="small" style="margin-top:8px">Проєкт підготував: ${esc(me.rankName)} ${esc(me.name)} (ВКПП)</div>`}
     <div class="blank-stamp">ЄІС «СОВА»</div>
   </div>`;
 }
@@ -35,10 +36,11 @@ async function view(head) {
   S.cache.apStaff = staff;
   const f = st.f, D = S.META().depts, R = S.META().ranks, me = S.ME().me;
   const p = staff.find((x) => String(x.sid) === String(f.sid));
-  const r = +f.rank || 0, d = deptFor(f, p);
+  const r = +f.rank || 0, d = deptFor(f, p), sign = S.ME().appoint.sign;
+  list.sort((a, b) => (a.status === "draft" ? 0 : 1) - (b.status === "draft" ? 0 : 1));
   return head + `<div class="grid2 rap-wrap"><form class="card" data-f="apsave">
       <header><h3>Наказ про призначення на посаду</h3></header>
-      <p class="note">Звання з 8-го щабля й вище присвоюються лише наказом Голови. Бот одразу змінить ролі звання й відділу в Discord, нікнейм і запише це в кадровий аудит.</p>
+      <p class="note">Проєкти наказів готує ВКПП, підписують Голова СБУ або Заступник Голови. Після підпису бот одразу змінить ролі звання й відділу в Discord, нікнейм і запише це в кадровий аудит.</p>
       <div class="form-grid">
         <label class="f wide"><span>Співробітник</span><select class="i" data-ap="sid"><option value="">— оберіть —</option>${staff.filter((x) => x.sid !== me.sid && x.dept !== "prosecutor")
           .map((x) => `<option value="${x.sid}" ${String(x.sid) === String(f.sid) ? "selected" : ""}>${esc(x.name)} · ${esc(x.rankName)} · ${esc((D[x.dept] || {}).s || "")} · ${x.sid}</option>`).join("")}</select></label>
@@ -49,15 +51,21 @@ async function view(head) {
         <label class="f wide"><span>Підстава (необов'язково)</span><input class="i" data-ap="reason" maxlength="800" value="${esc(f.reason || "")}" placeholder="напр. за зразкове виконання службових обов'язків"></label>
       </div>
       ${p && r && r < p.rank ? '<p class="note warn">Нове звання нижче за поточне. Для пониження як стягнення краще використати «Дисципліну».</p>' : ""}
-      <div><button class="btn gold" type="submit">Підписати наказ</button></div></form>
+      <div class="acts">${S.ME().appoint.sign ? '<button class="btn" type="submit" data-sign="0">Зберегти як проєкт</button><button class="btn gold" type="submit" data-sign="1">Підписати наказ</button>'
+        : '<button class="btn gold" type="submit" data-sign="0">Подати проєкт на підпис</button>'}</div></form>
     ${blank(staff)}</div>
     <div class="card" style="margin-top:16px"><header><h3>Реєстр наказів про призначення</h3></header>
-      ${list.length ? `<div class="docs">${list.map((o) => `<article class="doc st-ok">
+      ${list.length ? `<div class="docs">${list.map((o) => `<article class="doc st-${{ draft: "wait", active: "ok", rejected: "rej" }[o.status]}">
         <div class="doc-no"><b>${no(o.id)}</b><span>${fmtDT(o.t)}</span></div>
         <div class="doc-main"><div class="doc-title">${esc(o.name)}</div>
           <div class="doc-line">${esc(o.fromRank)} · ${esc((D[o.from_dept] || {}).s || "")} → <b>${esc(o.toRank)}</b> · ${esc((D[o.to_dept] || {}).s || "")}${o.extra ? ` + ${esc(D[o.extra].s)}` : ""}</div>
-          ${o.reason ? `<div class="doc-note">${esc(o.reason)}</div>` : ""}</div>
-        <div class="doc-side"><span class="muted small">підписав ${esc(o.byName)}</span><button class="btn sm bad" data-a="apcancel" data-id="${o.id}">↩ Скасувати наказ</button></div>
+          ${o.reason ? `<div class="doc-note">${esc(o.reason)}</div>` : ""}
+          ${o.status === "rejected" && o.note ? `<div class="doc-note"><b>Відхилено:</b> ${esc(o.note)}</div>` : ""}
+          <div class="small muted">Проєкт: ${esc(o.byName)}${o.signedName ? ` · ${o.status === "rejected" ? "відхилив" : "підписав"} ${esc(o.signedName)}` : ""}</div></div>
+        <div class="doc-side"><span class="doc-stamp">${{ draft: "На підписі", active: "Чинний", rejected: "Відхилено" }[o.status]}</span>
+          ${o.status === "draft" && sign ? `<button class="btn sm ok" data-a="apsign" data-id="${o.id}">Підписати</button><button class="btn sm" data-a="apreject" data-id="${o.id}">Відхилити</button>` : ""}
+          ${o.status === "active" && sign ? `<button class="btn sm bad" data-a="apcancel" data-id="${o.id}">↩ Скасувати наказ</button>` : ""}
+          ${o.status !== "active" && (sign || o.by_sid === me.sid) ? `<button class="btn sm" data-a="apdel" data-id="${o.id}">🗑</button>` : ""}</div>
       </article>`).join("")}</div>` : '<div class="empty">Наказів ще немає.</div>'}</div>`;
 }
 
@@ -70,21 +78,30 @@ document.addEventListener("input", (e) => {
   const b = document.getElementById("ap-blank");
   if (b) b.outerHTML = blank(S.cache.apStaff || []);
 });
-S.forms.apsave = async (form) => {
+S.forms.apsave = async (form, ev) => {
   read();
-  const btn = form.querySelector("button[type=submit]");
+  const btn = (ev && ev.submitter) || form.querySelector("button[type=submit]");
+  const signNow = btn.dataset.sign === "1";
   if (!st.f.sid || !st.f.rank) return toast("Оберіть співробітника й нове звання.", 1);
-  if (!confirm("Підписати наказ? Бот одразу змінить звання й ролі в Discord.")) return;
+  if (!confirm(signNow ? "Підписати наказ? Бот одразу змінить звання й ролі в Discord." : "Подати проєкт наказу на підпис?")) return;
   btn.disabled = true;
   try {
     const p = (S.cache.apStaff || []).find((x) => String(x.sid) === String(st.f.sid));
-    await call("/api/orders", { json: { sid: st.f.sid, rank: st.f.rank, dept: deptFor(st.f, p), extra: st.f.extra || null, reason: st.f.reason || "" } });
-    toast("Наказ підписано. Ролі в Discord оновлено");
+    await call("/api/orders", { json: { sid: st.f.sid, rank: st.f.rank, dept: deptFor(st.f, p), extra: st.f.extra || null, reason: st.f.reason || "", sign: signNow } });
+    toast(signNow ? "Наказ підписано. Ролі в Discord оновлено" : "Проєкт наказу подано на підпис");
     st.f = {};
     await S.refreshMe();
     S.render();
   } catch (e) { toast(e.message, 1); btn.disabled = false; }
 };
+const act = async (b, url, body, ok) => {
+  b.disabled = true;
+  try { await call(url, { json: body || {} }); toast(ok); await S.refreshMe(); S.render(); }
+  catch (e) { toast(e.message, 1); b.disabled = false; }
+};
+S.actions.apsign = (b) => { if (confirm("Підписати наказ? Бот одразу змінить звання й ролі в Discord.")) act(b, `/api/orders/${b.dataset.id}/sign`, null, "Наказ підписано"); };
+S.actions.apreject = (b) => { const note = prompt("Причина відхилення (побачить ВКПП):", ""); if (note !== null) act(b, `/api/orders/${b.dataset.id}/reject`, { note }, "Проєкт відхилено"); };
+S.actions.apdel = (b) => { if (confirm("Видалити проєкт наказу?")) act(b, `/api/orders/${b.dataset.id}/delete`, null, "Проєкт видалено"); };
 S.actions.apcancel = async (b) => {
   if (!confirm("Скасувати наказ? Якщо звання з того часу не змінювалось, бот поверне попереднє звання й підрозділ.")) return;
   b.disabled = true;

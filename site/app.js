@@ -139,7 +139,7 @@ const TITLES = { home: "Службовий кабінет", act: "Звіти п�
 
 function viewShell(inner) {
   const p = ME.pending || {};
-  const badge = { act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases, disc: p.disc || (ME.disc && ME.disc.active) || 0 };
+  const badge = { staff: p.orders, act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases, disc: p.disc || (ME.disc && ME.disc.active) || 0 };
   const c = META.depts[ME.me.dept].color;
   return `<div class="shell" style="--dept:${c}">
   <aside class="side">
@@ -403,7 +403,7 @@ const person = (p) => `<div class="pp ${p.sid === ME.me.sid ? "me" : ""} ${p.sta
 async function vStaff() {
   const canList = ME.me.rank >= 8;
   const t = tab("staff", "tree");
-  const head = tabsBar("staff", [["tree", "Штатна структура"], ...(canList ? [["list", "Особовий склад"]] : []), ...(ME.appoint ? [["appoint", "Призначення"]] : [])], "tree");
+  const head = tabsBar("staff", [["tree", "Штатна структура"], ...(canList ? [["list", "Особовий склад"]] : []), ...(ME.appoint ? [["appoint", "Призначення", ME.pending.orders || undefined]] : [])], "tree");
   if (t === "appoint" && ME.appoint) return window.SOVA.appointView(head);
   if (t === "list" && canList) {
     const list = await call("/api/staff");

@@ -15,13 +15,24 @@ from roles import DEPTS, OPS_DEPTS, rank_name
 log = logging.getLogger("sova.orders")
 
 
+def can_sign(u: dict) -> bool:
+    """Підписують накази Голова СБУ та Заступник Голови."""
+    return u["rank"] >= 14
+
+
+def can_prepare(u: dict) -> bool:
+    """Проєкти наказів готує ВКПП (кадри); Голова й заступник — теж."""
+    return can_sign(u) or core.has_dept_role(u, "vkpp")
+
+
 def can_appoint(u: dict) -> bool:
-    return u["rank"] == 15
+    return can_prepare(u)
 
 
 async def appoint(u: dict, b: dict) -> dict:
-    if not can_appoint(u):
-        raise Fail("Призначення на посади здійснює Голова СБУ.", 403)
+    """Проєкт наказу. Якщо готує Голова чи заступник і просить підписати одразу — наказ одразу набирає чинності."""
+    if not can_prepare(u):
+        raise Fail("Проєкти наказів про призначення готує ВКПП.", 403)
     p = await core.user(int(b.get("sid") or 0))
     if not p or p["status"] == "dismissed" or p["dept"] == "prosecutor":
         raise Fail("Співробітника не знайдено.")
@@ -40,20 +51,64 @@ async def appoint(u: dict, b: dict) -> dict:
     extra = b.get("extra") if to_rank == 12 and b.get("extra") in OPS_DEPTS and b.get("extra") != to_dept else None
     if to_rank == p["rank"] and to_dept == p["dept"] and not extra:
         raise Fail("Звання й підрозділ не змінюються.")
+    if await db.one("SELECT id FROM orders WHERE sid=? AND status='draft'", p["sid"]):
+        raise Fail("На цього співробітника вже є проєкт наказу на підписі.")
     reason = str(b.get("reason") or "").strip()[:800]
-    t = now_ms()
     oid = await db.run("INSERT INTO orders(sid,kind,from_rank,to_rank,from_dept,to_dept,extra,reason,by_sid,t,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                       p["sid"], "appoint", p["rank"], to_rank, p["dept"], to_dept, extra, reason, u["sid"], t, "active")
-    await db.run("UPDATE users SET rank=?, dept=?, since=? WHERE sid=?", to_rank, to_dept, t if to_rank != p["rank"] else p["since"], p["sid"])
-    old = p["dept"] if p["dept"] in OPS_DEPTS and p["dept"] not in (to_dept, extra) else None
-    await apply_roles(p["sid"], extra, f"Сова: наказ НП-{oid:04d}", drop_extra=old)
-    await db.audit(u["sid"], "Призначення на посаду", p["sid"],
-                   f"{rank_name(p['rank'])} / {DEPTS[p['dept']]['s']} → {rank_name(to_rank)} / {DEPTS[to_dept]['s']}"
-                   + (f" + {DEPTS[extra]['s']}" if extra else "") + f" · НП-{oid:04d}")
+                       p["sid"], "appoint", p["rank"], to_rank, p["dept"], to_dept, extra, reason, u["sid"], now_ms(), "draft")
+    if b.get("sign") and can_sign(u):
+        return await sign(u, oid)
     o = await get(oid)
-    await journal(o, u, "Оголошено наказ")
+    await journal(o, u, "Проєкт наказу підготовлено · на підписі Голови")
+    return o
+
+
+async def sign(u: dict, oid: int) -> dict:
+    """Підпис наказу Головою або заступником: звання, підрозділ, ролі й нікнейм змінюються одразу."""
+    if not can_sign(u):
+        raise Fail("Підписують накази Голова СБУ та Заступник Голови.", 403)
+    o = await get(oid)
+    if o["status"] != "draft":
+        raise Fail("Цей проєкт уже розглянуто.")
+    p = await core.user(o["sid"])
+    if not p or p["status"] == "dismissed":
+        raise Fail("Співробітника вже немає у складі.")
+    if p["sid"] == u["sid"]:
+        raise Fail("Підписати наказ щодо себе не можна.")
+    t = now_ms()
+    # «Було» фіксуємо на момент підпису — з проєкту звання могло змінитися
+    await db.run("UPDATE orders SET status='active', from_rank=?, from_dept=?, signed_by=?, signed=? WHERE id=?", p["rank"], p["dept"], u["sid"], t, oid)
+    await db.run("UPDATE users SET rank=?, dept=?, since=? WHERE sid=?", o["to_rank"], o["to_dept"], t if o["to_rank"] != p["rank"] else p["since"], p["sid"])
+    old = p["dept"] if p["dept"] in OPS_DEPTS and p["dept"] not in (o["to_dept"], o["extra"]) else None
+    await apply_roles(p["sid"], o["extra"], f"Сова: наказ НП-{oid:04d}", drop_extra=old)
+    await db.audit(u["sid"], "Призначення на посаду", p["sid"],
+                   f"{rank_name(p['rank'])} / {DEPTS[p['dept']]['s']} → {rank_name(o['to_rank'])} / {DEPTS[o['to_dept']]['s']}"
+                   + (f" + {DEPTS[o['extra']]['s']}" if o["extra"] else "") + f" · НП-{oid:04d}")
+    o = await get(oid)
+    await journal(o, u, "Наказ підписано й оголошено")
     await core.send_audit(await core.user(p["sid"]), u)
     return o
+
+
+async def reject(u: dict, oid: int, note: str) -> dict:
+    if not can_sign(u):
+        raise Fail("Відхиляють проєкти Голова СБУ та Заступник Голови.", 403)
+    o = await get(oid)
+    if o["status"] != "draft":
+        raise Fail("Цей проєкт уже розглянуто.")
+    await db.run("UPDATE orders SET status='rejected', signed_by=?, signed=?, note=? WHERE id=?", u["sid"], now_ms(), (note or "")[:300], oid)
+    o = await get(oid)
+    await journal(o, u, "Проєкт наказу відхилено" + (f": {note}" if note else ""))
+    return o
+
+
+async def delete_draft(u: dict, oid: int):
+    o = await get(oid)
+    if o["status"] not in ("draft", "rejected"):
+        raise Fail("Підписаний наказ не видаляється — його можна лише скасувати.")
+    if not (o["by_sid"] == u["sid"] or can_sign(u)):
+        raise Fail("Видалити проєкт може той, хто його підготував, або Голова й заступник.", 403)
+    await db.run("UPDATE orders SET status='deleted', cancelled_by=?, cancelled=? WHERE id=?", u["sid"], now_ms(), oid)
 
 
 async def apply_roles(sid: int, extra: str | None, reason: str, drop_extra: str | None = None):
@@ -84,8 +139,8 @@ async def get(oid: int) -> dict:
 
 async def cancel(u: dict, oid: int) -> dict:
     """Скасування наказу: повертає попереднє звання/підрозділ, якщо поточні ще такі, як призначив наказ."""
-    if not can_appoint(u):
-        raise Fail("Скасувати наказ може Голова СБУ.", 403)
+    if not can_sign(u):
+        raise Fail("Скасувати наказ може Голова СБУ або Заступник Голови.", 403)
     o = await get(oid)
     if o["status"] != "active":
         raise Fail("Наказ уже скасовано.")
@@ -126,6 +181,8 @@ async def listing() -> list[dict]:
     out = []
     for o in rows:
         p, by = await core.user(o["sid"]), await core.user(o["by_sid"])
-        out.append({**o, "name": p["name"] if p else f"№{o['sid']}", "byName": by["name"] if by else "—",
+        sg = await core.user(o["signed_by"]) if o.get("signed_by") else None
+        out.append({**o, "name": p["name"] if p else f"№{o['sid']}", "byName": by["name"] if by else "—", "signedName": sg["name"] if sg else None,
+                    "curRank": rank_name(p["rank"]) if p else "",
                     "fromRank": rank_name(o["from_rank"]), "toRank": rank_name(o["to_rank"])})
     return out

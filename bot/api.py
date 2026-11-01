@@ -154,11 +154,12 @@ async def me(request):
             "hr": await hr_pending(u),
             "cases": await cases.pending(u),
             "disc": await disc_pending(u),
+            "orders": (await db.one("SELECT COUNT(*) AS n FROM orders WHERE status='draft'"))["n"] if orders.can_sign(u) else 0,
         },
         "hr": hr_rights(u),
         "cases": cases.rights(u),
         "control": depts.control_depts(u),
-        "appoint": orders.can_appoint(u),
+        "appoint": {"prepare": orders.can_prepare(u), "sign": orders.can_sign(u)} if orders.can_prepare(u) else None,
         "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
         "bonus": {"manage": bonus.can_manage(u), "finalize": bonus.can_finalize(u)},
     })
@@ -523,7 +524,7 @@ async def insp_move(request):
 async def orders_list(request):
     u = await auth(request)
     if not orders.can_appoint(u):
-        raise Fail("Накази про призначення доступні Голові СБУ.", 403)
+        raise Fail("Накази про призначення доступні ВКПП, Голові СБУ та заступнику.", 403)
     return web.json_response(await orders.listing())
 
 
@@ -533,6 +534,28 @@ async def orders_create(request):
     o = await orders.appoint(u, await body(request))
     _structure_cache[0] = 0  # схема оновиться з новим званням
     return web.json_response({"id": o["id"]}, status=201)
+
+
+@routes.post("/api/orders/{id}/sign")
+async def orders_sign(request):
+    u = await auth(request)
+    await orders.sign(u, int(request.match_info["id"]))
+    _structure_cache[0] = 0
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/orders/{id}/reject")
+async def orders_reject(request):
+    u = await auth(request)
+    await orders.reject(u, int(request.match_info["id"]), str((await body(request)).get("note") or ""))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/orders/{id}/delete")
+async def orders_delete(request):
+    u = await auth(request)
+    await orders.delete_draft(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
 
 
 @routes.post("/api/orders/{id}/cancel")
