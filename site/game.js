@@ -455,9 +455,9 @@ function draw(g, ctx) {
   const mem = g.mem.getContext("2d");
   mem.fillStyle = "#fff"; conePath(g, mem, -FOV, FOV, .02, VIEW); mem.fill(); nearPath(g, mem); mem.fill();
   const fog = g.fog || (g.fog = mk(CW, CH)), f = fog.getContext("2d");
-  f.globalCompositeOperation = "source-over"; f.fillStyle = "rgba(3,5,9,.97)"; f.fillRect(0, 0, CW, CH);
+  f.globalCompositeOperation = "source-over"; f.fillStyle = "rgba(3,5,9,.9)"; f.fillRect(0, 0, CW, CH);
   f.globalCompositeOperation = "destination-out";
-  f.globalAlpha = .2; f.drawImage(g.mem, 0, 0); f.globalAlpha = 1;                       // розвідане — ледь видно
+  f.globalAlpha = .38; f.drawImage(g.mem, 0, 0); f.globalAlpha = 1;                       // розвідане — ледь видно
   const lg = f.createRadialGradient(p.x, p.y, 20, p.x, p.y, VIEW);
   lg.addColorStop(0, "rgba(0,0,0,1)"); lg.addColorStop(.55, "rgba(0,0,0,.92)"); lg.addColorStop(1, "rgba(0,0,0,.45)");
   f.fillStyle = lg; conePath(g, f, -FOV, FOV, .012, VIEW); f.fill();
