@@ -217,6 +217,22 @@ async def raps_create(request):
     return web.json_response(rap_out(row, await people_map([u["sid"]])), status=201)
 
 
+@routes.get("/api/raps/{id}")
+async def raps_get(request):
+    """Повний текст рапорту для перегляду: автор, той, хто розглядає, ВКПП і керівництво."""
+    u = await auth(request)
+    r = await db.one("SELECT * FROM raps WHERE id=?", int(request.match_info["id"]))
+    if not r or r["status"] == "deleted":
+        raise Fail("Рапорт не знайдено.", 404)
+    if not (r["by_sid"] == u["sid"] or core.can_approve_rap(u, r) or u["rank"] >= 13 or core.has_dept_role(u, "vkpp")
+            or core.head_of(u, r["dept"]) or core.head_of(u, json.loads(r["data"] or "{}").get("to"))):
+        raise Fail("Немає доступу до цього рапорту.", 403)
+    data = json.loads(r["data"] or "{}")
+    out = rap_out(r, await people_map([r["by_sid"], r["reviewer"]]))
+    return web.json_response({**out, "text": core.rap_text(r, data), "canDecide": core.can_approve_rap(u, r), "mine": r["by_sid"] == u["sid"],
+                              "stageLabel": core.transfer_label(r, data.get("stage", "from")) if r["type"] == "transfer" and r["status"] == "wait" else None})
+
+
 @routes.post("/api/raps/{id}/decision")
 async def raps_decide(request):
     u = await auth(request)

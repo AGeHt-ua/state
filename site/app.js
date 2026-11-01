@@ -285,27 +285,53 @@ async function uploadFiles(input) {
 }
 
 /* ---------------- рапорти ---------------- */
+// Візи рапорту на переведення: начальник відділу «звідки» → «куди» → Голова
+function trVisas(r) {
+  const d = r.data || {}, st = d.stage || "from", vis = Object.fromEntries((d.visas || []).map((v) => [v.stage, v]));
+  const steps = [["from", "нач. " + (META.depts[r.dept] || {}).s], ["to", "нач. " + (META.depts[d.to] || {}).s], ["chief", "Голова"]];
+  return `<div class="tr-visas">${steps.map(([k, l]) => `<span class="${vis[k] ? (vis[k].ok === false ? "bad" : "ok") : r.status === "wait" && st === k ? "cur" : ""}">${vis[k] ? (vis[k].ok === false ? "✖" : "✔") : "○"} ${esc(l)}${vis[k] ? ` · ${esc(vis[k].name)}` : ""}</span>`).join("")}</div>`;
+}
+
 function rapDesc(r) {
   const d = r.data || {};
   if (r.type === "promo") return `→ <b>${esc(META.ranks[d.to - 1] ? META.ranks[d.to - 1].n : d.to)}</b>`;
   if (r.type === "vac") return `${d.days} діб${d.from ? " з " + esc(d.from) : ""}${d.reason ? " · " + esc(d.reason) : ""}`;
-  if (r.type === "transfer") {
-    const st = d.stage || "from", vis = Object.fromEntries((d.visas || []).map((v) => [v.stage, v]));
-    const steps = [["from", "нач. " + (META.depts[r.dept] || {}).s], ["to", "нач. " + (META.depts[d.to] || {}).s], ["chief", "Голова"]];
-    return `${deptTag(r.dept)} → ${deptTag(d.to)}${d.reason ? " · " + esc(d.reason) : ""}
-      <div class="tr-visas">${steps.map(([k, l]) => `<span class="${vis[k] ? (vis[k].ok === false ? "bad" : "ok") : r.status === "wait" && st === k ? "cur" : ""}">${vis[k] ? (vis[k].ok === false ? "✖" : "✔") : "○"} ${esc(l)}${vis[k] ? ` · ${esc(vis[k].name)}` : ""}</span>`).join("")}</div>`;
-  }
+  if (r.type === "transfer") return `${deptTag(r.dept)} → ${deptTag(d.to)}${d.reason ? " · " + esc(d.reason) : ""}${trVisas(r)}`;
   return esc(d.reason || "");
 }
 
+const RAP_STAMP = { ok: ["ПОГОДЖЕНО", "ok"], rej: ["ВІДМОВЛЕНО", "bad"], wait: ["НА РОЗГЛЯДІ", "wait"], cancel: ["ВІДКЛИКАНО", "mute"] };
+async function vRapView(id) {
+  const r = await call(`/api/raps/${id}`);
+  const a = r.by || { name: "—", rankName: "", sid: "" }, d = META.depts[r.dept] || {};
+  const [sw, sc] = RAP_STAMP[r.status] || ["", ""];
+  const bar = `<div class="kd-bar"><button class="btn" data-a="rapback">← До рапортів</button><span class="sp"></span>
+    ${r.canDecide ? `<button class="btn ok" data-a="rapd" data-id="${r.id}" data-d="ok">Погодити</button><button class="btn bad" data-a="rapd" data-id="${r.id}" data-d="rej">Відмовити</button>` : ""}
+    ${r.mine && r.status === "wait" ? `<button class="btn" data-a="wd" data-k="raps" data-id="${r.id}">↩ Відкликати</button>` : ""}
+    ${r.mine && ["wait", "rej", "cancel"].includes(r.status) ? `<button class="btn bad" data-a="del" data-url="/api/raps/${r.id}/delete" data-q="Видалити рапорт?">🗑 Видалити</button>` : ""}</div>`;
+  return bar + `<div class="rap-view"><div class="blank rap-doc">
+      <div class="rap-no">${docNo("РАП", r.id)}</div>
+      <div class="blank-to">Голові Служби безпеки штату NG<br>від ${esc((a.rankName || "").toLowerCase())}<br>${esc(d.n || "")}<br><b>${esc(a.name)}</b>, жетон №${a.sid}</div>
+      <div class="blank-title">Р А П О Р Т</div>
+      <div class="rap-sub">${esc((META.rapTypes[r.type] || "").replace("Рапорт ", ""))}</div>
+      <p>${esc(r.text)}</p>
+      <div class="blank-sign"><span>${new Date(r.t).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span><span class="kf-sign">${esc(a.name)}</span></div>
+      ${r.type === "transfer" ? `<div class="rap-visas"><b>Візи погодження</b>${trVisas(r)}</div>` : ""}
+      <div class="rap-res"><b>Резолюція:</b> ${r.status === "wait" ? `очікує розгляду${r.stageLabel ? " · зараз: " + esc(r.stageLabel) : ""}` : esc(sw.toLowerCase())}
+        ${r.reviewer ? ` · ${esc(r.reviewer.rankName || "")} <span class="kf-sign">${esc(r.reviewer.name)}</span>` : ""}${r.reviewed ? ` · ${fmtDT(r.reviewed)}` : ""}</div>
+      <div class="rap-stamp ${sc}">${sw}</div>
+    </div></div>`;
+}
+
 async function vRap() {
-  const canRev = ME.me.rank >= 13 || !!(ME.hr && ME.hr.vkpp);
+  if (UI.rapId) return vRapView(UI.rapId);
+  const canRev = ME.me.rank >= 12 || !!(ME.hr && ME.hr.vkpp) || (ME.pending.raps || 0) > 0;
   const t = tab("rap", "mine");
   const head = tabsBar("rap", [["mine", "Мої рапорти"], ["new", "Подати рапорт"], ...(canRev ? [["review", "На розгляд", ME.pending.raps || 0]] : [])], "mine");
   if (t === "new") return head + rapForm();
   const list = await call("/api/raps" + (t === "review" ? "?scope=review" : ""));
   if (!list.length) return head + `<div class="empty">${t === "review" ? "Немає рапортів на розгляд." : "Ви ще не подавали рапортів."}</div>`;
-  return head + `<div class="docs">${list.map((r) => `<article class="doc st-${r.status}">
+  return head + `<div class="docs">${list.map((r) => `<article class="doc st-${r.status} clickable" data-a="rapopen" data-id="${r.id}" title="Відкрити рапорт">
       <div class="doc-no"><b>${docNo("РАП", r.id)}</b><span>${fmtDT(r.t)}</span></div>
       <div class="doc-main">${t === "review" ? `<div class="doc-who">${who(r.by)} ${deptTag(r.dept)}</div>` : ""}
         <div class="doc-title">${esc(META.rapTypes[r.type])}</div><div class="doc-line">${rapDesc(r)}</div></div>
@@ -570,11 +596,13 @@ async function refreshMe() {
 }
 
 const A = {
-  nav: (b) => { UI.view = b.dataset.v; HOOKS.forEach((f) => f(UI.view)); render(); scrollTo(0, 0); },
+  nav: (b) => { UI.view = b.dataset.v; UI.rapId = null; HOOKS.forEach((f) => f(UI.view)); render(); scrollTo(0, 0); },
   go: (b) => { UI.view = b.dataset.v; if (b.dataset.tab) UI.tabs[b.dataset.v] = b.dataset.tab; render(); scrollTo(0, 0); },
+  rapopen: (b) => { UI.rapId = +b.dataset.id; render(); scrollTo(0, 0); },
+  rapback: () => { UI.rapId = null; render(); },
   raptype: (b) => { UI.rapType = b.dataset.v; render(); },
   auditf: (b) => { UI.auditF = b.dataset.v; render(); },
-  tab: (b) => { UI.tabs[b.dataset.k] = b.dataset.v; render(); },
+  tab: (b) => { UI.rapId = null; UI.tabs[b.dataset.k] = b.dataset.v; render(); },
   logout: () => logout(false),
   file: async (b) => {
     try { const r = await call(`/api/files/${encodeURIComponent(b.dataset.id)}/url`); window.open(r.url, "_blank", "noopener"); }
@@ -601,7 +629,7 @@ const A = {
   del: async (b) => {
     if (!confirm(b.dataset.q || "Видалити?")) return;
     b.disabled = true;
-    try { await call(b.dataset.url, { json: {} }); toast("Видалено"); await refreshMe(); render(); }
+    try { await call(b.dataset.url, { json: {} }); toast("Видалено"); UI.rapId = null; await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
   wd: async (b) => {

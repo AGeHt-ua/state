@@ -163,3 +163,18 @@
 .tr-visas .ok{color:var(--ok);border-color:rgba(95,179,122,.4)}
 .tr-visas .bad{color:var(--bad);border-color:rgba(212,96,90,.5)}
 .tr-visas .cur{color:var(--gold2);border-color:var(--gold)}
+/* ---------- перегляд рапорту ---------- */
+.doc.clickable{cursor:pointer}
+.doc.clickable:hover .doc-title{color:var(--gold2)}
+.rap-view{display:grid;justify-items:center}
+.rap-doc{width:min(760px,100%);rotate:0deg;padding:44px 52px 40px;font-size:16px}
+.rap-no{position:absolute;left:28px;top:22px;font:700 13px var(--mono);letter-spacing:.06em;color:#5a5143}
+.rap-sub{text-align:center;margin:-8px 0 18px;font-style:italic;color:#5a5143}
+.rap-visas{margin-top:22px;padding-top:10px;border-top:1px dashed rgba(42,36,24,.35);font-size:14px}
+.rap-visas .tr-visas span{color:#5a5143;border-color:rgba(42,36,24,.3)}
+.rap-visas .tr-visas .ok{color:#24603a;border-color:#24603a}.rap-visas .tr-visas .bad{color:#8e1d17;border-color:#8e1d17}.rap-visas .tr-visas .cur{color:#1e4f8c;border-color:#1e4f8c}
+.rap-res{margin-top:16px;font-size:14px}
+.rap-res .kf-sign{font-size:22px}
+.rap-stamp{position:absolute;right:40px;top:120px;font:700 18px var(--mono);letter-spacing:.16em;padding:6px 14px;border:4px double currentColor;rotate:-12deg;opacity:.85}
+.rap-stamp.ok{color:#24603a}.rap-stamp.bad{color:#8e1d17}.rap-stamp.wait{color:#1e4f8c}.rap-stamp.mute{color:#6b6253}
+@media (max-width:760px){.rap-doc{padding:40px 20px 24px}.rap-stamp{position:static;display:inline-block;margin-top:14px}}
