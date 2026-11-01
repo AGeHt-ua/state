@@ -63,6 +63,11 @@ def week_start(offset: int = 0) -> int:
     return int(monday.timestamp() * 1000) - offset * 7 * DAY
 
 
+def has_role(u: dict, role_id: int) -> bool:
+    hit = _roles_cache.get(str(u.get("discord_id")))
+    return bool(hit and hit[1] and role_id in hit[1])
+
+
 def act_allowed(u: dict, act_id: str) -> bool:
     _, _, depts, _ = ACTS[act_id]
     if u["rank"] == 1:
@@ -70,8 +75,10 @@ def act_allowed(u: dict, act_id: str) -> bool:
     if depts == "all":
         return True
     if depts == "instr":
-        return u["rank"] == 8 or u["rank"] >= 11 or u["dept"] == "vkpp"
-    return u["dept"] in depts
+        return u["rank"] == 8 or u["rank"] >= 11 or has_dept_role(u, "vkpp")
+    if "press" in depts and (u["dept"] == "press" or has_role(u, PRESS_ROLE)):  # прес-служба позаштатна
+        return True
+    return any(d == u["dept"] or (d in DEPTS and DEPTS[d]["role"] and has_dept_role(u, d)) for d in depts)
 
 
 async def coef() -> dict:
@@ -232,9 +239,14 @@ async def sync_roles(u: dict, reason: str):
 def can_approve_act(actor: dict, a: dict) -> bool:
     if a["by_sid"] == actor["sid"] or a["status"] != "wait":
         return False
+    if actor["rank"] >= 13:
+        return True
     if a["dept"] == "academy":
-        return actor["rank"] == 8 or (actor["dept"] == "vkpp" and actor["rank"] >= 9) or actor["rank"] >= 13
-    return actor["rank"] >= 9 and (actor["dept"] == a["dept"] or actor["dept"] == "lead")
+        return actor["rank"] == 8 or (actor["rank"] >= 9 and has_dept_role(actor, "vkpp"))
+    if a["dept"] == "press":  # звіти позаштатної прес-служби перевіряє керівництво
+        return False
+    # керівник групи і вище свого відділу; начальник, що веде два відділи, — обох
+    return actor["rank"] >= 9 and has_dept_role(actor, a["dept"])
 
 
 # Рапорти з візами: переведення — начальник «звідки» → начальник «куди» → Голова або заступник;
@@ -679,8 +691,9 @@ async def create_act(u: dict, body: dict) -> dict:
         raise Fail("Для затримання вкажіть статті, які оголошено затриманому.")
     qty = max(1, min(12, int(body.get("qty") or 1)))
     when = int(body.get("t") or now_ms())
+    dept = "press" if ACTS[t][2] == ["press"] else u["dept"]
     rid = await db.run("INSERT INTO acts(by_sid,dept,type,qty,t,arts,subj,evidence,files,note) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                       u["sid"], u["dept"], t, qty, min(when, now_ms()), json.dumps(arts, ensure_ascii=False),
+                       u["sid"], dept, t, qty, min(when, now_ms()), json.dumps(arts, ensure_ascii=False),
                        str(body.get("subj", ""))[:200], ev[:500], json.dumps(files), str(body.get("note", ""))[:1500])
     row = await db.one("SELECT * FROM acts WHERE id=?", rid)
     await post_card("act", row)

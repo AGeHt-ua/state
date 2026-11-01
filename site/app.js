@@ -430,6 +430,7 @@ async function vStaff() {
       ${tier("Управління", ps.filter((p) => p.rank >= 11), "начальник відділу")}
       ${tier("Особовий склад", ps.filter((p) => p.rank >= 5 && p.rank <= 10))}
       ${tier("Старші агенти · випускники Академії", ps.filter((p) => p.rank === 4))}
+      ${tier("Звання 1–3 з роллю відділу · за структурою мають бути в Академії", ps.filter((p) => p.rank <= 3))}
     </section>`;
   };
   const academy = () => {

@@ -516,10 +516,15 @@ async def insp_move(request):
     return web.json_response({"ok": True})
 
 
+_structure_cache: list = [0.0, None]
+
+
 @routes.get("/api/structure")
 async def structure(request):
-    """Штатна структура: увесь чинний склад (без балів) — для схеми ієрархії відділів."""
+    """Штатна структура: увесь чинний склад (без балів) — для схеми ієрархії відділів. Кеш 5 хв: ролі тягнемо з Discord."""
     await auth(request)
+    if _structure_cache[1] is not None and time.time() - _structure_cache[0] < 300:
+        return web.json_response(_structure_cache[1])
     rows = await db.all("SELECT * FROM users WHERE status!='dismissed' ORDER BY rank DESC, sid")
 
     async def roles(r):
@@ -532,6 +537,7 @@ async def structure(request):
     for r, rs in zip(rows, all_roles):
         rs = rs or set()
         out.append({**public_user(r), "press": PRESS_ROLE in rs, "depts": [d for d in OPS_DEPTS if DEPTS[d]["role"] in rs]})
+    _structure_cache[:] = [time.time(), out]
     return web.json_response(out)
 
 

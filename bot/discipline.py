@@ -77,7 +77,8 @@ VMAP = {v[0]: v for v in VIOLATIONS}
 def depts_of(u: dict) -> set[str]:
     hit = core._roles_cache.get(str(u.get("discord_id")))
     roles = hit[1] if hit and hit[1] else set()
-    return {u["dept"]} | {d for d in OPS_DEPTS if DEPTS[d]["role"] in roles}
+    out = {u["dept"]} | {d for d in OPS_DEPTS if DEPTS[d]["role"] in roles}
+    return out | {"academy"} if "vkpp" in out else out  # Начальник ВКПП — він же начальник академії
 
 
 def can_punish(u: dict, target: dict, kind: str) -> bool:
