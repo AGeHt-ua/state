@@ -106,11 +106,20 @@
 /* будь-який бланк у PDF: рівно, без тіней і поворотів, на ширину A4 */
 .pdf-host>.pdf{width:794px!important;max-width:none!important;box-shadow:none!important;rotate:0deg!important;transform:none!important;margin:0!important}
 .pdf-host>.pdf.dark{background:#f3eee2!important;color:#231c12!important}
-/* службовий звіт: розгорнутий бланк */
-.act-full{margin:-4px 0 14px;padding:18px 0 6px;display:flex;justify-content:center;animation:actIn .25s ease}
-@keyframes actIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
-.doc.open{border-color:var(--gold)}
+/* службові звіти: записи журналу */
+.act-row{cursor:pointer;grid-template-columns:150px minmax(0,1fr) auto;background:linear-gradient(100deg,rgba(201,162,77,.06),transparent 40%),var(--panel)}
+.act-row::after{content:"";position:absolute;right:150px;top:50%;width:90px;height:90px;margin-top:-45px;background:url(sbu-logo.webp) center/contain no-repeat;opacity:.04;pointer-events:none}
+.act-row .doc-no{display:grid;gap:3px;align-content:start;padding:8px 10px;border:1px dashed var(--line2);border-left:3px solid var(--dc);background:rgba(0,0,0,.18)}
+.act-row .doc-no b::before{content:"СЛУЖБОВИЙ ЗВІТ";display:block;font:9px var(--mono);letter-spacing:.18em;color:var(--muted);margin-bottom:2px}
+.act-ds{font:700 10px var(--mono);font-style:normal;letter-spacing:.12em;color:var(--dc);text-transform:uppercase}
+.act-row:hover{border-color:rgba(201,162,77,.45)}
+.act-row:hover .doc-title{color:var(--gold2)}
+/* повна сторінка звіту */
+.act-page{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px;align-items:start}
+.act-page .kd-wrap{display:flex;justify-content:center}
+.act-trail{position:sticky;top:90px}
 .act-kd .kd-title h2{font-size:24px}
 .act-stamp{position:absolute;right:56px;top:190px;font:700 18px var(--mono);letter-spacing:.16em;padding:6px 14px;border:4px double currentColor;rotate:-12deg;opacity:.85}
 .act-stamp.ok{color:#24603a}.act-stamp.bad{color:#8e1d17}.act-stamp.wait{color:#1e4f8c}.act-stamp.mute{color:#6b6253}
-@media (max-width:760px){.act-stamp{position:static;display:inline-block;margin-top:14px}}
+@media (max-width:1100px){.act-page{grid-template-columns:1fr}.act-trail{position:static}}
+@media (max-width:760px){.act-stamp{position:static;display:inline-block;margin-top:14px}.act-row{grid-template-columns:1fr}.act-row::after{display:none}.act-row .doc-side{justify-items:start;text-align:left}}

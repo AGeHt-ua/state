@@ -257,6 +257,15 @@ def can_approve_act(actor: dict, a: dict) -> bool:
     return actor["rank"] >= 9 and has_dept_role(actor, a["dept"])
 
 
+def can_view_act(actor: dict, a: dict) -> bool:
+    """Повний звіт бачать автор, керівництво (13+) і керівники підрозділу звіту (ранг 9+ з роллю; Академія — інструктори й ВКПП)."""
+    if a["by_sid"] == actor["sid"] or actor["rank"] >= 13:
+        return True
+    if a["dept"] == "academy":
+        return actor["rank"] == 8 or (actor["rank"] >= 9 and has_dept_role(actor, "vkpp"))
+    return actor["rank"] >= 9 and bool(a["dept"]) and has_dept_role(actor, a["dept"])
+
+
 # Рапорти з візами: переведення — начальник «звідки» → начальник «куди» → Голова або заступник;
 # розподіл випускника Академії — Начальник академії (ВКПП) → начальник відділу, куди проситься
 STAGES = {"transfer": ("from", "to", "chief"), "assign": ("from", "to")}

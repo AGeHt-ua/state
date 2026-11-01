@@ -181,10 +181,22 @@ async def acts_list(request):
     u = await auth(request)
     if request.query.get("scope") == "review":
         rows = [a for a in await db.all("SELECT * FROM acts WHERE status='wait' ORDER BY t") if core.can_approve_act(u, a)]
+    elif request.query.get("scope") == "journal":  # журнал звітів підрозділів для керівників
+        rows = [a for a in await db.all("SELECT * FROM acts WHERE status!='deleted' ORDER BY t DESC LIMIT 600") if a["by_sid"] != u["sid"] and core.can_view_act(u, a)][:200]
     else:
         rows = await db.all("SELECT * FROM acts WHERE by_sid=? AND status!='deleted' ORDER BY t DESC LIMIT 200", u["sid"])
     people = await people_map([r["by_sid"] for r in rows] + [r["reviewer"] for r in rows])
     return web.json_response([act_out(r, people) for r in rows])
+
+
+@routes.get("/api/acts/{id}")
+async def acts_one(request):
+    u = await auth(request)
+    a = await db.one("SELECT * FROM acts WHERE id=? AND status!='deleted'", int(request.match_info["id"]))
+    if not a or not core.can_view_act(u, a):
+        raise Fail("Звіт не знайдено або немає допуску.", 404)
+    out = act_out(a, await people_map([a["by_sid"], a["reviewer"]]))
+    return web.json_response({**out, "canDecide": core.can_approve_act(u, a), "mine": a["by_sid"] == u["sid"]})
 
 
 @routes.post("/api/acts")

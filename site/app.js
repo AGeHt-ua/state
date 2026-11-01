@@ -254,30 +254,49 @@ function actDoc(a) {
     <footer class="kd-foot">ЄІС «Сова» · ${docNo("ЗВТ", a.id)} · Для службового користування</footer></div>`;
 }
 function actFeed(list, review) {
-  window.SOVA.cache.acts = Object.fromEntries(list.map((a) => [a.id, a]));
+  window.SOVA.cache.acts = { ...(window.SOVA.cache.acts || {}), ...Object.fromEntries(list.map((a) => [a.id, a])) };
   return `<div class="docs">${list.map((a) => {
     const meta = META.acts[a.type] || { n: a.type, p: 0 };
-    return `<article class="doc st-${a.status}">
-      <div class="doc-no"><b>${docNo("ЗВТ", a.id)}</b><span>${fmtDT(a.t)}</span></div>
+    const dp = META.depts[a.dept] || {};
+    return `<article class="doc act-row st-${a.status}" style="--dc:${dp.color || "#c9a24d"}" data-a="actopen" data-id="${a.id}" title="Відкрити звіт повністю">
+      <div class="doc-no"><b>${docNo("ЗВТ", a.id)}</b><span>${fmtDT(a.t)}</span><i class="act-ds">${esc(dp.s || "")}</i></div>
       <div class="doc-main">
         ${review ? `<div class="doc-who">${who(a.by)} ${deptTag(a.dept)}</div>` : ""}
         <div class="doc-title">${esc(meta.n)}${a.qty > 1 ? ` <span class="muted">×${a.qty}</span>` : ""} <span class="pts">+${meta.p * (a.qty || 1)} б.</span></div>
         ${a.subj ? `<div class="doc-line"><span>Фігурант</span>${esc(a.subj)}</div>` : ""}
         ${a.arts.length ? `<div class="art-list">${a.arts.map((n) => `<span class="art">ст. ${esc(n)}</span>`).join("")}</div>` : ""}
         ${a.note ? `<div class="doc-note">${esc(a.note)}</div>` : ""}
-        <div class="files"><button class="btn sm gold" data-a="actx" data-id="${a.id}">▾ Повністю</button><button class="btn sm" data-a="actpdf" data-id="${a.id}">⬇ PDF</button>${a.evidence ? `<a class="btn sm" href="${esc(a.evidence)}" target="_blank" rel="noopener">▶ Відкат</a>` : ""}${a.files.map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}">📎 Файл ${i + 1}</button>`).join("")}</div>
+        <div class="files"><button class="btn sm gold" data-a="actopen" data-id="${a.id}">📂 Відкрити звіт</button><button class="btn sm" data-a="actpdf" data-id="${a.id}">⬇ PDF</button>${a.evidence ? `<a class="btn sm" href="${esc(a.evidence)}" target="_blank" rel="noopener">▶ Відкат</a>` : ""}${a.files.map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}">📎 Файл ${i + 1}</button>`).join("")}</div>
       </div>
-      <div class="doc-side">${review
+      <div class="doc-side">${review === "review"
         ? `<button class="btn sm ok" data-a="actd" data-id="${a.id}" data-d="ok">Підтвердити</button><button class="btn sm bad" data-a="actd" data-id="${a.id}" data-d="rej">Відхилити</button>`
-        : `<span class="doc-stamp">${stLabel[a.status]}</span>${a.reviewer ? `<span class="muted small">${esc(a.reviewer.name)}</span>` : ""}${a.status === "wait" ? `<button class="btn sm" data-a="wd" data-k="acts" data-id="${a.id}">↩ Відкликати</button>` : ""}${["wait", "rej", "cancel"].includes(a.status) ? `<button class="btn sm bad" data-a="del" data-url="/api/acts/${a.id}/delete" data-q="Видалити документ? Його буде прибрано з кабінету, у журналі Discord лишиться запис.">🗑 Видалити</button>` : ""}`}</div>
-    </article><div class="act-full" id="actf-${a.id}" hidden></div>`;
+        : `<span class="doc-stamp">${stLabel[a.status]}</span>${a.reviewer ? `<span class="muted small">${esc(a.reviewer.name)}</span>` : ""}${review ? "" : `${a.status === "wait" ? `<button class="btn sm" data-a="wd" data-k="acts" data-id="${a.id}">↩ Відкликати</button>` : ""}${["wait", "rej", "cancel"].includes(a.status) ? `<button class="btn sm bad" data-a="del" data-url="/api/acts/${a.id}/delete" data-q="Видалити документ? Його буде прибрано з кабінету, у журналі Discord лишиться запис.">🗑 Видалити</button>` : ""}`}`}</div>
+    </article>`;
   }).join("")}</div>`;
 }
 
+async function vActView(id) {
+  const a = await call(`/api/acts/${id}`);
+  window.SOVA.cache.acts = { ...(window.SOVA.cache.acts || {}), [a.id]: a };
+  const ev = [[a.t, "Звіт складено й подано на перевірку", a.by]];
+  if (a.reviewed) ev.push([a.reviewed, a.status === "ok" ? "Підтверджено, бали нараховано" : a.status === "rej" ? "Відхилено" : stLabel[a.status], a.reviewer]);
+  return `<div class="kd-bar"><button class="btn" data-a="actback">← До звітів</button><span class="sp"></span>
+      <button class="btn" data-a="actpdf" data-id="${a.id}">⬇ PDF</button>
+      ${a.canDecide ? `<button class="btn ok" data-a="actd" data-id="${a.id}" data-d="ok">Підтвердити</button><button class="btn bad" data-a="actd" data-id="${a.id}" data-d="rej">Відхилити</button>` : ""}
+      ${a.mine && a.status === "wait" ? `<button class="btn" data-a="wd" data-k="acts" data-id="${a.id}">↩ Відкликати</button>` : ""}
+      ${a.mine && ["wait", "rej", "cancel"].includes(a.status) ? `<button class="btn bad" data-a="del" data-url="/api/acts/${a.id}/delete" data-q="Видалити звіт?">🗑 Видалити</button>` : ""}</div>
+    <div class="act-page"><div class="kd-wrap">${actDoc(a)}</div>
+      <aside class="card act-trail"><header><h3>Рух документа</h3></header><div class="aud">${ev.map(([t, l, u]) => `<div class="aud-it k-${l.startsWith("Відхил") ? "down" : "in"}"><i></i>
+        <div class="aud-when"><b>${new Date(t).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })}</b><span>${new Date(t).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span></div>
+        <div class="aud-body"><div class="aud-act">${esc(l)}</div><div class="aud-who">${u ? `<b>${esc(u.name)}</b> · ${esc(u.rankName || "")}` : ""}</div></div></div>`).join("")}</div></aside></div>`;
+}
+
 async function vAct() {
+  if (UI.actId) return vActView(UI.actId);
   const canRev = ME.me.rank >= 8;
+  const canJournal = ME.me.rank >= 8 || !!(ME.hr && ME.hr.vkpp);
   const t = tab("act", "mine");
-  const head = tabsBar("act", [["mine", "Мої звіти"], ["new", "Новий звіт"], ...(canRev ? [["review", "На перевірку", ME.pending.acts || 0]] : [])], "mine");
+  const head = tabsBar("act", [["mine", "Мої звіти"], ["new", "Новий звіт"], ...(canRev ? [["review", "На перевірку", ME.pending.acts || 0]] : []), ...(canJournal ? [["journal", "Журнал підрозділів"]] : [])], "mine");
   if (t === "new") {
     const allowed = ME.allowedActs.map((k) => [k, META.acts[k]]);
     return head + `<div class="card paper"><header class="paper-head"><div><div class="eyebrow">Служба безпеки штату NG · ${esc(META.depts[ME.me.dept].s)}</div><h3>СЛУЖБОВИЙ ЗВІТ</h3></div>
@@ -296,8 +315,10 @@ async function vAct() {
           <button class="btn gold" type="submit" id="a-btn">Надіслати на перевірку</button></div>
       </form></div>`;
   }
-  const list = await call("/api/acts" + (t === "review" ? "?scope=review" : ""));
-  return head + (list.length ? actFeed(list, t === "review") : `<div class="empty">${t === "review" ? "Немає звітів, що очікують перевірки." : "Звітів ще немає."}</div>`);
+  const list = await call("/api/acts" + (t === "review" || t === "journal" ? "?scope=" + t : ""));
+  const empty = { review: "Немає звітів, що очікують перевірки.", journal: "У ваших підрозділах звітів ще немає." }[t] || "Звітів ще немає.";
+  return head + (t === "journal" ? '<p class="note">Усі звіти співробітників підрозділів, якими ви керуєте. Натисніть на звіт, щоб відкрити його повністю.</p>' : "")
+    + (list.length ? actFeed(list, t === "mine" ? false : t) : `<div class="empty">${empty}</div>`);
 }
 
 async function uploadFiles(input) {
@@ -658,12 +679,12 @@ async function refreshMe() {
 
 const A = {
   nav: (b) => { UI.view = b.dataset.v; UI.rapId = null; HOOKS.forEach((f) => f(UI.view)); render(); scrollTo(0, 0); },
-  go: (b) => { UI.view = b.dataset.v; if (b.dataset.tab) UI.tabs[b.dataset.v] = b.dataset.tab; render(); scrollTo(0, 0); },
+  go: (b) => { UI.actId = null; UI.view = b.dataset.v; if (b.dataset.tab) UI.tabs[b.dataset.v] = b.dataset.tab; render(); scrollTo(0, 0); },
   rapopen: (b) => { UI.rapId = +b.dataset.id; render(); scrollTo(0, 0); },
   rapback: () => { UI.rapId = null; render(); },
   raptype: (b) => { UI.rapType = b.dataset.v; render(); },
   auditf: (b) => { UI.auditF = b.dataset.v; render(); },
-  tab: (b) => { UI.rapId = null; UI.tabs[b.dataset.k] = b.dataset.v; render(); },
+  tab: (b) => { UI.rapId = null; UI.actId = null; UI.tabs[b.dataset.k] = b.dataset.v; render(); },
   logout: () => logout(false),
   file: async (b) => {
     try { const r = await call(`/api/files/${encodeURIComponent(b.dataset.id)}/url`); window.open(r.url, "_blank", "noopener"); }
@@ -671,14 +692,8 @@ const A = {
   },
   // універсальна кнопка PDF: data-sel — селектор бланка на сторінці, data-name — назва файлу
   pdfel: (b) => window.SOVA.pdfBtn(b, b.dataset.sel, b.dataset.name),
-  actx: (b) => {
-    const box = document.getElementById("actf-" + b.dataset.id), a = window.SOVA.cache.acts && window.SOVA.cache.acts[b.dataset.id];
-    if (!box || !a) return;
-    if (box.hidden && !box.innerHTML) box.innerHTML = actDoc(a);
-    box.hidden = !box.hidden;
-    b.textContent = box.hidden ? "▾ Повністю" : "▴ Згорнути";
-    b.closest(".doc").classList.toggle("open", !box.hidden);
-  },
+  actopen: (b) => { UI.actId = +b.dataset.id; UI.view = "act"; render(); scrollTo(0, 0); },
+  actback: () => { UI.actId = null; render(); },
   actpdf: (b) => {
     const a = window.SOVA.cache.acts && window.SOVA.cache.acts[b.dataset.id];
     if (a) window.SOVA.pdfBtn(b, actDoc(a), `${docNo("ЗВТ", a.id)}_${(META.acts[a.type] || {}).n || ""}`);
@@ -751,7 +766,7 @@ const F = {
   },
 };
 
-document.addEventListener("click", (e) => { const b = e.target.closest("[data-a]"); if (!b || b.disabled) return; const f = A[b.dataset.a]; if (f) { e.preventDefault(); f(b); } });
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-a]"); if (!b || b.disabled) return; const ln = e.target.closest("a[href]"); if (ln && ln !== b && b.contains(ln)) return; const f = A[b.dataset.a]; if (f) { e.preventDefault(); f(b); } });
 document.addEventListener("submit", (e) => { const f = e.target.closest("[data-f]"); if (!f) return; e.preventDefault(); const h = F[f.dataset.f]; if (h) h(f, e); });
 document.addEventListener("input", (e) => {
   if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview();
