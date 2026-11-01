@@ -309,7 +309,7 @@ async def promo_check(u: dict) -> dict | None:
 
 
 # ---------------------------------------------------------------- канали
-CHANNEL_KEYS = [k for k in DEPTS if DEPTS[k]["channel"]] + ["audit", "files", "backups"]
+CHANNEL_KEYS = [k for k in DEPTS if DEPTS[k]["channel"]] + ["audit", "files", "backups", "log"]
 
 
 async def channel(key: str) -> discord.TextChannel | None:
@@ -344,7 +344,7 @@ async def ensure_channels(g: discord.Guild):
 
     lead_roles = [role(r) for r in RANK_ROLES[12:]]
     see = discord.PermissionOverwrite(view_channel=True, read_message_history=True, send_messages=False)
-    names = {k: v["channel"] for k, v in DEPTS.items()} | {"audit": "сова-кадровий-аудит", "files": "сова-сховище-файлів", "backups": "сова-бекапи"}
+    names = {k: v["channel"] for k, v in DEPTS.items()} | {"audit": "сова-кадровий-аудит", "files": "сова-сховище-файлів", "backups": "сова-бекапи", "log": "сова-журнал"}
     for key in CHANNEL_KEYS:
         if key in config.CHANNELS:  # наявний канал сервера, нічого не створюємо
             if not g.get_channel(config.CHANNELS[key]):
@@ -360,7 +360,7 @@ async def ensure_channels(g: discord.Guild):
             viewers += [role(DEPTS["vkpp"]["role"]), role(RANK_ROLES[7]), role(RANK_ROLES[0]), role(RANK_ROLES[1])]
         elif key == "press":
             viewers.append(role(PRESS_ROLE))
-        elif key == "audit":
+        elif key in ("audit", "log"):
             viewers += [role(RANK_ROLES[11]), role(DEPTS["vkpp"]["role"])]
         elif key in ("files", "backups"):
             viewers = [role(RANK_ROLES[14])]
@@ -659,9 +659,11 @@ async def withdraw(u: dict, kind: str, rid: int) -> dict:
 
 
 async def post_log(ch_id, msg_id, no: str, what: str, subject: str, status: str, by: str, t: int | None = None, note: str = ""):
-    """Запис журналу про рішення: окреме повідомлення-відповідь на картку документа."""
+    """Запис журналу про рішення: у #сова-журнал (категорія «СОВА · кабінет») з посиланням на документ;
+    якщо журналу немає — відповіддю під карткою документа."""
+    jlog = await channel("log")
     try:
-        ch = bot.get_channel(int(ch_id)) or await bot.fetch_channel(int(ch_id))
+        ch = jlog or bot.get_channel(int(ch_id)) or await bot.fetch_channel(int(ch_id))
     except (discord.NotFound, discord.Forbidden, TypeError, ValueError):
         return
     label, color, ecolor = style.STATUS.get(status, (status.upper(), "white", 0x8C96A5))
@@ -669,8 +671,10 @@ async def post_log(ch_id, msg_id, no: str, what: str, subject: str, status: str,
              style.kv("РІШЕННЯ", label, color, True), style.kv("УХВАЛИВ", by or "—", "white"), style.kv("ДАТА", style.when(t), "gray")]
     if note:
         lines += [style.rule()] + [style.kv("ПРИЧИНА" if i == 0 else "", p, "white") for i, p in enumerate(style.wrap(note, 28))]
-    e = style.document("ЖУРНАЛ РІШЕНЬ", ecolor, desc=style.block(*lines), footer="Рішення ухвалено в ЄІС «Сова»")
-    ref = discord.MessageReference(message_id=int(msg_id), channel_id=int(ch_id), fail_if_not_exists=False) if msg_id else None
+    g = guild()
+    link = f"[Відкрити документ](https://discord.com/channels/{g.id}/{ch_id}/{msg_id})\n" if jlog and g and ch_id and msg_id else ""
+    e = style.document("ЖУРНАЛ РІШЕНЬ", ecolor, desc=link + style.block(*lines), footer="Рішення ухвалено в ЄІС «Сова»")
+    ref = discord.MessageReference(message_id=int(msg_id), channel_id=int(ch_id), fail_if_not_exists=False) if msg_id and not jlog else None
     try:
         await ch.send(embed=e, reference=ref, mention_author=False, allowed_mentions=discord.AllowedMentions.none())
     except discord.HTTPException as ex:

@@ -172,7 +172,7 @@ async def move(u: dict, bid: int, to: str) -> dict:
 
 
 async def journal(s: dict, u: dict, label: str):
-    ch = await core.channel("audit")
+    ch = await core.channel("bonus")
     if not ch:
         return
     paid = [r for r in s["rows"] if r["amount"] > 0]

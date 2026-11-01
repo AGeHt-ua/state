@@ -237,7 +237,7 @@ async def delete(u: dict, oid: int):
 
 
 async def journal(o: dict, target: dict | None, u: dict, label: str):
-    ch = await core.channel("audit")
+    ch = await core.channel("disc")
     if not ch:
         return
     kind = KINDS[o["kind"]][0]
@@ -260,7 +260,7 @@ async def journal(o: dict, target: dict | None, u: dict, label: str):
 
 
 async def alert_three(target: dict, reps: list[dict]):
-    ch = await core.channel("audit")
+    ch = await core.channel("disc")
     if not ch:
         return
     lines = [style.kv("СПІВРОБІТНИК", f"{target['name']} · №{target['sid']}", "white", True),

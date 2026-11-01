@@ -152,7 +152,7 @@ async def submit(member: discord.Member | None, sid: int, name: str, age: str, e
                        did, username or (member.name if member else ""), sid, name[:60], age[:60], exp[:500], motive[:800], now_ms(),
                        json.dumps(extra, ensure_ascii=False) if extra else None, photo)
     c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
-    ch = await core.channel("vvb")
+    ch = await core.channel("cand:vvb")
     if ch:
         f = await photo_file(c)
         msg = await ch.send(embed=await card(c, member), **({"file": f} if f else {}))
@@ -292,7 +292,7 @@ async def decide(cid: int, reviewer: discord.Member, decision: str, note: str = 
                         f"{c['name']} · №{c['sid']}", "ok" if decision == "ok" else "rej", reviewer.display_name, t, note)
 
     if new == "vkpp":
-        ch = await core.channel("access")
+        ch = await core.channel("cand:vkpp")
         if ch:
             f = await photo_file(c)
             msg = await ch.send(embed=await card(c, None), **({"file": f} if f else {}))

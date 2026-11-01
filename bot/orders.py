@@ -157,7 +157,7 @@ async def cancel(u: dict, oid: int) -> dict:
 
 
 async def journal(o: dict, u: dict, label: str):
-    ch = await core.channel("audit")
+    ch = await core.channel("orders")
     if not ch:
         return
     p = await core.user(o["sid"])
