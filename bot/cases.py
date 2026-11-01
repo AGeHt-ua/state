@@ -7,6 +7,7 @@ import logging
 import discord
 
 import core
+import overrides as ov
 import style
 from core import Fail
 from db import db, now_ms
@@ -41,7 +42,7 @@ def is_head_for(u: dict, dept: str) -> bool:
 
 
 def is_chief(u: dict) -> bool:
-    return u["rank"] >= 14
+    return u["rank"] >= ov.P("case_chief")
 
 
 def is_prosecutor(u: dict) -> bool:

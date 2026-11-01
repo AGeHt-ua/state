@@ -119,6 +119,7 @@ const IC = {
   audit: '<path d="M5 4h14v16H5zM9 8h6M9 12h6M9 16h3"/>',
   hr: '<circle cx="10" cy="8" r="3.4"/><path d="M3.5 20c.7-3.6 3.3-5.6 6.5-5.6 1.6 0 3 .5 4.1 1.4M15 18l2 2 4-4.5"/>',
   soon: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',
+  admin: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
 };
 const ico = (k) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${IC[k] || IC.soon}</svg>`;
 const NAV = [
@@ -133,11 +134,12 @@ const NAV = [
   ["cases", "Кейс-файли", () => !!(ME.cases && ME.cases.view)],
   ["hr", "Кадри", () => !!(ME.hr && (ME.hr.vvb || ME.hr.vkpp))],
   ["audit", "Кадровий аудит", (u) => u.rank >= 12 || !!(ME.hr && ME.hr.vkpp)],
+  ["admin", "Адмін-панель", () => !!ME.admin],
 ];
 const SOON = [];
 // Генеральний прокурор (не співробітник СБУ) бачить лише кейс-файли
 const navOk = (n) => n[2](ME.me) && (ME.me.dept !== "prosecutor" || n[0] === "cases");
-const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Розділ відділу", bonus: "Премії", disc: "Дисципліна", kb: "База даних" };
+const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Розділ відділу", bonus: "Премії", disc: "Дисципліна", kb: "База даних", admin: "Адмін-панель" };
 
 function viewShell(inner) {
   const p = ME.pending || {};
@@ -158,6 +160,7 @@ function viewShell(inner) {
   <main class="main" style="--vc:${c}">
     <header class="top"><div><div class="crumbs">СБУ / ${esc(META.depts[ME.me.dept].s)} / ${esc(TITLES[UI.view])}</div><h2>${esc(TITLES[UI.view])}</h2></div>
       <div class="right"><span class="dbadge">${esc(META.depts[ME.me.dept].s)}</span><button class="btn sm" data-a="logout">Вийти</button></div></header>
+    ${ME.curator ? '<div class="note cur-note">👁 Наглядовий режим куратора: перегляд усіх розділів СБУ. Зміни — лише в адмін-панелі та схвалення відомостей премій. На сайті вас не видно.</div>' : ""}
     <section class="view" id="view">${inner}</section>
   </main></div>`;
 }

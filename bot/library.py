@@ -2,6 +2,7 @@
 import json
 
 import core
+import overrides as ov
 from core import Fail
 from db import db, now_ms
 from roles import rank_name
@@ -10,11 +11,11 @@ CATS = {"lecture": "Лекції", "internal": "Внутрішні докуме�
 
 
 def can_edit_lib(u: dict) -> bool:
-    return u["rank"] >= 12 or u["rank"] == 8 or core.has_dept_role(u, "vkpp")
+    return u["rank"] >= ov.P("lib_edit") or u["rank"] == 8 or core.has_dept_role(u, "vkpp")
 
 
 def is_examiner(u: dict) -> bool:
-    return u["rank"] >= 14 or core.has_dept_role(u, "vkpp")
+    return u["rank"] >= ov.P("exam_grade") or core.has_dept_role(u, "vkpp")
 
 
 # ---------------------------------------------------------------- бібліотека

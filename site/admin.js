@@ -1,0 +1,118 @@
+/* Адмін-панель: Голова СБУ та Куратор. Користувачі, доступи, ролі Discord, канали й згадки, система, журнал адміністрування. */
+(() => {
+const S = window.SOVA;
+const { esc, call, toast, fmtDT } = S;
+const st = { tab: "users", d: null };
+const kb = (n) => n > 1048576 ? `${(n / 1048576).toFixed(1)} МБ` : `${Math.round(n / 1024)} КБ`;
+const ago = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? `${h} год ${m} хв` : `${m} хв`; };
+const TABS = [["users", "Користувачі"], ["perms", "Доступи"], ["roles", "Ролі Discord"], ["chan", "Канали й згадки"], ["sys", "Система"], ["log", "Журнал адміністрування"]];
+
+function usersView(d) {
+  const blocked = d.users.filter((u) => u.blocked).length;
+  return `<div class="adm-stats"><div><b>${d.users.length}</b><span>облікових записів</span></div><div><b>${d.users.filter((u) => u.sessions).length}</b><span>зараз з активним входом</span></div>
+      <div><b>${blocked}</b><span>заблоковано</span></div><div><b>${d.users.filter((u) => !u.linked).length}</b><span>без Discord</span></div></div>
+    <div class="card"><div class="tbl-wrap"><table class="t adm-t"><thead><tr><th>Жетон</th><th>Користувач</th><th>Звання / підрозділ</th><th>Стан</th><th>Останній вхід</th><th class="r">Дії</th></tr></thead><tbody>
+    ${d.users.map((u) => `<tr class="${u.blocked ? "adm-blocked" : ""}"><td class="mono">${u.sid}</td><td><b>${esc(u.name)}</b>${u.dept === "curator" ? ' <span class="chip info">прихований</span>' : ""}</td>
+      <td>${esc(u.rankName)}<div class="muted small">${esc(u.deptName)}</div></td>
+      <td>${u.blocked ? '<span class="chip bad">Заблоковано</span>' : u.status === "dismissed" ? '<span class="chip mute">Звільнено</span>' : '<span class="chip ok">Активний</span>'}
+        ${u.linked ? "" : ' <span class="chip warn">без Discord</span>'}${u.sessions ? ` <span class="chip info">входів: ${u.sessions}</span>` : ""}</td>
+      <td class="muted num">${u.lastLogin ? fmtDT(u.lastLogin) : "—"}</td>
+      <td class="r"><div class="adm-acts">
+        <button class="btn sm" data-a="admu" data-sid="${u.sid}" data-x="sync" title="Звірити ролі з Discord">⟳</button>
+        <button class="btn sm" data-a="admu" data-sid="${u.sid}" data-x="logout" title="Завершити всі входи" ${u.sessions ? "" : "disabled"}>⏏</button>
+        <button class="btn sm" data-a="admu" data-sid="${u.sid}" data-x="reset" title="Новий код доступу (у Discord)" ${u.linked ? "" : "disabled"}>🔑</button>
+        ${u.blocked ? `<button class="btn sm ok" data-a="admu" data-sid="${u.sid}" data-x="unblock">Розблокувати</button>` : `<button class="btn sm bad" data-a="admu" data-sid="${u.sid}" data-x="block">Блок</button>`}
+        ${u.linked ? `<button class="btn sm" data-a="admu" data-sid="${u.sid}" data-x="unlink" title="Відв'язати Discord">⛓</button>` : ""}
+      </div></td></tr>`).join("")}</tbody></table></div></div>
+    <p class="muted small">⟳ — звірити ролі з Discord зараз · ⏏ — вийти з усіх пристроїв · 🔑 — новий код доступу в особисті Discord · ⛓ — відв'язати Discord. Заблокований не може увійти на сайт, ролі в Discord не змінюються.</p>`;
+}
+
+function permsView(d) {
+  return `<form class="card" data-f="admperms"><header><h3>Хто що може на сайті</h3></header>
+    <p class="note">Мінімальне звання для кожної дії. За замовчуванням — як у статуті. Зміни діють одразу, без перезапуску бота.</p>
+    <div class="adm-perms">${d.perms.map((p) => `<label class="adm-perm ${p.value !== p.default ? "chg" : ""}"><div><b>${esc(p.label)}</b>${p.note ? `<span>${esc(p.note)}</span>` : ""}</div>
+      <select class="i" name="${p.key}">${d.ranks.map((n, i) => `<option value="${i + 1}" ${p.value === i + 1 ? "selected" : ""}>від ${i + 1} · ${esc(n)}${p.default === i + 1 ? " (стандарт)" : ""}</option>`).join("")}</select></label>`).join("")}</div>
+    <div class="acts"><button class="btn" type="button" data-a="admpermreset">Скинути до стандартних</button><button class="btn gold" type="submit">Зберегти доступи</button></div></form>
+    <div class="card"><header><h3>Постійні правила (не змінюються)</h3></header><ul class="adm-fixed">
+      <li>Адмін-панель — лише Голова СБУ та Куратор.</li><li>Куратор бачить усі розділи, але нічого не змінює, окрім адмін-панелі та схвалення відомостей премій.</li>
+      <li>Генеральний прокурор бачить лише кейс-файли, що дійшли до нього.</li><li>Нарахувати премію собі не можна (ст. 22 ТК).</li>
+      <li>Звання й відділ кожного беруться з ролей Discord (синхронізація кожні 4 хв).</li></ul></div>`;
+}
+
+function rolesView(d) {
+  const bad = d.roles.filter((r) => !r.exists).length, noman = d.roles.filter((r) => r.exists && !r.manageable).length;
+  return `${bad || noman ? `<div class="note warn">${bad ? `Ролей, яких немає на сервері: <b>${bad}</b>. ` : ""}${noman ? `Ролей вище за роль бота (бот не може їх видавати й знімати): <b>${noman}</b>.` : ""}</div>` : '<div class="note">Усі ролі на місці, бот може ними керувати.</div>'}
+    <div class="card"><div class="tbl-wrap"><table class="t"><thead><tr><th>Призначення на сайті</th><th>Роль у Discord</th><th>ID</th><th>Стан</th></tr></thead><tbody>
+    ${d.roles.map((r) => `<tr><td>${esc(r.label)}</td><td>${r.exists ? `<span class="adm-role" style="--rc:${r.color || "#9aa7b8"}">${esc(r.name)}</span>` : "—"}</td><td class="mono small">${r.id}</td>
+      <td>${!r.exists ? '<span class="chip bad">Немає на сервері</span>' : r.manageable ? '<span class="chip ok">OK</span>' : '<span class="chip warn">Вище за бота</span>'}</td></tr>`).join("")}</tbody></table></div></div>`;
+}
+
+function chanView(d) {
+  return `<form class="card" data-f="admchan"><header><h3>Канали Discord для документів</h3></header>
+    <p class="note">Вкажіть ID каналу, щоб змінити, куди надходять документи. Порожнє поле — стандартний канал.</p>
+    <div class="adm-grid">${d.channels.map((c) => `<label class="f"><span>${esc(c.label)} <i class="muted">· ${esc(c.source)}${c.name ? " · " + esc(c.name) : c.id ? " · не знайдено" : ""}</i></span>
+      <input class="i mono" name="${esc(c.key)}" value="${c.source === "панель" ? esc(c.id) : ""}" placeholder="${esc(c.id || "не задано")}"></label>`).join("")}</div>
+    <div class="acts"><button class="btn gold" type="submit">Зберегти канали</button></div></form>
+  <form class="card" data-f="admment"><header><h3>Кого згадувати в документах</h3></header>
+    <p class="note">ID ролей через кому або пробіл. Порожньо — нікого не згадувати. «Стандарт» повертає згадки з коду.</p>
+    <div class="adm-grid">${d.mentions.map((m) => `<label class="f"><span>${esc(m.label)} <i class="muted">· ${m.custom ? "панель" : "стандарт"}${m.names.length ? " · " + m.names.map(esc).join(", ") : " · нікого"}</i></span>
+      <div class="adm-in"><input class="i mono" name="${esc(m.key)}" value="${esc(m.ids.join(", "))}" placeholder="нікого">${m.custom ? `<button class="btn sm" type="button" data-a="admmdef" data-k="${esc(m.key)}">Стандарт</button>` : ""}</div></label>`).join("")}</div>
+    <div class="acts"><button class="btn gold" type="submit">Зберегти згадки</button></div></form>`;
+}
+
+function sysView(d) {
+  const s = d.system;
+  return `<div class="adm-stats"><div><b class="${s.guild ? "ok" : "bad"}">${s.guild ? "На зв'язку" : "Немає зв'язку"}</b><span>${esc(s.bot || "")}</span></div>
+      <div><b>${s.latency ?? "—"} мс</b><span>затримка Discord</span></div><div><b>${ago(s.uptime)}</b><span>бот працює без перезапуску</span></div>
+      <div><b>${s.users}</b><span>в особовому складі · ${s.sessions} активних входів</span></div><div><b>${kb(s.dbSize)}</b><span>розмір бази</span></div></div>
+    ${s.warnings.length ? `<div class="card"><header><h3>Попередження</h3></header>${s.warnings.map((w) => `<p class="note warn">${esc(w)}</p>`).join("")}</div>` : ""}
+    <div class="card"><header><h3>Дії</h3></header><div class="acts" style="justify-content:flex-start">
+      <button class="btn gold" data-a="admsync">⟳ Синхронізувати ролі всіх зараз</button><button class="btn" data-a="admbackup">💾 Резервна копія бази зараз</button></div>
+      <p class="muted small">Ролі й так звіряються автоматично кожні 4 хвилини. Резервні копії робляться автоматично й надсилаються в канал бекапів.</p></div>
+    <div class="grid2"><div class="card"><header><h3>Останні резервні копії</h3></header>
+      ${s.backups.length ? `<ul class="adm-list">${s.backups.map((b) => `<li><span class="mono">${esc(b.name)}</span><span class="muted">${kb(b.size)} · ${fmtDT(b.t)}</span></li>`).join("")}</ul>` : '<p class="muted">Ще немає.</p>'}</div>
+    <div class="card"><header><h3>Попередження й помилки бота</h3></header>
+      ${s.errors.length ? `<ul class="adm-list adm-err">${s.errors.map((e) => `<li><span class="chip ${e.lvl === "WARNING" ? "warn" : "bad"}">${e.lvl === "WARNING" ? "увага" : "помилка"}</span><span class="muted small">${fmtDT(e.t)} · ${esc(e.src)}</span><div>${esc(e.msg)}</div></li>`).join("")}</ul>` : '<p class="muted">Помилок немає.</p>'}</div></div>`;
+}
+
+function logView(d) {
+  return `<div class="card"><header><h3>Журнал адміністрування</h3></header><p class="muted small">Видно лише Голові СБУ та Куратору. У кадровий аудит ці записи не потрапляють.</p>
+    ${d.log.length ? `<div class="aud">${d.log.map((r) => `<div class="aud-it k-misc"><i></i>
+      <div class="aud-when"><b>${new Date(r.t).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })}</b><span>${new Date(r.t).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span></div>
+      <div class="aud-body"><div class="aud-act">${esc(r.action.replace(/^⚙\s*/, ""))}${r.targetUser ? ` · ${esc(r.targetUser.name)} №${r.target}` : ""}</div>
+        <div class="aud-who"><b>${esc(r.actorUser ? r.actorUser.name : "—")}</b>${r.details ? ` · ${esc(r.details)}` : ""}</div></div></div>`).join("")}</div>` : '<p class="muted">Змін ще не було.</p>'}</div>`;
+}
+
+async function view() {
+  const d = st.d = await call("/api/admin");
+  const body = { users: usersView, perms: permsView, roles: rolesView, chan: chanView, sys: sysView, log: logView }[st.tab](d);
+  return `<div class="adm-head"><div><div class="eyebrow">Керування ЄІС «Сова»</div><b>Адмін-панель</b></div><span class="muted small">Доступ: Голова СБУ та Куратор</span></div>
+    <div class="tabs">${TABS.map(([k, l]) => `<button class="tb ${st.tab === k ? "on" : ""}" data-a="admtab" data-v="${k}">${l}</button>`).join("")}</div>${body}`;
+}
+S.views.admin = view;
+
+const run = async (b, fn) => { if (b) b.disabled = true; try { await fn(); } catch (e) { toast(e.message, 1); } if (b) b.disabled = false; };
+const ASK = { block: "Заблокувати доступ до сайту? Усі входи буде завершено.", unblock: "Розблокувати доступ?", logout: "Завершити всі входи цього користувача?",
+  reset: "Видати новий код доступу? Старий перестане діяти, код прийде в особисті Discord.", unlink: "Відв'язати Discord? Людина не зможе увійти, доки не оформить допуск знову.", sync: null };
+Object.assign(S.actions, {
+  admtab: (b) => { st.tab = b.dataset.v; S.render(); },
+  admu: (b) => run(b, async () => {
+    const x = b.dataset.x;
+    if (ASK[x] && !confirm(ASK[x])) return;
+    const r = await call(`/api/admin/user/${b.dataset.sid}/${x}`, { json: {} });
+    if (x === "reset" && r.code) alert(`Особисті повідомлення закриті. Передайте код особисто:\n\n${r.code}`);
+    toast(x === "sync" ? `Ролі звірено: ${r.result}` : x === "reset" ? (r.sent ? "Новий код надіслано в Discord" : "Код показано") : "Готово");
+    S.render();
+  }),
+  admsync: (b) => run(b, async () => { const r = await call("/api/admin/sync", { json: {} }); toast(`Ролі звірено: ${r.count} у штаті`); S.render(); }),
+  admbackup: (b) => run(b, async () => { const r = await call("/api/admin/backup", { json: {} }); toast(`Копію ${r.name} збережено`); S.render(); }),
+  admpermreset: (b) => run(b, async () => { if (!confirm("Повернути всі доступи до стандартних?")) return; await call("/api/admin/perms", { json: {} }); toast("Доступи стандартні"); await S.refreshMe(); S.render(); }),
+  admmdef: (b) => run(b, async () => { await call("/api/admin/mentions", { json: { [b.dataset.k]: null } }); toast("Повернено стандартні згадки"); S.render(); }),
+});
+const formData = (f) => Object.fromEntries([...f.querySelectorAll("[name]")].map((el) => [el.name, el.value]));
+S.forms.admperms = (f) => run(f.querySelector("[type=submit]"), async () => { await call("/api/admin/perms", { json: formData(f) }); toast("Доступи збережено"); await S.refreshMe(); S.render(); });
+S.forms.admchan = (f) => run(f.querySelector("[type=submit]"), async () => { await call("/api/admin/channels", { json: formData(f) }); toast("Канали збережено"); S.render(); });
+// лише змінені поля: решта лишаються стандартними
+const changed = (f) => Object.fromEntries([...f.querySelectorAll("[name]")].filter((el) => el.value !== el.defaultValue).map((el) => [el.name, el.value]));
+S.forms.admment = (f) => run(f.querySelector("[type=submit]"), async () => { await call("/api/admin/mentions", { json: changed(f) }); toast("Згадки збережено"); S.render(); });
+})();

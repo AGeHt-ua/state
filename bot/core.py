@@ -11,9 +11,10 @@ from datetime import datetime, timedelta, timezone
 import discord
 
 import config
+import overrides as ov
 import style
 from db import db, now_ms
-from roles import (ALL_SBU_ROLES, DEPTS, OPS_DEPTS, PRESS_ROLE, RANK_ROLES, RANKS, SBU_ROLE,
+from roles import (ALL_SBU_ROLES, CURATOR_ROLE, DEPTS, OPS_DEPTS, PRESS_ROLE, RANK_ROLES, RANKS, SBU_ROLE,
                    nickname, rank_name, resolve, roles_for)
 
 log = logging.getLogger("sova")
@@ -177,6 +178,8 @@ async def access(u: dict, fresh: bool = False) -> dict:
     """Звіряє ролі в Discord і синхронізує картку співробітника."""
     if u["status"] == "dismissed":
         return {"ok": False, "why": "Співробітника звільнено"}
+    if u.get("blocked"):
+        return {"ok": False, "why": "Доступ до сайту заблоковано адміністратором"}
     if not u["discord_id"]:
         return {"ok": False, "why": "Обліковий запис не прив'язано до Discord"}
     roles = await member_roles(u["discord_id"], fresh)
@@ -203,7 +206,7 @@ async def apply_roles(u: dict, roles: set[int]) -> dict:
 
 async def set_nick(u: dict, member: discord.Member | None = None) -> bool:
     """Ставить нікнейм «Звання | Ім'я Прізвище | Static ID». Потрібне право бота «Керувати нікнеймами»."""
-    if u.get("status") == "dismissed" or not u.get("discord_id") or u.get("dept") == "prosecutor":
+    if u.get("status") == "dismissed" or not u.get("discord_id") or u.get("dept") in ("prosecutor", "curator"):
         return False
     m = member or await member_of(u["discord_id"])
     if not m:
@@ -244,26 +247,36 @@ async def sync_roles(u: dict, reason: str):
 
 
 # ---------------------------------------------------------------- права
+def is_curator(u: dict) -> bool:
+    """Куратор СБУ: окремий прихований обліковий запис (dept curator) або співробітник із роллю куратора."""
+    return u.get("dept") == "curator" or bool(u.get("curator")) or has_role(u, CURATOR_ROLE)
+
+
+def is_admin(u: dict) -> bool:
+    """Адмін-панель: Голова СБУ та Куратор."""
+    return is_curator(u) or (u["rank"] == 15 and u.get("dept") == "lead")
+
+
 def can_approve_act(actor: dict, a: dict) -> bool:
     if a["by_sid"] == actor["sid"] or a["status"] != "wait":
         return False
-    if actor["rank"] >= 13:
+    if actor["rank"] >= ov.P("act_any"):
         return True
     if a["dept"] == "academy":
-        return actor["rank"] == 8 or (actor["rank"] >= 9 and has_dept_role(actor, "vkpp"))
+        return actor["rank"] == 8 or (actor["rank"] >= ov.P("act_dept") and has_dept_role(actor, "vkpp"))
     if a["dept"] == "press":  # звіти позаштатної прес-служби перевіряє керівництво
         return False
     # керівник групи і вище свого відділу; начальник, що веде два відділи, — обох
-    return actor["rank"] >= 9 and has_dept_role(actor, a["dept"])
+    return actor["rank"] >= ov.P("act_dept") and has_dept_role(actor, a["dept"])
 
 
 def can_view_act(actor: dict, a: dict) -> bool:
     """Повний звіт бачать автор, керівництво (13+) і керівники підрозділу звіту (ранг 9+ з роллю; Академія — інструктори й ВКПП)."""
-    if a["by_sid"] == actor["sid"] or actor["rank"] >= 13:
+    if a["by_sid"] == actor["sid"] or actor["rank"] >= ov.P("act_any"):
         return True
     if a["dept"] == "academy":
-        return actor["rank"] == 8 or (actor["rank"] >= 9 and has_dept_role(actor, "vkpp"))
-    return actor["rank"] >= 9 and bool(a["dept"]) and has_dept_role(actor, a["dept"])
+        return actor["rank"] == 8 or (actor["rank"] >= ov.P("act_dept") and has_dept_role(actor, "vkpp"))
+    return actor["rank"] >= ov.P("act_dept") and bool(a["dept"]) and has_dept_role(actor, a["dept"])
 
 
 # Рапорти з візами: переведення — начальник «звідки» → начальник «куди» → Голова або заступник;
@@ -286,16 +299,16 @@ def can_approve_rap(actor: dict, r: dict) -> bool:
         return False
     if r["type"] in STAGES:
         st = transfer_stage(r)
-        if actor["rank"] >= 14:  # Голова й заступник можуть поставити візу й за відсутності начальника відділу
+        if actor["rank"] >= ov.P("rap_override"):  # Голова й заступник можуть поставити візу й за відсутності начальника відділу
             return True
         return (st == "from" and head_of(actor, r["dept"])) or (st == "to" and head_of(actor, json.loads(r["data"] or "{}").get("to")))
     if r["type"] == "vac":  # відпустку погоджує начальник або заступник начальника свого відділу (Голова й заступник — за відсутності)
-        if actor["rank"] >= 14:
+        if actor["rank"] >= ov.P("rap_override"):
             return True
         dept = "vkpp" if r["dept"] == "academy" else r["dept"]
         return bool(dept) and actor["rank"] in (11, 12) and (actor["dept"] == dept or has_dept_role(actor, dept))
     # Усі кадрові рапорти розглядає ВКПП або керівництво (Начальник управління, Заступник Голови, Голова)
-    return actor["rank"] >= 13 or has_dept_role(actor, "vkpp")
+    return actor["rank"] >= ov.P("rap_hr") or has_dept_role(actor, "vkpp")
 
 
 def has_dept_role(u: dict, dept: str) -> bool:
@@ -307,7 +320,7 @@ def has_dept_role(u: dict, dept: str) -> bool:
 
 
 async def promo_check(u: dict) -> dict | None:
-    if u["dept"] == "prosecutor":
+    if u["dept"] in ("prosecutor", "curator"):
         return None
     nxt = u["rank"] + 1
     if nxt > 15:
@@ -336,7 +349,7 @@ CHANNEL_KEYS = [k for k in DEPTS if DEPTS[k]["channel"]] + ["audit", "files", "b
 
 async def channel(key: str) -> discord.TextChannel | None:
     ids = await db.get_setting("channels", {})
-    cid = config.CHANNELS.get(key) or ids.get(key)
+    cid = ov.channels.get(key) or config.CHANNELS.get(key) or ids.get(key)  # спершу — з адмін-панелі
     if not cid:
         return None
     ch = bot.get_channel(int(cid))
@@ -601,7 +614,7 @@ async def button_decision(interaction: discord.Interaction, kind: str, rid: int,
 def mention(key: str | None, users: list | None = None) -> dict:
     """Згадка ролей для документа (config.MENTIONS) і, за потреби, конкретних людей (Discord ID):
     content + дозвіл пінгувати лише їх."""
-    ids = config.MENTIONS.get(key) or [] if key else []
+    ids = (ov.mentions[key] if key in ov.mentions else config.MENTIONS.get(key) or []) if key else []  # адмін-панель має пріоритет
     uids = [int(x) for x in (users or []) if x]
     if not ids and not uids:
         return {"allowed_mentions": discord.AllowedMentions.none()}
@@ -883,6 +896,8 @@ def audit_embed(row: dict, u: dict | None, actor: dict | None = None) -> discord
 
 async def send_audit(u: dict | None, actor: dict | None = None):
     """Надсилає останній запис аудиту в канал кадрового аудиту."""
+    if (u and u.get("dept") == "curator") or (actor and actor.get("dept") == "curator"):
+        return  # куратор у Discord-журналах не світиться
     ch = await channel("audit")
     row = await db.one("SELECT * FROM audit ORDER BY id DESC LIMIT 1")
     if ch and row:
@@ -1087,8 +1102,8 @@ async def register(member: discord.Member, sid: int, name: str, reviewer: discor
     if await db.one("SELECT sid FROM users WHERE sid=?", sid):
         raise Fail("На цей номер жетона вже оформлено допуск іншій особі.")
     give = [r for r in (member.guild.get_role(rid) for rid in (*config.JOIN_ROLES, *extra_roles)) if r and r not in member.roles]
-    if resolve({r.id for r in member.roles}).get("dept") == "prosecutor":
-        give = []  # Генеральному прокурору ролі СБУ не видаються
+    if resolve({r.id for r in member.roles}).get("dept") in ("prosecutor", "curator"):
+        give = []  # Генеральному прокурору й куратору ролі СБУ не видаються
     if give:
         try:
             await member.add_roles(*give, reason="Сова: оформлено допуск до ЄІС")

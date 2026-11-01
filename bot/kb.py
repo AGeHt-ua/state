@@ -14,6 +14,7 @@ import discord
 
 import config
 import core
+import overrides as ov
 import style
 from core import Fail
 from db import db, now_ms
@@ -89,7 +90,7 @@ async def _get(s: aiohttp.ClientSession, url: str):
 
 async def sync(u: dict | None, initial: bool = False) -> dict:
     """Звірка з офіційною базою NG: нові, змінені, вилучені документи → журнал змін (+ ШІ-підсумок, якщо є ключ)."""
-    if u is not None and u["rank"] != 15:
+    if u is not None and u["rank"] < ov.P("kb_sync"):
         raise Fail("Оновлювати законодавчу базу може лише Голова СБУ.", 403)
     if _sync_lock.locked():
         raise Fail("Оновлення вже триває. Зачекайте хвилину.", 409)

@@ -2,6 +2,7 @@
 
 SBU_ROLE = 1553695043947077686      # основна роль, обов'язкова для всіх
 PRESS_ROLE = 1564014095836119140    # Прес-секретар
+CURATOR_ROLE = 1553695044253523997     # Куратор СБУ: прихований нагляд + адмін-панель; на сайті ніде не показується
 PROSECUTOR_ROLE = 1566246794214641714  # Генеральний прокурор: не співробітник СБУ, бачить лише кейс-файли на погодженні
 
 # Індекс = звання - 1
@@ -42,6 +43,7 @@ DEPTS = {
     "vkpp":    {"s": "ВКПП", "n": "Відділ кадрів та підготовки персоналу", "role": 1553695043947077691, "color": 0xE0866B, "channel": "сова-вкпп"},
     "academy": {"s": "Академія", "n": "Академія СБУ", "role": None, "color": 0xA68AD6, "channel": "сова-академія"},
     "press":   {"s": "Прес-служба", "n": "Прес-служба СБУ", "role": None, "color": 0xC98AB8, "channel": "сова-прес"},
+    "curator": {"s": "Куратор", "n": "Куратор СБУ", "role": None, "color": 0x7A6FD8, "channel": None},
     "prosecutor": {"s": "Прокуратура", "n": "Офіс Генерального прокурора", "role": None, "color": 0x9AA7B8, "channel": None},
 }
 OPS_DEPTS = ["orv", "vvb", "atc", "alpha", "deb", "vkpp"]
@@ -70,6 +72,8 @@ def rank_name(rank: int) -> str:
 def resolve(role_ids: set[int]) -> dict:
     """Визначає доступ за ролями учасника. Повертає ok, why, rank, dept, multi."""
     if SBU_ROLE not in role_ids:
+        if CURATOR_ROLE in role_ids:
+            return {"ok": True, "rank": 0, "dept": "curator", "multi": False}
         if PROSECUTOR_ROLE in role_ids:
             return {"ok": True, "rank": 0, "dept": "prosecutor", "multi": False}
         return {"ok": False, "why": "Немає основної ролі СБУ"}

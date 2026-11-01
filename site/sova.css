@@ -241,3 +241,25 @@ pre.report{white-space:pre-wrap;font:12.5px/1.6 var(--mono);background:var(--bg2
 select.sq-open{height:auto;padding:4px;background:var(--panel)}
 select.sq-open option{padding:6px 8px}
 select.sq-open option:checked{background:rgba(201,162,77,.25)}
+/* адмін-панель */
+.cur-note{margin:0 0 14px;border-color:rgba(122,111,216,.5);background:rgba(122,111,216,.08)}
+.adm-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding:14px 18px;margin-bottom:12px;border:1px solid var(--line2);
+  background:linear-gradient(90deg,rgba(201,162,77,.1),transparent 60%)}
+.adm-head b{font:22px var(--display)}
+.adm-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+.adm-stats>div{padding:12px 14px;border:1px solid var(--line);background:var(--panel);display:grid;gap:2px}
+.adm-stats b{font:20px var(--display)}.adm-stats b.ok{color:var(--ok)}.adm-stats b.bad{color:var(--bad)}.adm-stats span{font-size:12px;color:var(--muted)}
+.adm-acts{display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap}
+.adm-t tr.adm-blocked td{opacity:.6}
+.adm-perms{display:grid;gap:8px}
+.adm-perm{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--line);background:rgba(0,0,0,.15)}
+.adm-perm.chg{border-color:var(--gold)}.adm-perm b{display:block}.adm-perm span{font-size:12px;color:var(--muted)}
+.adm-fixed{margin:0;padding-left:18px;display:grid;gap:4px;color:var(--muted)}
+.adm-role{display:inline-block;padding:2px 8px;border:1px solid var(--rc);color:var(--rc);font-size:12.5px;border-radius:3px}
+.adm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px 14px}
+.adm-grid .f span i{font-style:normal;font-size:11px}
+.adm-in{display:flex;gap:6px}.adm-in .i{flex:1;min-width:0}
+.adm-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.adm-list li{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:6px 8px;border-bottom:1px solid var(--line)}
+.adm-err li{display:grid;justify-content:start;grid-template-columns:auto 1fr}.adm-err li div{grid-column:1/-1;font:12px var(--mono);overflow-wrap:anywhere}
+@media (max-width:760px){.adm-perm{grid-template-columns:1fr}}

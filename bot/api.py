@@ -6,6 +6,7 @@ import time
 
 from aiohttp import web
 
+import admin
 import candidates
 import bonus
 import cases
@@ -16,6 +17,7 @@ import library
 import orders
 import config
 import core
+import overrides as ov
 from core import ACTS, RAP_TYPES, Fail
 from db import db, now_ms
 from roles import DEPTS, OPS_DEPTS, PRESS_ROLE, RANKS, rank_name
@@ -63,6 +65,12 @@ async def auth(request: web.Request) -> dict:
     a = await core.access(u)
     if not a["ok"]:
         raise Fail(f"Доступ закрито: {a['why']}.", 403)
+    if u["dept"] == "curator":
+        # Куратор: бачить усе як Голова, але лише переглядає; змінювати може тільки адмін-панель і схвалення премій
+        u = {**u, "rank": 15, "curator": True, "curator_ro": True}
+        if request.method != "GET" and not (request.path.startswith("/api/admin") or request.path in ("/api/logout",)
+                                             or (request.path.startswith("/api/bonus/") and request.path.endswith("/status"))):
+            raise Fail("Куратор має наглядовий доступ: лише перегляд.", 403)
     return u
 
 
@@ -74,6 +82,9 @@ async def body(request: web.Request) -> dict:
 
 
 def public_user(u: dict) -> dict:
+    if u["dept"] == "curator":  # куратор ніде не світиться: у журналах — лише посада
+        return {"sid": u["sid"], "name": "Куратор СБУ", "rank": 0, "rankName": "Куратор СБУ", "dept": "curator",
+                "deptName": "Куратор СБУ", "since": u["since"], "status": u["status"]}
     return {"sid": u["sid"], "name": u["name"], "rank": u["rank"], "rankName": rank_name(u["rank"]),
             "dept": u["dept"], "deptName": DEPTS[u["dept"]]["n"], "since": u["since"], "status": u["status"]}
 
@@ -162,10 +173,11 @@ async def me(request):
         "hr": hr_rights(u),
         "cases": cases.rights(u),
         "control": depts.control_depts(u),
-        "kb": {"sync": u["rank"] == 15, "lib": library.can_edit_lib(u), "exam": library.is_examiner(u)},
+        "admin": core.is_admin(u), "curator": bool(u.get("curator_ro")),
+        "kb": {"sync": u["rank"] >= ov.P("kb_sync"), "lib": library.can_edit_lib(u), "exam": library.is_examiner(u)},
         "appoint": {"prepare": orders.can_prepare(u), "sign": orders.can_sign(u)} if orders.can_prepare(u) else None,
         "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
-        "bonus": {"manage": bonus.can_manage(u), "finalize": bonus.can_finalize(u)},
+        "bonus": {"manage": bonus.can_manage(u) or bool(u.get("curator")), "finalize": bonus.can_finalize(u)},
     })
 
 
@@ -266,11 +278,11 @@ async def staff(request):
     u = await auth(request)
     if u["rank"] < 8:
         raise Fail("Недостатній рівень допуску.", 403)
-    rows = await db.all("SELECT * FROM users WHERE status!='dismissed' ORDER BY rank DESC, sid")
+    rows = await db.all("SELECT * FROM users WHERE status!='dismissed' AND dept!='curator' ORDER BY rank DESC, sid")
     if _structure_cache[1] is not None:  # картки звіряються з Discord у build_structure: беремо свіжі звання й лише чинний склад
         live = {x["sid"]: x for x in _structure_cache[1]}
         rows = [{**r, "rank": live[r["sid"]]["rank"], "dept": live[r["sid"]]["dept"]} for r in rows if r["sid"] in live]
-    if u["dept"] != "lead":
+    if u["dept"] != "lead" and not u.get("curator"):
         rows = [r for r in rows if r["dept"] == u["dept"]]
     out = []
     for r in rows:
@@ -419,7 +431,7 @@ async def dept_overview(request):
 async def bonus_home(request):
     u = await auth(request)
     out = {"mine": await bonus.mine(u)}
-    if bonus.can_manage(u):
+    if bonus.can_manage(u) or u.get("curator"):
         rows = await db.all("SELECT * FROM bonuses ORDER BY week DESC LIMIT 20")
         out["list"] = [{k: s[k] for k in ("id", "week", "status", "updated")} | {"label": bonus.week_label(s["week"]),
                         "total": sum(r["amount"] for r in json.loads(s["rows"] or "[]")),
@@ -623,7 +635,7 @@ async def kb_index(request):
     u = await kb_auth(request)
     rows = await db.all("SELECT slug, title, section, grp, grp_title, faction, faction_abbr, sbu, short, updated, length(text) AS size FROM kb_docs ORDER BY section, grp, title")
     return web.json_response({"docs": rows, "checked": await db.get_setting("kb_checked", None), "syncing": kb._sync_lock.locked(),
-                              "canSync": u["rank"] == 15, "ai": bool(config.AI_KEY),
+                              "canSync": u["rank"] >= ov.P("kb_sync"), "ai": bool(config.AI_KEY),
                               "changes": (await db.one("SELECT COUNT(*) AS n FROM kb_changes"))["n"]})
 
 
@@ -775,7 +787,7 @@ async def build_structure() -> list:
 async def _build_structure() -> list:
     if not core.guild():
         raise Fail("Бот ще не підключився до Discord. Спробуйте за хвилину.", 503)
-    rows = await db.all("SELECT * FROM users WHERE status!='dismissed' ORDER BY rank DESC, sid")
+    rows = await db.all("SELECT * FROM users WHERE status!='dismissed' AND dept!='curator' ORDER BY rank DESC, sid")
 
     async def roles(r):
         try:
@@ -823,9 +835,9 @@ async def structure(request):
 @routes.get("/api/audit")
 async def audit(request):
     u = await auth(request)
-    if u["rank"] < 12 and not hr_rights(u)["vkpp"]:
+    if u["rank"] < ov.P("audit_view") and not hr_rights(u)["vkpp"]:
         raise Fail("Недостатній рівень допуску.", 403)
-    rows = await db.all("SELECT * FROM audit ORDER BY id DESC LIMIT 200")
+    rows = await db.all("SELECT * FROM audit WHERE action NOT LIKE '⚙%' ORDER BY id DESC LIMIT 200")  # дії адмін-панелі — окремий журнал
     people = await people_map([r["actor"] for r in rows] + [r["target"] for r in rows])
     return web.json_response([{**r, "actorUser": people.get(r["actor"]), "targetUser": people.get(r["target"])} for r in rows])
 
@@ -975,6 +987,70 @@ async def start() -> web.AppRunner:
     await runner.setup()
     await web.TCPSite(runner, config.API_HOST, config.API_PORT).start()
     log.info("API слухає %s:%s", config.API_HOST, config.API_PORT)
+    await ov.load(db)
     asyncio.create_task(structure_loop())
     asyncio.create_task(kb.ensure_seeded())
     return runner
+
+
+# ---------------------------------------------------------------- адмін-панель (Голова СБУ та Куратор)
+async def admin_auth(request) -> dict:
+    u = await auth(request)
+    admin.need(u)
+    return u
+
+
+@routes.get("/api/admin")
+async def admin_home(request):
+    await admin_auth(request)
+    log_rows = await admin.admin_log()
+    people = await people_map([r["actor"] for r in log_rows] + [r["target"] for r in log_rows])
+    return web.json_response({
+        "users": await admin.users(), "roles": admin.roles_report(), "channels": await admin.channels_view(),
+        "mentions": admin.mentions_view(), "perms": ov.perms_view(), "system": await admin.system(),
+        "log": [{**r, "actorUser": people.get(r["actor"]), "targetUser": people.get(r["target"])} for r in log_rows],
+        "ranks": [n for n, _, _ in RANKS],
+    })
+
+
+@routes.post("/api/admin/user/{sid}/{act}")
+async def admin_user(request):
+    u = await admin_auth(request)
+    out = await admin.user_action(u, int(request.match_info["sid"]), request.match_info["act"])
+    asyncio.create_task(build_structure())
+    return web.json_response(out)
+
+
+@routes.post("/api/admin/channels")
+async def admin_channels(request):
+    u = await admin_auth(request)
+    await admin.save_channels(u, await body(request))
+    return web.json_response(await admin.channels_view())
+
+
+@routes.post("/api/admin/mentions")
+async def admin_mentions(request):
+    u = await admin_auth(request)
+    await admin.save_mentions(u, await body(request))
+    return web.json_response(admin.mentions_view())
+
+
+@routes.post("/api/admin/perms")
+async def admin_perms(request):
+    u = await admin_auth(request)
+    await admin.save_perms(u, await body(request))
+    return web.json_response(ov.perms_view())
+
+
+@routes.post("/api/admin/sync")
+async def admin_sync(request):
+    u = await admin_auth(request)
+    s = await build_structure()
+    await admin.note(u, "Синхронізація ролей усіх", 0, f"{len(s)} співробітників у штаті")
+    return web.json_response({"count": len(s)})
+
+
+@routes.post("/api/admin/backup")
+async def admin_backup(request):
+    u = await admin_auth(request)
+    return web.json_response(await admin.make_backup(u))

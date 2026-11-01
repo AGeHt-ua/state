@@ -8,6 +8,7 @@ import logging
 import discord
 
 import core
+import overrides as ov
 import style
 from core import DAY, Fail
 from db import db, now_ms
@@ -25,11 +26,11 @@ def tier(rank: int) -> str:
 
 
 def can_manage(u: dict) -> bool:
-    return u["rank"] >= 14
+    return u["rank"] >= ov.P("bonus_manage") and not u.get("curator_ro")
 
 
 def can_finalize(u: dict) -> bool:
-    return u["rank"] == 15
+    return u["rank"] >= ov.P("bonus_finalize")
 
 
 async def cfg() -> dict:
@@ -55,7 +56,7 @@ def week_label(ws: int) -> str:
 
 
 async def calc_rows(ws: int, c: dict) -> list[dict]:
-    staff = await db.all("SELECT * FROM users WHERE status!='dismissed' AND dept!='prosecutor' ORDER BY dept, rank DESC, sid")
+    staff = await db.all("SELECT * FROM users WHERE status!='dismissed' AND dept NOT IN ('prosecutor','curator') ORDER BY dept, rank DESC, sid")
     pts = await core.coef()
     acts = await db.all("SELECT by_sid, type, qty FROM acts WHERE status='ok' AND t>=? AND t<?", ws, ws + 7 * DAY)
     by = {}
@@ -162,6 +163,8 @@ async def move(u: dict, bid: int, to: str) -> dict:
         raise Fail("Такий перехід неможливий.")
     if not FLOW[to][1](u):
         raise Fail("Недостатньо повноважень.", 403)
+    if u.get("curator_ro") and to != "approved":
+        raise Fail("Куратор лише схвалює відомість; виплату позначає Голова СБУ.", 403)
     h = s["history"] + [{"t": now_ms(), "sid": u["sid"], "name": u["name"], "action": to}]
     await db.run("UPDATE bonuses SET status=?, history=?, updated=? WHERE id=?", to, json.dumps(h, ensure_ascii=False), now_ms(), bid)
     s = await get(bid)

@@ -7,6 +7,7 @@ import logging
 import discord
 
 import core
+import overrides as ov
 import style
 from core import Fail
 from db import db, now_ms
@@ -16,8 +17,8 @@ log = logging.getLogger("sova.orders")
 
 
 def can_sign(u: dict) -> bool:
-    """Підписують накази Голова СБУ та Заступник Голови."""
-    return u["rank"] >= 14
+    """Підписують накази Голова СБУ та Заступник Голови (поріг — в адмін-панелі)."""
+    return u["rank"] >= ov.P("order_sign")
 
 
 def can_prepare(u: dict) -> bool:
@@ -34,7 +35,7 @@ async def appoint(u: dict, b: dict) -> dict:
     if not can_prepare(u):
         raise Fail("Проєкти наказів про призначення готує ВКПП.", 403)
     p = await core.user(int(b.get("sid") or 0))
-    if not p or p["status"] == "dismissed" or p["dept"] == "prosecutor":
+    if not p or p["status"] == "dismissed" or p["dept"] in ("prosecutor", "curator"):
         raise Fail("Співробітника не знайдено.")
     if p["sid"] == u["sid"]:
         raise Fail("Призначити самого себе не можна.")

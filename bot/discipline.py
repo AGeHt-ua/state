@@ -6,6 +6,7 @@ import logging
 import discord
 
 import core
+import overrides as ov
 import style
 from core import DAY, Fail
 from db import db, now_ms
@@ -228,7 +229,7 @@ async def decide(u: dict, oid: int, action: str, note: str = "") -> dict:
 async def delete(u: dict, oid: int):
     """Скасування й видалення наказу: хто наклав або Голова/заступник. Пониження/звільнення ролей назад не повертає."""
     o = await get(oid)
-    if not (o["issued_by"] == u["sid"] or u["rank"] >= 14):
+    if not (o["issued_by"] == u["sid"] or u["rank"] >= ov.P("disc_chief")):
         raise Fail("Видалити наказ може той, хто його видав, або керівництво СБУ.", 403)
     h = o["history"] + [{"t": now_ms(), "sid": u["sid"], "name": u["name"], "action": "delete"}]
     await db.run("UPDATE discipline SET status='deleted', history=? WHERE id=?", json.dumps(h, ensure_ascii=False), oid)
@@ -314,9 +315,9 @@ async def insp_move(u: dict, iid: int, to: str) -> dict:
             raise Fail("Додайте висновок перевірки.")
         await db.run("UPDATE inspections SET status='sent', updated=? WHERE id=?", now_ms(), iid)
         await insp_notice(i, u)
-    elif to == "closed" and i["status"] == "sent" and u["rank"] >= 14:
+    elif to == "closed" and i["status"] == "sent" and u["rank"] >= ov.P("disc_chief"):
         await db.run("UPDATE inspections SET status='closed', updated=? WHERE id=?", now_ms(), iid)
-    elif to == "deleted" and (i["author"] == u["sid"] or u["rank"] >= 14):
+    elif to == "deleted" and (i["author"] == u["sid"] or u["rank"] >= ov.P("disc_chief")):
         await db.run("UPDATE inspections SET status='deleted', updated=? WHERE id=?", now_ms(), iid)
         return i
     else:
@@ -372,7 +373,7 @@ async def listing(u: dict) -> dict:
         "mine": [out(o, people) for o in mine],
         "journal": [out(o, people) for o in journal_rows],
         "inspections": [{**i, "files": json.loads(i["files"] or "[]"), "target": people.get(i["sid"]), "author": people.get(i["author"])} for i in insp],
-        "rights": {"journal": can_journal(u), "vvb": is_vvb(u), "chief": u["rank"] >= 14, "head": u["rank"] == 15,
+        "rights": {"journal": can_journal(u), "vvb": is_vvb(u), "chief": u["rank"] >= ov.P("disc_chief"), "head": u["rank"] == 15,
                    "kinds": [k for k in KINDS if u["rank"] >= KINDS[k][2]]},
         "kinds": {k: v[0] for k, v in KINDS.items()},
         "violations": [{"id": v[0], "t": v[1], "kinds": v[2], "fine": v[3]} for v in VIOLATIONS],
