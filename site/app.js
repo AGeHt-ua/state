@@ -195,8 +195,8 @@ async function verifyCard(btn) {
 }
 
 async function vHome() {
-  setTimeout(() => verifyCard(), 60);
   const acts = await call("/api/acts");
+  setTimeout(() => verifyCard(), 60);  // після вставки сторінки (render вставляє HTML одразу після цього return)
   const pc = ME.promo;
   const pend = ME.pending || {};
   const me = ME.me, d = META.depts[me.dept];
