@@ -585,18 +585,34 @@ async def post_card(kind: str, row: dict):
     msg = await ch.send(embed=embed)  # Discord — журнал: рішення ухвалюються лише в ЄІС «Сова»
     table = "acts" if kind == "act" else "raps"
     await db.run(f"UPDATE {table} SET ch_id=?, msg_id=? WHERE id=?", str(ch.id), str(msg.id), row["id"])
+    if kind == "rap" and row["type"] in STAGES:
+        # копії начальникам обох відділів — «звідки» (для Академії — ВКПП) і «куди»
+        data = json.loads(row["data"] or "{}")
+        copies = []
+        for d in dict.fromkeys(["vkpp" if row["dept"] == "academy" else row["dept"], data.get("to")]):
+            cid = config.CHANNELS.get(f"rapdept:{d}")
+            if not cid or cid == ch.id:
+                continue
+            try:
+                c = bot.get_channel(cid) or await bot.fetch_channel(cid)
+                m = await c.send(embed=embed)
+                copies.append([str(c.id), str(m.id)])
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as ex:
+                log.warning("Копія рапорту в канал відділу %s: %s", d, ex)
+        if copies:
+            await db.run("UPDATE raps SET copies=? WHERE id=?", json.dumps(copies), row["id"])
 
 
 async def refresh_card(kind: str, row: dict):
     if not row.get("msg_id"):
         return
-    try:
-        ch = bot.get_channel(int(row["ch_id"])) or await bot.fetch_channel(int(row["ch_id"]))
-        msg = await ch.fetch_message(int(row["msg_id"]))
-        embed = await (act_embed(row) if kind == "act" else rap_embed(row))
-        await msg.edit(embed=embed, view=None)
-    except (discord.NotFound, discord.Forbidden):
-        return
+    embed = await (act_embed(row) if kind == "act" else rap_embed(row))
+    for cid, mid in [[row["ch_id"], row["msg_id"]], *json.loads(row.get("copies") or "[]")]:
+        try:  # основна картка й копії в каналах відділів
+            ch = bot.get_channel(int(cid)) or await bot.fetch_channel(int(cid))
+            await (await ch.fetch_message(int(mid))).edit(embed=embed, view=None)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
     if row["status"] != "wait":
         reviewer = await user(row["reviewer"]) if row.get("reviewer") else None
         author = await user(row["by_sid"])
