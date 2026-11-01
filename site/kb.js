@@ -2,7 +2,10 @@
 (() => {
 const S = window.SOVA;
 const { esc, call, toast, fmtDT } = S;
-const st = { tab: "law", doc: null, q: "", sbu: false, extract: false, sel: new Set(), lib: null, libEdit: null, exam: null, take: null, result: null, examEdit: null, review: null, ans: {} };
+let PREF = {};
+try { PREF = JSON.parse(localStorage.getItem("sova-kb") || "{}"); } catch (e) {}
+const savePref = () => { try { localStorage.setItem("sova-kb", JSON.stringify({ fs: st.fs, dark: st.dark })); } catch (e) {} };
+const st = { fs: PREF.fs || 16, dark: !!PREF.dark, side: false, wide: false, fold: true, find: "", tab: "law", doc: null, q: "", sbu: false, extract: false, sel: new Set(), lib: null, libEdit: null, exam: null, take: null, result: null, examEdit: null, review: null, ans: {} };
 const ME = () => S.ME();
 const mark = (text, q) => q ? esc(text).replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), (m) => `<mark>${m}</mark>`) : esc(text);
 
@@ -12,39 +15,91 @@ async function lawView() {
   INDEX = await call("/api/kb");
   const docs = INDEX.docs.filter((d) => !st.sbu || d.sbu);
   const groups = {};
-  docs.forEach((d) => { const g = d.faction_abbr ? `Фракції · ${d.faction_abbr}` : d.grp_title || (d.section === "rules" ? "Правила" : "Інше"); (groups[g] = groups[g] || []).push(d); });
-  const side = `<aside class="kb-side">
-    <form data-f="kbsearch" class="kb-search"><input class="i" id="kb-q" placeholder="Пошук по всій базі: стаття, слово, фраза…" value="${esc(st.q)}"><button class="btn gold" type="submit">Знайти</button></form>
-    <label class="kb-sbu"><input type="checkbox" data-kbsbu ${st.sbu ? "checked" : ""}> Лише документи для СБУ</label>
+  docs.forEach((d) => { const g = d.faction_abbr ? `Фракції · ${d.faction_abbr}` : d.grp_title || (d.section === "rules" ? "Правила проєкту" : "Інше"); (groups[g] = groups[g] || []).push(d); });
+  const searchBox = `<form data-f="kbsearch" class="kb-search"><input class="i" id="kb-q" placeholder="Пошук по всій базі: стаття, слово, фраза…" value="${esc(st.q)}"><button class="btn gold" type="submit">Знайти</button></form>
+    <label class="kb-sbu"><input type="checkbox" data-kbsbu ${st.sbu ? "checked" : ""}> Лише документи для СБУ</label>`;
+  const side = `<aside class="kb-side">${searchBox}
     <div class="kb-meta">${INDEX.docs.length} документів · звірено ${INDEX.checked ? fmtDT(INDEX.checked) : "—"}</div>
     ${Object.entries(groups).map(([g, list]) => `<details class="kb-grp" ${list.some((d) => d.slug === st.doc) || st.sbu ? "open" : ""}><summary>${esc(g)} <span>${list.length}</span></summary>
-      ${list.map((d) => `<button class="kb-doc ${d.slug === st.doc ? "on" : ""} ${d.sbu ? "sbu" : ""}" data-a="kbopen" data-v="${esc(d.slug)}">${esc(d.short || d.title)}</button>`).join("")}</details>`).join("")}
+      ${list.map((d) => `<button class="kb-doc ${d.slug === st.doc ? "on" : ""} ${d.sbu ? "sbu" : ""}" data-a="kbopen" data-v="${esc(d.slug)}">${esc(d.title)}</button>`).join("")}</details>`).join("")}
   </aside>`;
-  let main;
-  if (st.q && !st.doc) {
-    const res = await call(`/api/kb/search?q=${encodeURIComponent(st.q)}${st.sbu ? "&sbu=1" : ""}`);
-    main = `<div class="kb-res"><div class="eyebrow">Результати пошуку «${esc(st.q)}» · ${res.length}</div>${res.map((r) => `<article class="kb-hit" data-a="kbopen" data-v="${esc(r.slug)}">
-      <b>${mark(r.title, st.q)}</b><span class="muted small">${esc(r.faction || r.grp || "")} · збігів: ${r.hits}</span>
-      ${r.snippets.map((s) => `<p>${mark(s, st.q)}</p>`).join("")}</article>`).join("") || '<div class="empty">Нічого не знайдено.</div>'}</div>`;
-  } else if (st.doc) {
+
+  // ---- відкритий документ: панель, зміст-гармошка, розділи-теки
+  if (st.doc) {
     const d = await call(`/api/kb/doc/${encodeURIComponent(st.doc)}`);
     S.cache.kbdoc = d;
-    main = `<div class="kb-view">
-      <div class="kb-bar"><button class="btn sm" data-a="kbback">← До списку</button><span class="sp"></span>
-        <button class="btn sm ${st.extract ? "gold" : ""}" data-a="kbext">${st.extract ? "✕ Вийти з режиму витягу" : "✂ Зробити витяг"}</button>
-        ${st.extract ? `<button class="btn sm gold" data-a="kbextmake" ${st.sel.size ? "" : "disabled"}>Сформувати витяг (${st.sel.size})</button>` : ""}</div>
+    const toc = [];
+    d.toc.forEach((t) => { if (t.level === 1 || !toc.length) toc.push({ ...t, kids: [] }); else toc[toc.length - 1].kids.push(t); });
+    const chk = (t) => st.extract ? `<input type="checkbox" data-kbsel="${esc(t.id)}" ${st.sel.has(t.id) ? "checked" : ""}>` : "";
+    return `<div class="kb-reader ${st.wide ? "wide" : ""} ${st.dark ? "dark" : ""}" style="--fs:${st.fs}px">
+      ${st.side ? `<div class="kb-drawer">${side}</div>` : ""}
+      <div class="kb-tools">
+        <button class="btn sm" data-a="kbside">☰ Документи</button>
+        <div class="kb-tools-t"><b>${esc(d.title)}</b><span>${esc(d.faction_abbr || d.grp_title || "")}${d.sbu ? " · для СБУ" : ""} · редакція від ${fmtDT(d.updated)}</span></div>
+        <div class="kb-find"><input class="i" id="kb-find" placeholder="Пошук у документі" value="${esc(st.find || "")}"><span id="kb-find-n"></span>
+          <button class="btn sm" data-a="kbfind" data-d="-1" title="Попередній">↑</button><button class="btn sm" data-a="kbfind" data-d="1" title="Наступний">↓</button></div>
+        <div class="kb-btns">
+          <button class="btn sm" data-a="kbfs" data-d="-1" title="Менший шрифт">A−</button><button class="btn sm" data-a="kbfs" data-d="1" title="Більший шрифт">A+</button>
+          <button class="btn sm" data-a="kbtheme" title="Папір / темна тема">${st.dark ? "☀" : "☾"}</button>
+          <button class="btn sm" data-a="kbfold" data-v="1" title="Розгорнути всі розділи">⇲ Усі</button><button class="btn sm" data-a="kbfold" data-v="0" title="Згорнути всі розділи">⇱ Згорнути</button>
+          <button class="btn sm" data-a="kbwide" title="Режим читання">${st.wide ? "◫ Зміст" : "▭ Читання"}</button>
+          <button class="btn sm ${st.extract ? "gold" : ""}" data-a="kbext">${st.extract ? "✕ Витяг" : "✂ Витяг"}</button>
+          ${st.extract ? `<button class="btn sm gold" data-a="kbextmake" ${st.sel.size ? "" : "disabled"}>Сформувати (${st.sel.size})</button>` : ""}
+        </div>
+      </div>
       <div class="kb-doc-wrap">
-        <nav class="kb-toc">${d.toc.map((t) => `<label class="lv${t.level}">${st.extract ? `<input type="checkbox" data-kbsel="${esc(t.id)}" ${st.sel.has(t.id) ? "checked" : ""}>` : ""}<a href="#${esc(t.id)}" data-kbgo="${esc(t.id)}">${esc(t.title)}</a></label>`).join("")}</nav>
-        <article class="kd kb-paper"><header class="kd-head"><img src="sbu-logo.webp" alt="" width="64" height="64"><div><div class="kd-agency">Законодавча база штату NG</div><div class="kd-dept">${esc(d.faction_abbr || d.grp_title || "")}${d.sbu ? " · для СБУ" : ""}</div></div>
-          <div class="kd-no"><span>редакція від</span><b>${fmtDT(d.updated)}</b></div></header>
-          <h2 class="kb-title">${esc(d.title)}</h2><div class="law-body" id="law-body">${d.html}</div></article>
+        <nav class="kb-toc"><div class="kb-toc-h">Зміст документа</div>
+          ${toc.map((s) => s.kids.length ? `<details ${st.extract ? "open" : ""}><summary>${chk(s)}<a href="#${esc(s.id)}" data-kbgo="${esc(s.id)}">${esc(s.title)}</a><i>${s.kids.length}</i></summary>
+            ${s.kids.map((k) => `<label>${chk(k)}<a href="#${esc(k.id)}" data-kbgo="${esc(k.id)}">${esc(k.title)}</a></label>`).join("")}</details>`
+            : `<label class="lv1">${chk(s)}<a href="#${esc(s.id)}" data-kbgo="${esc(s.id)}">${esc(s.title)}</a></label>`).join("") || '<div class="muted small">Документ без поділу на розділи.</div>'}
+        </nav>
+        <article class="kb-paper2"><header class="kb-ph"><img src="sbu-logo.webp" alt="" width="56" height="56"><div><div class="kb-ph-a">Законодавча база штату NG</div><div class="kb-ph-b">ЄІС «Сова» · Служба безпеки штату NG</div></div><div class="kb-ph-grif">ОФІЦІЙНИЙ ТЕКСТ</div></header>
+          <h2 class="kb-title">${esc(d.title)}</h2>
+          <div class="law-body" id="law-body">${sectionize(d.html)}</div>
+        </article>
       </div></div>`;
-  } else {
-    const sbu = INDEX.docs.filter((d) => d.sbu);
-    main = `<div class="kb-home"><div class="eyebrow">Швидкий доступ · документи СБУ</div><div class="kb-cards">${sbu.map((d) => `<button class="kb-card" data-a="kbopen" data-v="${esc(d.slug)}"><b>${esc(d.title)}</b><span>${esc(d.faction_abbr || d.grp_title || "")}</span></button>`).join("")}</div>
-      <p class="muted small" style="margin-top:14px">Джерело — офіційна база проєкту NG. Оберіть документ ліворуч або знайдіть потрібну статтю пошуком.</p></div>`;
   }
-  return `<div class="kb-law">${side}<div class="kb-main">${main}</div></div>`;
+
+  // ---- результати пошуку
+  if (st.q) {
+    const res = await call(`/api/kb/search?q=${encodeURIComponent(st.q)}${st.sbu ? "&sbu=1" : ""}`);
+    return `<div class="kb-law">${side}<div class="kb-main"><div class="kb-res"><div class="kb-res-h"><div class="eyebrow">Результати пошуку «${esc(st.q)}»</div><b>${res.length} документів</b>
+      <button class="btn sm" data-a="kbclear">✕ Очистити пошук</button></div>${res.map((r) => `<article class="kb-hit" data-a="kbopen" data-v="${esc(r.slug)}" data-find="${esc(st.q)}">
+      <div class="kb-hit-h"><b>${mark(r.title, st.q)}</b><span>${esc(r.faction || r.grp || "")} · збігів: ${r.hits}</span></div>
+      ${r.snippets.map((s) => `<p>${mark(s, st.q)}</p>`).join("")}</article>`).join("") || '<div class="empty">Нічого не знайдено.</div>'}</div></div></div>`;
+  }
+
+  // ---- головна бази: категорії-картки
+  const sbu = INDEX.docs.filter((d) => d.sbu);
+  return `<div class="kb-home2">${searchBox.replace('class="kb-search"', 'class="kb-search big"')}
+    <section><div class="kb-sec-h"><span>Документи СБУ</span><i></i></div><div class="kb-cards">${sbu.map((d) => `<button class="kb-card sbu" data-a="kbopen" data-v="${esc(d.slug)}"><b>${esc(d.title)}</b><span>${esc(d.faction_abbr || d.grp_title || "")}</span></button>`).join("")}</div></section>
+    ${Object.entries(groups).map(([g, list]) => `<details class="kb-cat" ${st.sbu ? "open" : ""}><summary><span>${esc(g)}</span><i>${list.length}</i></summary>
+      <div class="kb-cards">${list.map((d) => `<button class="kb-card ${d.sbu ? "sbu" : ""}" data-a="kbopen" data-v="${esc(d.slug)}"><b>${esc(d.title)}</b><span>${esc(d.faction_abbr || d.grp_title || "")}</span></button>`).join("")}</div></details>`).join("")}
+    <p class="muted small" style="margin-top:14px">Джерело — офіційна база проєкту NG · ${INDEX.docs.length} документів · звірено ${INDEX.checked ? fmtDT(INDEX.checked) : "—"}</p></div>`;
+}
+
+// Розбиває документ на розділи-«теки»: кожен заголовок розділу (h2) з наступним текстом — окремий <details>
+function sectionize(html) {
+  const box = document.createElement("div");
+  box.innerHTML = html;
+  const out = document.createElement("div");
+  let cur = null;
+  [...box.childNodes].forEach((n) => {
+    if (n.nodeType === 1 && (n.tagName === "H2" || n.classList.contains("kb-sec"))) {
+      cur = document.createElement("details");
+      cur.className = "kb-part";
+      cur.open = st.fold !== false;
+      const sum = document.createElement("summary");
+      sum.id = n.id || "";
+      sum.innerHTML = n.innerHTML;
+      cur.append(sum);
+      out.append(cur);
+      return;
+    }
+    if (n.nodeType === 1 && n.classList.contains("kb-art")) n.classList.add("kb-art-h");
+    (cur || out).append(n);
+  });
+  return out.innerHTML;
 }
 
 function buildExtract() {
@@ -68,6 +123,43 @@ function buildExtract() {
     <div class="law-body">${parts.join("")}</div>
     <div class="blank-sign" style="margin-top:26px"><span>Витяг сформував: ${esc(ME().me.rankName)} ${esc(ME().me.name)}</span><span class="kf-sign">${esc(ME().me.name)}</span></div>
     <div class="ext-stamp">ЗГІДНО З ОРИГІНАЛОМ</div></div>`;
+}
+
+let HITS = [], HI = -1;
+function markIn(q) {
+  const body = document.getElementById("law-body");
+  if (!body) return;
+  body.querySelectorAll("mark.hit").forEach((m) => m.replaceWith(document.createTextNode(m.textContent)));
+  body.normalize();
+  HITS = []; HI = -1;
+  if (q.length < 2) { const n = document.getElementById("kb-find-n"); if (n) n.textContent = ""; return; }
+  const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+  const walk = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walk.nextNode()) if (re.test(walk.currentNode.nodeValue)) nodes.push(walk.currentNode);
+  nodes.forEach((t) => {
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    t.nodeValue.replace(re, (m, i) => { frag.append(t.nodeValue.slice(last, i)); const k = document.createElement("mark"); k.className = "hit"; k.textContent = m; frag.append(k); HITS.push(k); last = i + m.length; return m; });
+    frag.append(t.nodeValue.slice(last));
+    t.replaceWith(frag);
+  });
+  const n = document.getElementById("kb-find-n");
+  if (n) n.textContent = HITS.length ? `${HITS.length} збігів` : "немає";
+}
+function findIn(dir) {
+  const q = (document.getElementById("kb-find") || {}).value || st.find || "";
+  if (!HITS.length || dir === 0) markIn(q);
+  if (!HITS.length) return;
+  HI = (HI + (dir || 1) + HITS.length) % HITS.length;
+  HITS.forEach((h) => h.classList.remove("cur"));
+  const h = HITS[HI];
+  h.classList.add("cur");
+  const part = h.closest("details");
+  if (part) part.open = true;
+  h.scrollIntoView({ behavior: "smooth", block: "center" });
+  const n = document.getElementById("kb-find-n");
+  if (n) n.textContent = `${HI + 1} / ${HITS.length}`;
 }
 
 /* ---------- зміни законодавства ---------- */
@@ -214,8 +306,16 @@ const R = () => S.render();
 const run = async (b, fn) => { if (b) b.disabled = true; try { await fn(); } catch (e) { toast(e.message, 1); } if (b) b.disabled = false; };
 Object.assign(S.actions, {
   kbtab: (b) => { st.tab = b.dataset.v; st.take = st.result = st.review = st.examEdit = st.libEdit = null; R(); },
-  kbopen: (b) => { st.doc = b.dataset.v; st.extract = false; st.sel.clear(); if (b.dataset.tab) st.tab = b.dataset.tab; R(); scrollTo(0, 0); },
+  kbopen: async (b) => { st.doc = b.dataset.v; st.extract = false; st.side = false; st.fold = true; st.sel.clear(); st.find = b.dataset.find || "";
+    if (b.dataset.tab) st.tab = b.dataset.tab; await R(); scrollTo(0, 0); if (st.find) setTimeout(() => findIn(0), 50); },
   kbback: () => { st.doc = null; st.extract = false; R(); },
+  kbclear: () => { st.q = ""; R(); },
+  kbside: () => { st.side = !st.side; R(); },
+  kbwide: () => { st.wide = !st.wide; R(); },
+  kbtheme: () => { st.dark = !st.dark; savePref(); document.querySelector(".kb-reader")?.classList.toggle("dark", st.dark); const b = document.querySelector("[data-a=kbtheme]"); if (b) b.textContent = st.dark ? "☀" : "☾"; },
+  kbfs: (b) => { st.fs = Math.max(13, Math.min(22, st.fs + +b.dataset.d)); savePref(); document.querySelector(".kb-reader")?.style.setProperty("--fs", st.fs + "px"); },
+  kbfold: (b) => { st.fold = b.dataset.v === "1"; document.querySelectorAll(".kb-part").forEach((d) => (d.open = st.fold)); },
+  kbfind: (b) => findIn(+b.dataset.d),
   kbext: () => { st.extract = !st.extract; st.sel.clear(); R(); },
   kbextmake: () => {
     const html = buildExtract();
@@ -288,11 +388,14 @@ document.addEventListener("change", (e) => {
   if (e.target.hasAttribute && e.target.hasAttribute("data-kbsbu")) { st.sbu = e.target.checked; R(); }
   if (e.target.dataset && e.target.dataset.kbsel) { e.target.checked ? st.sel.add(e.target.dataset.kbsel) : st.sel.delete(e.target.dataset.kbsel); const b = document.querySelector("[data-a=kbextmake]"); if (b) { b.disabled = !st.sel.size; b.textContent = `Сформувати витяг (${st.sel.size})`; } }
 });
+document.addEventListener("input", (e) => { if (e.target.id === "kb-find") { st.find = e.target.value; markIn(st.find.trim()); } });
+document.addEventListener("keydown", (e) => { if (e.target.id === "kb-find" && e.key === "Enter") { e.preventDefault(); findIn(e.shiftKey ? -1 : 1); } });
 document.addEventListener("click", (e) => {
   const a = e.target.closest("[data-kbgo]");
   if (!a) return;
   e.preventDefault();
   const el = document.getElementById(a.dataset.kbgo);
+  if (el && el.closest("details")) el.closest("details").open = true;
   if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); el.classList.add("kb-flash"); setTimeout(() => el.classList.remove("kb-flash"), 1600); }
 });
 setInterval(() => {
