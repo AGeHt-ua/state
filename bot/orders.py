@@ -215,14 +215,40 @@ async def free_post(o: dict, u: dict, cancelled: bool = False):
         e = style.document(f"НАКАЗ НГ-{o['id']:04d} СКАСОВАНО", 0x5F6A7A, desc=f"«{o['title']}»\nСкасував: {u['name']} · {style.when()}")
         kw = {"allowed_mentions": discord.AllowedMentions.none()}
     else:
-        e = style.document(f"НАКАЗ № НГ-{o['id']:04d}", 0xC9A05A,
-                           desc=f"**{o['title'].upper()}**\n\n{o['body']}\n\n*{rank_name(u['rank'])} {u['name']}* · {style.when(o['t'])}",
+        e = style.document("НАКАЗ ГОЛОВИ СЛУЖБИ БЕЗПЕКИ", 0xC9A05A, desc=free_blank(o, u), no=f"НГ-{o['id']:04d}",
                            footer="Наказ обов'язковий до виконання всім особовим складом СБУ")
         kw = core.mention("order")
     try:
         await ch.send(embed=e, **kw)
     except discord.HTTPException as ex:
         log.warning("Наказ НГ: %s", ex)
+
+
+def free_blank(o: dict, u: dict) -> str:
+    """Бланк наказу кольоровим ANSI: шапка, номер і дата, назва, текст з переносами, підпис."""
+    W = 44
+    mid = lambda s: f"{s:^{W}}"
+    lines = [style.c(mid("СЛУЖБА БЕЗПЕКИ ШТАТУ NG"), "gold", True),
+             style.c(mid("Н А К А З"), "white", True),
+             style.c(mid(f"№ НГ-{o['id']:04d}  ·  {style.when(o['t'])}"), "gray"),
+             style.rule(W), ""]
+    lines += [style.c(mid(s), "gold", True) for s in style.wrap(o["title"].upper(), W)]
+    lines.append("")
+    for para in o["body"].split("\n"):
+        if not para.strip():
+            lines.append("")
+            continue
+        bold = para.strip().upper().startswith(("НАКАЗУЮ", "ЗОБОВ'ЯЗУЮ", "ПОСТАНОВЛЯЮ"))
+        lines += [style.c(s, "white", bold) if bold else s for s in style.wrap(para, W)]
+    lines += ["", style.rule(W),
+              style.kv("ПІДПИСАВ", f"{rank_name(u['rank'])}", "gray", width=12),
+              style.kv("", u["name"], "white", True, width=12),
+              style.kv("ДАТА", style.when(o["t"]), "gray", width=12),
+              style.c(f"{'[ М.П. ]':>{W}}", "red", True)]
+    text = style.block(*lines)
+    if len(text) > 4000:  # ліміт опису Discord — коротимо текст, повний наказ є в ЄІС «Сова»
+        text = style.block(*lines[:60], "…", style.c("Повний текст — у ЄІС «Сова» → Особовий склад → Накази", "gray"))
+    return text
 
 
 async def delete_free(u: dict, oid: int):
