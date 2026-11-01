@@ -349,6 +349,8 @@ async def resolution(status: str, reviewer_sid: int | None, reviewed: int | None
     """Рядки резолюції під документом."""
     if status == "wait":
         return [style.kv("РЕЗОЛЮЦІЯ", "очікує розгляду", "gold", True)]
+    if status == "cancel":
+        return [style.kv("РЕЗОЛЮЦІЯ", "ВІДКЛИКАНО ВИКОНАВЦЕМ", "gray", True), style.kv("", style.when(reviewed), "gray")]
     rev = await user(reviewer_sid) if reviewer_sid else None
     word, color = (ok_word, "green") if status == "ok" else ("ВІДМОВЛЕНО", "red")
     lines = [style.kv("РЕЗОЛЮЦІЯ", word, color, True)]
@@ -530,7 +532,21 @@ async def refresh_card(kind: str, row: dict):
         author = await user(row["by_sid"])
         what = ACTS[row["type"]][0] if kind == "act" else RAP_TYPES.get(row["type"], "Рапорт")
         await post_log(row["ch_id"], row["msg_id"], style.doc_no("ЗВТ" if kind == "act" else "РАП", row["id"]), what,
-                       who(author), row["status"], who(reviewer), row.get("reviewed"))
+                       who(author), row["status"], who(author if row["status"] == "cancel" else reviewer), row.get("reviewed"))
+
+
+async def withdraw(u: dict, kind: str, rid: int) -> dict:
+    """Виконавець відкликає власний звіт чи рапорт, поки його ще не розглянули."""
+    table = "acts" if kind == "act" else "raps"
+    row = await db.one(f"SELECT * FROM {table} WHERE id=?", rid)
+    if not row or row["by_sid"] != u["sid"]:
+        raise Fail("Відкликати можна лише власний документ.", 403)
+    if row["status"] != "wait":
+        raise Fail("Документ уже розглянуто — відкликати не можна.")
+    await db.run(f"UPDATE {table} SET status='cancel', reviewer=NULL, reviewed=? WHERE id=?", now_ms(), rid)
+    row = await db.one(f"SELECT * FROM {table} WHERE id=?", rid)
+    await refresh_card(kind, row)
+    return row
 
 
 async def post_log(ch_id, msg_id, no: str, what: str, subject: str, status: str, by: str, t: int | None = None, note: str = ""):

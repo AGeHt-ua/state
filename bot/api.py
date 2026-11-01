@@ -275,6 +275,26 @@ async def cases_submit(request):
     return web.json_response(cases.out(c, u))
 
 
+@routes.post("/api/cases/{id}/withdraw")
+async def cases_withdraw(request):
+    u = await auth(request)
+    return web.json_response(cases.out(await cases.withdraw(u, int(request.match_info["id"])), u))
+
+
+@routes.post("/api/acts/{id}/withdraw")
+async def acts_withdraw(request):
+    u = await auth(request)
+    row = await core.withdraw(u, "act", int(request.match_info["id"]))
+    return web.json_response(act_out(row, await people_map([row["by_sid"]])))
+
+
+@routes.post("/api/raps/{id}/withdraw")
+async def raps_withdraw(request):
+    u = await auth(request)
+    row = await core.withdraw(u, "rap", int(request.match_info["id"]))
+    return web.json_response(rap_out(row, await people_map([row["by_sid"]])))
+
+
 @routes.post("/api/cases/{id}/decision")
 async def cases_decide(request):
     u = await auth(request)

@@ -150,3 +150,5 @@
   .org-row{grid-template-columns:1fr}.org-row::before{display:none}.org-node,.org-top>.org-node{min-width:0;width:100%}.aud-q{max-width:none;width:100%}}
 @media (prefers-reduced-motion:reduce){.idcard::after{display:none}}
 .todo-item .ico,.quick .ico{flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.doc.st-cancel{--sc:var(--dim);opacity:.7}
+.doc-side .btn{margin-top:2px}

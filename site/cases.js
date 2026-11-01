@@ -45,7 +45,10 @@ async function vList() {
 
 /* ---------- документ ---------- */
 function visas(c) {
-  const h = c.history || [];
+  // Візи лише поточного кола погодження: з останнього подання; після відкликання — порожньо
+  const all = c.history || [];
+  const i = all.map((x) => x.action).lastIndexOf("submit");
+  const h = all.length && all[all.length - 1].action === "withdraw" ? [] : i >= 0 ? all.slice(i) : [];
   const last = (stage, acts) => [...h].reverse().find((x) => x.stage === stage && acts.includes(x.action));
   return `<div class="kf-visas">${ROUTE.map(([k, label]) => {
     const v = k === "draft" ? last("draft", ["submit"]) : last(k, ["ok", "return", "rej"]);
@@ -88,7 +91,7 @@ function docHtml(c, pdf) {
 }
 
 function history(c) {
-  const W = { create: "Заведено справу", submit: "Подано на погодження", ok: "Погоджено", return: "Повернуто на доопрацювання", rej: "Відмовлено" };
+  const W = { create: "Заведено справу", withdraw: "Відкликано виконавцем з погодження", submit: "Подано на погодження", ok: "Погоджено", return: "Повернуто на доопрацювання", rej: "Відмовлено" };
   return `<div class="card"><header><h3>Рух документа</h3></header><div class="aud">${(c.history || []).slice().reverse().map((h) => `
     <div class="aud-it k-${h.action === "ok" || h.action === "submit" ? "in" : h.action === "rej" ? "down" : h.action === "return" ? "up" : "misc"}"><i></i>
       <div class="aud-when"><b>${new Date(h.t).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })}</b><span>${new Date(h.t).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span></div>
@@ -101,6 +104,7 @@ async function vCase(id) {
   const pros = c.status === "prosecutor";
   const bar = `<div class="kd-bar"><button class="btn" data-a="kfback">← До реєстру</button><span class="sp"></span>
     ${c.canEdit ? `<button class="btn" data-a="kfedit">Редагувати</button><button class="btn gold" data-a="kfsubmit">Подати на погодження</button>` : ""}
+    ${c.canWithdraw ? '<button class="btn" data-a="kfwd">↩ Відкликати з погодження</button>' : ""}
     ${c.canDecide ? `<button class="btn ok" data-a="kfdec" data-d="ok">${pros ? "Затвердити" : "Погодити"}</button><button class="btn" data-a="kfdec" data-d="return">Повернути на доопрацювання</button><button class="btn bad" data-a="kfdec" data-d="rej">Відмовити</button>` : ""}
     ${c.status === "approved" ? '<button class="btn gold" data-a="kfpdf">⬇ Завантажити PDF</button>' : ""}</div>`;
   return bar + `<div class="kd-wrap">${docHtml(c, false)}</div>` + history(c);
@@ -223,6 +227,12 @@ Object.assign(S.actions, {
     if (!confirm("Подати кейс-файл на погодження? Після подання редагування закривається.")) return;
     b.disabled = true;
     try { await call(`/api/cases/${UIc.id}/submit`, { json: {} }); toast("Кейс-файл подано на погодження"); await S.refreshMe(); S.render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
+  kfwd: async (b) => {
+    if (!confirm("Відкликати справу з погодження? Вона повернеться у вашу чернетку.")) return;
+    b.disabled = true;
+    try { await call(`/api/cases/${UIc.id}/withdraw`, { json: {} }); toast("Справу відкликано в чернетку"); await S.refreshMe(); S.render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
   kfdec: async (b) => {

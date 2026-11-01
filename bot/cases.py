@@ -101,6 +101,7 @@ async def get(cid: int) -> dict:
 
 def out(c: dict, u: dict) -> dict:
     return {**c, "canEdit": c["author"] == u["sid"] and c["status"] == "draft", "canDecide": can_decide(u, c),
+            "canWithdraw": c["author"] == u["sid"] and c["status"] in ("head", "chief", "prosecutor"),
             "stageName": STAGE_NAME[c["status"]]}
 
 
@@ -161,6 +162,20 @@ async def submit(u: dict, cid: int) -> dict:
                  nxt, REACH[nxt], json.dumps(h, ensure_ascii=False), now_ms(), cid)
     c = await get(cid)
     await journal(c, u, "Передано на погодження")
+    return c
+
+
+async def withdraw(u: dict, cid: int) -> dict:
+    """Виконавець відкликає справу з погодження назад у свою чернетку (поки її не затвердили чи не відмовили)."""
+    c = await get(cid)
+    if c["author"] != u["sid"]:
+        raise Fail("Відкликати може лише виконавець справи.", 403)
+    if c["status"] not in ("head", "chief", "prosecutor"):
+        raise Fail("Справа зараз не на погодженні.")
+    h = await _hist(c, u, "withdraw")
+    await db.run("UPDATE cases SET status='draft', reached=0, history=?, updated=? WHERE id=?", json.dumps(h, ensure_ascii=False), now_ms(), cid)
+    c = await get(cid)
+    await journal(c, u, "Відкликано виконавцем з погодження")
     return c
 
 

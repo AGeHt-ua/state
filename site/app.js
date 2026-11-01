@@ -220,7 +220,7 @@ async function vHome() {
 }
 
 /* ---------------- звіти ---------------- */
-const stLabel = { ok: "Підтверджено", wait: "На перевірці", rej: "Відхилено" };
+const stLabel = { ok: "Підтверджено", wait: "На перевірці", rej: "Відхилено", cancel: "Відкликано" };
 function actFeed(list, review) {
   return `<div class="docs">${list.map((a) => {
     const meta = META.acts[a.type] || { n: a.type, p: 0 };
@@ -236,7 +236,7 @@ function actFeed(list, review) {
       </div>
       <div class="doc-side">${review
         ? `<button class="btn sm ok" data-a="actd" data-id="${a.id}" data-d="ok">Підтвердити</button><button class="btn sm bad" data-a="actd" data-id="${a.id}" data-d="rej">Відхилити</button>`
-        : `<span class="doc-stamp">${stLabel[a.status]}</span>${a.reviewer ? `<span class="muted small">${esc(a.reviewer.name)}</span>` : ""}`}</div>
+        : `<span class="doc-stamp">${stLabel[a.status]}</span>${a.reviewer ? `<span class="muted small">${esc(a.reviewer.name)}</span>` : ""}${a.status === "wait" ? `<button class="btn sm" data-a="wd" data-k="acts" data-id="${a.id}">↩ Відкликати</button>` : ""}`}</div>
     </article>`;
   }).join("")}</div>`;
 }
@@ -300,7 +300,7 @@ async function vRap() {
         <div class="doc-title">${esc(META.rapTypes[r.type])}</div><div class="doc-line">${rapDesc(r)}</div></div>
       <div class="doc-side">${t === "review"
         ? `<button class="btn sm ok" data-a="rapd" data-id="${r.id}" data-d="ok">Погодити</button><button class="btn sm bad" data-a="rapd" data-id="${r.id}" data-d="rej">Відмовити</button>`
-        : `<span class="doc-stamp">${{ ok: "Погоджено", rej: "Відмовлено", wait: "На розгляді" }[r.status]}</span>${r.reviewer ? `<span class="muted small">${esc(r.reviewer.name)}</span>` : ""}`}</div>
+        : `<span class="doc-stamp">${{ ok: "Погоджено", rej: "Відмовлено", wait: "На розгляді", cancel: "Відкликано" }[r.status]}</span>${r.reviewer ? `<span class="muted small">${esc(r.reviewer.name)}</span>` : ""}${r.status === "wait" ? `<button class="btn sm" data-a="wd" data-k="raps" data-id="${r.id}">↩ Відкликати</button>` : ""}`}</div>
     </article>`).join("")}</div>`;
 }
 
@@ -584,6 +584,12 @@ const A = {
     if (b.dataset.d === "rej" && !confirm("Відмовити в допуску?")) return;
     b.disabled = true;
     try { const r = await call(`/api/hr/access/${b.dataset.id}`, { json: { decision: b.dataset.d } }); toast(r.text); await refreshMe(); render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
+  wd: async (b) => {
+    if (!confirm(b.dataset.k === "acts" ? "Відкликати звіт з перевірки?" : "Відкликати рапорт з розгляду?")) return;
+    b.disabled = true;
+    try { await call(`/api/${b.dataset.k}/${b.dataset.id}/withdraw`, { json: {} }); toast("Документ відкликано"); await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
   rapd: async (b) => {
