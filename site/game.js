@@ -6,6 +6,7 @@ const S = window.SOVA;
 const { esc, call, toast } = S;
 const T = 32, GW = 32, GH = 20, CW = GW * T, CH = GH * T;
 const FOV = 58 * Math.PI / 180, VIEW = 520, NEAR = 72;
+const TOP = 50, BOT = 66, FH = CH + TOP + BOT;   // смуги HUD над і під картою
 
 // # стіна · . підлога · , килим · D двері · P старт · E озброєний · C цивільний · H заручник · B ящик (укриття, прозорий для погляду)
 const LEVELS = [
@@ -339,12 +340,12 @@ function visible(g, e) {
 function conePath(g, c, a0, a1, step, max) {
   const p = g.p;
   c.beginPath(); c.moveTo(p.x, p.y);
-  for (let a = a0; a <= a1; a += step) { const d = ray(g, p.x, p.y, p.a + a, max); c.lineTo(p.x + Math.cos(p.a + a) * d, p.y + Math.sin(p.a + a) * d); }
+  for (let a = a0; a <= a1; a += step) { const d = Math.min(max, ray(g, p.x, p.y, p.a + a, max) + 12); c.lineTo(p.x + Math.cos(p.a + a) * d, p.y + Math.sin(p.a + a) * d); }
   c.closePath();
 }
 function nearPath(g, c) {
   const p = g.p; c.beginPath();
-  for (let a = 0; a <= 6.3; a += .07) { const d = ray(g, p.x, p.y, a, NEAR); c.lineTo(p.x + Math.cos(a) * d, p.y + Math.sin(a) * d); }
+  for (let a = 0; a <= 6.3; a += .07) { const d = ray(g, p.x, p.y, a, NEAR) + 12; c.lineTo(p.x + Math.cos(a) * d, p.y + Math.sin(a) * d); }
   c.closePath();
 }
 
@@ -438,6 +439,8 @@ function draw(g, ctx) {
   const p = g.p;
   if (!g.bg) g.bg = prerender(g);
   if (!g.mem) g.mem = mk(CW, CH);
+  ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, CW, FH);
+  ctx.save(); ctx.translate(0, TOP); ctx.beginPath(); ctx.rect(0, 0, CW, CH); ctx.clip();
   ctx.save();
   if (g.shake > .1) ctx.translate((Math.random() - .5) * g.shake * 2, (Math.random() - .5) * g.shake * 2);
   ctx.drawImage(g.bg, 0, 0);
@@ -509,9 +512,10 @@ function draw(g, ctx) {
   ctx.beginPath();
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(g.mx + dx * sp, g.my + dy * sp); ctx.lineTo(g.mx + dx * (sp + 8), g.my + dy * (sp + 8)); }
   ctx.stroke(); ctx.fillStyle = COL.gold; ctx.fillRect(g.mx - 1, g.my - 1, 2, 2); ctx.shadowBlur = 0;
-  hud(g, ctx);
   if (g.fx.some((f) => f.k === "hurt")) { const hg = ctx.createRadialGradient(CW / 2, CH / 2, CH * .3, CW / 2, CH / 2, CW * .65); hg.addColorStop(0, "rgba(180,20,20,0)"); hg.addColorStop(1, "rgba(180,20,20,.55)"); ctx.fillStyle = hg; ctx.fillRect(0, 0, CW, CH); }
   if (p.blind > 0) { ctx.fillStyle = `rgba(255,255,250,${Math.min(1, p.blind)})`; ctx.fillRect(0, 0, CW, CH); }
+  ctx.restore();
+  hud(g, ctx);
 }
 
 function panel(ctx, x, y, w, h) {
@@ -521,34 +525,36 @@ function panel(ctx, x, y, w, h) {
 function hud(g, ctx) {
   const p = g.p, foes = g.ents.filter((e) => e.k === "foe"), hosts = g.ents.filter((e) => e.k === "host");
   const left = foes.filter((e) => !["down", "cuffed"].includes(e.st)).length, safe = hosts.filter((e) => e.st === "safe").length;
-  ctx.textAlign = "left";
-  // операція й час
-  panel(ctx, 10, 10, 300, 40);
-  ctx.fillStyle = COL.gold; ctx.font = "bold 10px 'Inter', sans-serif"; ctx.fillText("ЦСО «А» · ОПЕРАЦІЯ", 22, 25);
-  ctx.fillStyle = "#e9e4d6"; ctx.font = "bold 14px 'Inter', sans-serif"; ctx.fillText(g.L.name, 22, 42);
-  ctx.textAlign = "right"; ctx.fillStyle = "#e9e4d6"; ctx.font = "bold 15px 'JetBrains Mono', monospace"; ctx.fillText(`${Math.floor(g.t / 60)}:${String(Math.floor(g.t % 60)).padStart(2, "0")}`, 298, 42);
-  // цілі
-  panel(ctx, CW - 230, 10, 220, 40); ctx.textAlign = "left"; ctx.font = "bold 13px 'Inter', sans-serif";
-  ctx.fillStyle = COL.foe; ctx.fillText(`● Озброєні: ${left}`, CW - 218, 35);
-  ctx.fillStyle = COL.host; ctx.fillText(`● Заручники: ${safe}/${hosts.length}`, CW - 112, 35);
-  // здоров'я, набої, гранати
-  panel(ctx, 10, CH - 58, 360, 48);
-  ctx.fillStyle = COL.gold; ctx.font = "bold 10px 'Inter', sans-serif"; ctx.fillText("АЛЬФА-1", 22, CH - 42);
-  for (let i = 0; i < 10; i++) { ctx.fillStyle = p.hp > i * 10 ? (p.hp > 40 ? "#5fb37a" : "#d4605a") : "rgba(255,255,255,.08)"; ctx.fillRect(22 + i * 13, CH - 34, 11, 12); }
-  for (let i = 0; i < 30; i++) { ctx.fillStyle = i < p.mag ? "#e9d9a8" : "rgba(255,255,255,.08)"; ctx.fillRect(170 + i * 4, CH - 34, 2.5, 12); }
-  ctx.fillStyle = "#e9e4d6"; ctx.font = "bold 12px 'JetBrains Mono', monospace"; ctx.fillText(p.reload > 0 ? "RELOAD" : `/${p.ammo}`, 170, CH - 41);
-  for (let i = 0; i < p.flash; i++) { ctx.fillStyle = "#cfd6df"; ctx.beginPath(); ctx.arc(306 + i * 16, CH - 28, 5, 0, 7); ctx.fill(); ctx.fillStyle = COL.gold; ctx.fillRect(305 + i * 16, CH - 37, 2, 4); }
+  const bar = (y, h) => { const gr = ctx.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, "#0f131a"); gr.addColorStop(1, "#0a0d12"); ctx.fillStyle = gr; ctx.fillRect(0, y, CW, h); ctx.fillStyle = "rgba(201,162,77,.45)"; ctx.fillRect(0, y === 0 ? h - 1 : y, CW, 1); };
+  bar(0, TOP); bar(TOP + CH, BOT);
+  // верх: операція · час · цілі
+  ctx.textAlign = "left"; ctx.fillStyle = COL.gold; ctx.font = "bold 10px 'Inter', sans-serif"; ctx.fillText("ЦСО «АЛЬФА» · ТАКТИЧНИЙ ТРЕНАЖЕР", 16, 19);
+  ctx.fillStyle = "#ece6d6"; ctx.font = "bold 16px 'Inter', sans-serif"; ctx.fillText(g.L.name, 16, 39);
+  ctx.textAlign = "center"; ctx.font = "bold 20px 'JetBrains Mono', monospace"; ctx.fillStyle = "#ece6d6";
+  ctx.fillText(`${Math.floor(g.t / 60)}:${String(Math.floor(g.t % 60)).padStart(2, "0")}`, CW / 2, 33);
+  const chip = (x, txt, col) => { ctx.font = "bold 13px 'Inter', sans-serif"; const w = ctx.measureText(txt).width + 26; ctx.fillStyle = "rgba(255,255,255,.05)"; ctx.strokeStyle = col; ctx.beginPath(); ctx.roundRect(x - w, 12, w, 26, 13); ctx.fill(); ctx.stroke(); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x - w + 12, 25, 4, 0, 7); ctx.fill(); ctx.fillStyle = "#ece6d6"; ctx.textAlign = "left"; ctx.fillText(txt, x - w + 20, 30); return x - w - 8; };
+  chip(chip(CW - 14, `Заручники ${safe}/${hosts.length}`, COL.host), `Озброєні ${left}`, COL.foe);
+  // низ: стан · набої · гранати · підказки · міні-карта
+  const y0 = TOP + CH;
+  ctx.textAlign = "left"; ctx.fillStyle = COL.gold; ctx.font = "bold 10px 'Inter', sans-serif"; ctx.fillText("АЛЬФА-1 · СТАН", 16, y0 + 20);
+  for (let i = 0; i < 10; i++) { ctx.fillStyle = p.hp > i * 10 ? (p.hp > 40 ? "#5fb37a" : "#d4605a") : "rgba(255,255,255,.07)"; ctx.fillRect(16 + i * 14, y0 + 28, 12, 18); }
+  ctx.fillStyle = COL.gold; ctx.fillText("НАБОЇ", 180, y0 + 20);
+  for (let i = 0; i < 30; i++) { ctx.fillStyle = i < p.mag ? "#e9d9a8" : "rgba(255,255,255,.07)"; ctx.fillRect(180 + i * 5, y0 + 28, 3, 18); }
+  ctx.fillStyle = "#ece6d6"; ctx.font = "bold 14px 'JetBrains Mono', monospace"; ctx.fillText(p.reload > 0 ? "RELOAD" : `${p.mag}/${p.ammo}`, 334, y0 + 43);
+  ctx.fillStyle = COL.gold; ctx.font = "bold 10px 'Inter', sans-serif"; ctx.fillText("СВІТЛОШУМОВІ", 420, y0 + 20);
+  for (let i = 0; i < 3; i++) { ctx.globalAlpha = i < p.flash ? 1 : .15; ctx.fillStyle = "#cfd6df"; ctx.beginPath(); ctx.arc(428 + i * 20, y0 + 37, 7, 0, 7); ctx.fill(); ctx.fillStyle = COL.gold; ctx.fillRect(426 + i * 20, y0 + 26, 4, 5); }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "#8a93a3"; ctx.font = "12px 'Inter', sans-serif";
+  ctx.fillText("E двері · кайданки · заручник     F «Руки вгору!»", 510, y0 + 27);
+  ctx.fillText("G світлошумова     R перезарядка     Shift тихо     Esc пауза", 510, y0 + 45);
   // міні-карта розвіданого
-  const mw = 160, mh = 100, mx = CW - mw - 10, my = CH - mh - 10;
-  panel(ctx, mx - 4, my - 4, mw + 8, mh + 8);
-  ctx.save(); ctx.globalAlpha = .9; ctx.drawImage(g.bg, mx, my, mw, mh); ctx.globalCompositeOperation = "destination-in"; ctx.restore();
-  ctx.save(); ctx.globalAlpha = .82; ctx.fillStyle = "#05070b";
+  const mw = 88, mh = 55, mx = CW - mw - 14, my = y0 + 6;
+  ctx.drawImage(g.bg, mx, my, mw, mh);
   const mm = g.mmask || (g.mmask = mk(mw, mh)), m2 = mm.getContext("2d");
-  m2.globalCompositeOperation = "source-over"; m2.fillStyle = "#05070b"; m2.fillRect(0, 0, mw, mh);
+  m2.globalCompositeOperation = "source-over"; m2.fillStyle = "#07090d"; m2.fillRect(0, 0, mw, mh);
   m2.globalCompositeOperation = "destination-out"; m2.drawImage(g.mem, 0, 0, mw, mh);
-  ctx.globalAlpha = 1; ctx.drawImage(mm, mx, my); ctx.restore();
-  ctx.fillStyle = COL.gold; ctx.beginPath(); ctx.arc(mx + p.x / CW * mw, my + p.y / CH * mh, 3, 0, 7); ctx.fill();
-  for (const e of g.ents) if (e.k === "host" && e.st === "safe") { ctx.fillStyle = COL.host; ctx.fillRect(mx + e.x / CW * mw - 1.5, my + e.y / CH * mh - 1.5, 3, 3); }
+  ctx.drawImage(mm, mx, my); ctx.strokeStyle = "rgba(201,162,77,.5)"; ctx.strokeRect(mx - .5, my - .5, mw + 1, mh + 1);
+  ctx.fillStyle = COL.gold; ctx.beginPath(); ctx.arc(mx + p.x / CW * mw, my + p.y / CH * mh, 2.5, 0, 7); ctx.fill();
 }
 
 // ---------------------------------------------------------------- підсумок
@@ -610,7 +616,7 @@ function start(i) {
   if (!cv) return;
   const ctx = cv.getContext("2d"), g = st.g = build(i);
   document.getElementById("gm-over").hidden = true;
-  const pos = (e) => { const r = cv.getBoundingClientRect(); g.mx = (e.clientX - r.left) * CW / r.width; g.my = (e.clientY - r.top) * CH / r.height; };
+  const pos = (e) => { const r = cv.getBoundingClientRect(); g.mx = (e.clientX - r.left) * CW / r.width; g.my = (e.clientY - r.top) * FH / r.height - TOP; };
   cv.onmousemove = pos;
   cv.onmousedown = (e) => { pos(e); if (e.button === 0 && !g.over && !g.paused) { g.down = true; shoot(g); } };
   window.onmouseup = () => { if (st.g) st.g.down = false; };
@@ -622,7 +628,7 @@ function start(i) {
     const dt = Math.min(.05, (now - last) / 1000); last = now;
     if (!g.paused) update(g, dt);
     draw(g, ctx);
-    if (g.paused) { ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillRect(0, 0, CW, CH); ctx.fillStyle = COL.gold; ctx.font = "bold 28px 'Inter', sans-serif"; ctx.textAlign = "center"; ctx.fillText("ПАУЗА · Esc", CW / 2, CH / 2); }
+    if (g.paused) { ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillRect(0, 0, CW, FH); ctx.fillStyle = COL.gold; ctx.font = "bold 28px 'Inter', sans-serif"; ctx.textAlign = "center"; ctx.fillText("ПАУЗА · Esc", CW / 2, FH / 2); }
     st.raf = requestAnimationFrame(loop);
   };
   st.raf = requestAnimationFrame(loop);
@@ -639,7 +645,7 @@ async function view() {
     const L = LEVELS[st.lvl];
     setTimeout(() => start(st.lvl), 30);
     return `<div class="gm-bar"><button class="btn" data-a="gmmenu">← Операції</button><b>${esc(L.name)}</b><span class="muted small">${esc(L.brief)}</span></div>
-      <div class="gm-wrap"><canvas id="gm-canvas" width="${CW}" height="${CH}" tabindex="0"></canvas><div class="gm-over" id="gm-over" hidden></div></div>
+      <div class="gm-wrap"><canvas id="gm-canvas" width="${CW}" height="${FH}" tabindex="0"></canvas><div class="gm-over" id="gm-over" hidden></div></div>
       <p class="muted small">Порада: зайдіть з флангу й крикніть «Руки вгору!» (F) — затримання без пострілу дає найбільше балів. Світлошумова (G) оглушує й майже гарантує здачу.</p>`;
   }
   const lb = (rows) => rows.length ? `<ol class="gm-lb">${rows.map((r, n) => `<li class="${r.sid === S.ME().me.sid ? "me" : ""}"><b>${n + 1}</b><span>${esc(r.name)} <i class="muted">№${r.sid}</i></span><em>${r.score}</em></li>`).join("")}</ol>` : '<p class="muted small">Ще ніхто не пройшов.</p>';
