@@ -31,9 +31,28 @@ function blank(staff) {
   </div>`;
 }
 
+// бланк наказу з реєстру (для PDF)
+function apDoc(o) {
+  const D = S.META().depts;
+  const signed = o.status === "active";
+  return `<div class="blank ns-blank">
+    <div class="blank-to">СЛУЖБА БЕЗПЕКИ ШТАТУ NG</div>
+    <div class="blank-title">Н А К А З</div>
+    <div style="text-align:center;margin:-8px 0 18px">№ ${no(o.id)} · ${fmtDT(o.signed || o.t)} · Про призначення на посаду</div>
+    <p>${o.reason ? `${esc(o.reason)}. ` : ""}Керуючись Внутрішнім статутом Служби безпеки штату NG (р. V, п. 5.2),</p>
+    <p style="text-indent:0"><b>НАКАЗУЮ:</b> ${esc((o.fromRank || "").toLowerCase())} ${esc(o.name)}, жетон №${o.sid},
+      призначити на посаду <b>${esc((o.toRank || "").toLowerCase())}</b>${D[o.to_dept] && o.to_dept !== "lead" ? ` (${esc(D[o.to_dept].n)}${o.extra && D[o.extra] ? `, ${esc(D[o.extra].n)}` : ""})` : ""}.</p>
+    <p style="text-indent:0">Відділу кадрів та підготовки персоналу внести зміни до особової справи.</p>
+    <div class="blank-sign"><span>Голова Служби безпеки штату NG</span><span>${signed && o.signedName ? `<span class="kf-sign">${esc(o.signedName)}</span>` : "__________ (підпис)"}</span></div>
+    <div class="small" style="margin-top:8px">Проєкт підготував: ${esc(o.byName || "")}${o.status === "rejected" ? ` · ВІДХИЛЕНО${o.note ? ": " + esc(o.note) : ""}` : o.status === "draft" ? " · ПРОЄКТ, не підписано" : ""}</div>
+    <div class="blank-stamp">ЄІС «СОВА»</div>
+  </div>`;
+}
+
 async function view(head) {
   const [staff, list] = await Promise.all([call("/api/structure"), call("/api/orders")]);
   S.cache.apStaff = staff;
+  S.cache.apList = Object.fromEntries(list.map((o) => [o.id, o]));
   const f = st.f, D = S.META().depts, R = S.META().ranks, me = S.ME().me;
   const p = staff.find((x) => String(x.sid) === String(f.sid));
   const r = +f.rank || 0, d = deptFor(f, p), sign = S.ME().appoint.sign;
@@ -63,6 +82,7 @@ async function view(head) {
           ${o.status === "rejected" && o.note ? `<div class="doc-note"><b>Відхилено:</b> ${esc(o.note)}</div>` : ""}
           <div class="small muted">Проєкт: ${esc(o.byName)}${o.signedName ? ` · ${o.status === "rejected" ? "відхилив" : "підписав"} ${esc(o.signedName)}` : ""}</div></div>
         <div class="doc-side"><span class="doc-stamp">${{ draft: "На підписі", active: "Чинний", rejected: "Відхилено" }[o.status]}</span>
+          <button class="btn sm" data-a="appdf" data-id="${o.id}">⬇ PDF</button>
           ${o.status === "draft" && sign ? `<button class="btn sm ok" data-a="apsign" data-id="${o.id}">Підписати</button><button class="btn sm" data-a="apreject" data-id="${o.id}">Відхилити</button>` : ""}
           ${o.status === "active" && sign ? `<button class="btn sm bad" data-a="apcancel" data-id="${o.id}">↩ Скасувати наказ</button>` : ""}
           ${o.status !== "active" && (sign || o.by_sid === me.sid) ? `<button class="btn sm" data-a="apdel" data-id="${o.id}">🗑</button>` : ""}</div>
@@ -101,6 +121,7 @@ const act = async (b, url, body, ok) => {
 };
 S.actions.apsign = (b) => { if (confirm("Підписати наказ? Бот одразу змінить звання й ролі в Discord.")) act(b, `/api/orders/${b.dataset.id}/sign`, null, "Наказ підписано"); };
 S.actions.apreject = (b) => { const note = prompt("Причина відхилення (побачить ВКПП):", ""); if (note !== null) act(b, `/api/orders/${b.dataset.id}/reject`, { note }, "Проєкт відхилено"); };
+S.actions.appdf = (b) => { const o = (S.cache.apList || {})[b.dataset.id]; if (o) S.pdfBtn(b, apDoc(o), `${no(o.id)}_${o.name}`); };
 S.actions.apdel = (b) => { if (confirm("Видалити проєкт наказу?")) act(b, `/api/orders/${b.dataset.id}/delete`, null, "Проєкт видалено"); };
 S.actions.apcancel = async (b) => {
   if (!confirm("Скасувати наказ? Якщо звання з того часу не змінювалось, бот поверне попереднє звання й підрозділ.")) return;
@@ -119,7 +140,7 @@ const S = window.SOVA;
 const { esc, call, toast, fmtDT } = S;
 const fs = { title: "", body: "" };
 const no = (id) => `НГ-${String(id).padStart(4, "0")}`;
-const paper = (o, draft) => `<article class="blank ng-doc">
+const paper = (o, draft) => `<article class="blank ng-doc" ${draft ? "" : `id="ng-${o.id}"`}>
     <div class="rap-no">${draft ? "НГ-нов." : no(o.id)}</div>
     <div class="blank-to">СЛУЖБА БЕЗПЕКИ ШТАТУ NG</div>
     <div class="blank-title">Н А К А З</div>
@@ -128,7 +149,7 @@ const paper = (o, draft) => `<article class="blank ng-doc">
     <p class="ng-body">${esc(o.body || "Текст наказу…")}</p>
     <div class="blank-sign"><span>${esc(o.byRank || S.ME().me.rankName)}</span><span class="kf-sign">${esc(o.byName || S.ME().me.name)}</span></div>
     <div class="blank-stamp">ЄІС «СОВА»</div>
-    ${!draft && (o.by_sid === S.ME().me.sid || S.ME().me.rank === 15) ? `<div class="ng-act"><button class="btn sm bad" data-a="ngdel" data-id="${o.id}">↩ Скасувати наказ</button></div>` : ""}
+    ${draft ? "" : `<div class="ng-act no-pdf"><button class="btn sm" data-a="pdfel" data-sel="#ng-${o.id}" data-name="${no(o.id)}_${esc(o.title || "")}">⬇ PDF</button>${o.by_sid === S.ME().me.sid || S.ME().me.rank === 15 ? `<button class="btn sm bad" data-a="ngdel" data-id="${o.id}">↩ Скасувати наказ</button>` : ""}</div>`}
   </article>`;
 S.freeOrdersView = async (head) => {
   const list = await call("/api/orders/free");

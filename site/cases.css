@@ -103,3 +103,14 @@
   .kd{padding:34px 20px 20px;font-size:14px}.kd-head{grid-template-columns:auto 1fr}.kd-no{grid-column:1/-1;justify-items:start;text-align:left}
   .kd-meta{grid-template-columns:110px 1fr}.kd-persons,.kf-visas{grid-template-columns:1fr 1fr}.kd-title h2{font-size:26px}
   .kf-row,.kf-ev{grid-template-columns:1fr 1fr}.kf-row .wide{grid-column:1/-1}}
+/* будь-який бланк у PDF: рівно, без тіней і поворотів, на ширину A4 */
+.pdf-host>.pdf{width:794px!important;max-width:none!important;box-shadow:none!important;rotate:0deg!important;transform:none!important;margin:0!important}
+.pdf-host>.pdf.dark{background:#f3eee2!important;color:#231c12!important}
+/* службовий звіт: розгорнутий бланк */
+.act-full{margin:-4px 0 14px;padding:18px 0 6px;display:flex;justify-content:center;animation:actIn .25s ease}
+@keyframes actIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.doc.open{border-color:var(--gold)}
+.act-kd .kd-title h2{font-size:24px}
+.act-stamp{position:absolute;right:56px;top:190px;font:700 18px var(--mono);letter-spacing:.16em;padding:6px 14px;border:4px double currentColor;rotate:-12deg;opacity:.85}
+.act-stamp.ok{color:#24603a}.act-stamp.bad{color:#8e1d17}.act-stamp.wait{color:#1e4f8c}.act-stamp.mute{color:#6b6253}
+@media (max-width:760px){.act-stamp{position:static;display:inline-block;margin-top:14px}}

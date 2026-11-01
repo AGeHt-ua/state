@@ -15,7 +15,40 @@ const left = (t) => {
 const STATUS = (o) => o.status === "cancelled" ? ["Скасовано за скаргою", "info"] : o.status === "lifted" ? ["Знято достроково", "info"]
   : o.active ? ["Чинна", "bad"] : o.expires ? ["Погашена", "mute"] : ["Виконано", "mute"];
 
+// паперові бланки для PDF: наказ про стягнення і матеріали службової перевірки
+const ALL = {};
+function nsDoc(o) {
+  const D = S.META().depts, t = o.target || { name: "№" + o.sid, rankName: "" }, [sl] = STATUS(o), ap = o.appeal;
+  return `<div class="blank ns-blank">
+    <div class="rap-no">${no(o.id)}</div>
+    <div class="blank-to">СЛУЖБА БЕЗПЕКИ ШТАТУ NG</div>
+    <div class="blank-title">Н А К А З</div>
+    <div style="text-align:center;margin:-8px 0 18px">№ ${no(o.id)} · ${fmtDT(o.issued)} · Про дисциплінарне стягнення</div>
+    <p>За ${esc(o.violationText.toLowerCase())}${o.reason ? ` (${esc(o.reason)})` : ""}, керуючись Дисциплінарними стягненнями СБУ,</p>
+    <p style="text-indent:0"><b>НАКАЗУЮ:</b> оголосити ${esc(o.kindName.toLowerCase())}${o.fine ? ` у розмірі ${$(o.fine)}` : ""}
+      ${esc((t.rankName || "").toLowerCase())} ${esc(t.name)}, жетон №${o.sid}${D[o.dept] ? `, ${esc(D[o.dept].n)}` : ""}.</p>
+    ${o.expires ? `<p style="text-indent:0">Строк дії стягнення — до ${fmtDT(o.expires)}. Оскарження Голові СБУ — протягом 24 годин (п. 4.1).</p>` : ""}
+    ${ap ? `<p style="text-indent:0"><b>Скарга від ${fmtDT(ap.t)}:</b> ${esc(ap.text)}${ap.decision ? ` — <b>${ap.decision === "cancel" ? "задоволено, стягнення скасовано" : "відхилено"}</b>${ap.by ? ` (${esc(ap.by)})` : ""}` : " — на розгляді"}</p>` : ""}
+    <p style="text-indent:0">Стан: <b>${esc(sl)}</b>.</p>
+    <div class="blank-sign"><span>${o.issuer ? esc(o.issuer.rankName) : ""}</span><span class="kf-sign">${o.issuer ? esc(o.issuer.name) : ""}</span></div>
+    <div class="blank-stamp">ЄІС «СОВА»</div></div>`;
+}
+function spDoc(i, kinds) {
+  const n = `СП-${String(i.id).padStart(4, "0")}`, sec = (t, v) => `<p style="text-indent:0"><b>${t}:</b> ${esc(v || "—").replace(/\n/g, "<br>")}</p>`;
+  return `<div class="blank ns-blank">
+    <div class="rap-no">${n}</div>
+    <div class="blank-to">СЛУЖБА БЕЗПЕКИ ШТАТУ NG<br>Відділ внутрішньої безпеки</div>
+    <div class="blank-title">М А Т Е Р І А Л И</div>
+    <div style="text-align:center;margin:-8px 0 18px">службової перевірки № ${n} · ${fmtDT(i.updated)}</div>
+    ${sec("Предмет перевірки", i.title)}${sec("Щодо співробітника", i.target ? i.target.rankName + " " + i.target.name + ", жетон №" + i.sid : "№" + i.sid)}
+    ${sec("Матеріали", i.materials)}${sec("Висновок ВВБ", i.conclusion)}${sec("Рекомендоване стягнення", i.recommend ? kinds[i.recommend] : "без стягнення")}
+    ${i.order_id ? sec("За результатами", "наказ " + no(i.order_id)) : ""}
+    <div class="blank-sign"><span>Перевірку провів</span><span class="kf-sign">${i.author ? esc(i.author.name) : ""}</span></div>
+    <div class="blank-stamp">ЄІС «СОВА»</div></div>`;
+}
+
 function order(o, D, opts = {}) {
+  ALL[o.id] = o;
   const [sl, sc] = STATUS(o), t = o.target || { name: "№" + o.sid, rankName: "" };
   const canAppeal = opts.mine && !o.appeal && Date.now() - o.issued < 864e5 && o.status === "active";
   const ap = o.appeal;
@@ -31,6 +64,7 @@ function order(o, D, opts = {}) {
     </div>
     <div class="ns-stamp">${esc(o.kindName.toUpperCase())}</div>
     <footer>
+      <button class="btn sm" data-a="nspdf" data-id="${o.id}">⬇ PDF</button>
       ${canAppeal ? `<button class="btn sm" data-a="nsappeal" data-id="${o.id}">⚖ Оскаржити (до ${fmtDT(o.issued + 864e5)})</button>` : ""}
       ${opts.head && ap && !ap.decision ? `<button class="btn sm ok" data-a="nsdec" data-id="${o.id}" data-x="cancel">Задовольнити скаргу</button><button class="btn sm" data-a="nsdec" data-id="${o.id}" data-x="uphold">Відхилити скаргу</button>` : ""}
       ${opts.head && o.active ? `<button class="btn sm" data-a="nsdec" data-id="${o.id}" data-x="lift">Зняти достроково</button>` : ""}
@@ -124,7 +158,7 @@ function inspView(d, staff) {
         <div class="doc-line"><span>Щодо</span>${i.target ? esc(i.target.rankName + " " + i.target.name) : "№" + i.sid} · <span>Перевіряє</span>${i.author ? esc(i.author.name) : "—"}</div>
         ${i.conclusion ? `<div class="doc-note"><b>Висновок:</b> ${esc(i.conclusion)}${i.recommend ? ` · рекомендовано: <b>${esc(d.kinds[i.recommend])}</b>` : ""}</div>` : ""}
         ${i.order_id ? `<div class="small muted">За результатами — наказ ${no(i.order_id)}</div>` : ""}</div>
-      <div class="doc-side"><span class="chip ${lab[i.status][1]}">${lab[i.status][0]}</span>
+      <div class="doc-side"><span class="chip ${lab[i.status][1]}">${lab[i.status][0]}</span><button class="btn sm" data-a="sppdf" data-id="${i.id}">⬇ PDF</button>
         ${i.status === "open" && R.vvb ? `<button class="btn sm" data-a="nsinspedit" data-id="${i.id}">Редагувати</button><button class="btn sm gold" data-a="nsinspmove" data-id="${i.id}" data-to="sent">Направити Голові</button>` : ""}
         ${i.status === "sent" && R.chief ? `<button class="btn sm ok" data-a="nsinspord" data-id="${i.id}">Накласти стягнення</button><button class="btn sm" data-a="nsinspmove" data-id="${i.id}" data-to="closed">Закрити без стягнення</button>` : ""}
         ${i.author && (i.author.sid === me.sid || R.chief) ? `<button class="btn sm bad" data-a="nsinspmove" data-id="${i.id}" data-to="deleted">🗑</button>` : ""}</div>
@@ -151,6 +185,8 @@ const readForm = () => ({ sid: S.$("#ns-sid")?.value, violation: S.$("#ns-v")?.v
   fine: S.$("#ns-fine") ? +S.$("#ns-fine").value : undefined, reason: S.$("#ns-reason")?.value, inspection: (st.form || {}).inspection });
 S.views.disc = view;
 Object.assign(S.actions, {
+  nspdf: (b) => { const o = ALL[b.dataset.id]; if (o) S.pdfBtn(b, nsDoc(o), `${no(o.id)}_${o.kindName}`); },
+  sppdf: (b) => { const i = (S.cache.disc.inspections || []).find((x) => String(x.id) === b.dataset.id); if (i) S.pdfBtn(b, spDoc(i, S.cache.disc.kinds), `СП-${String(i.id).padStart(4, "0")}_${i.title || ""}`); },
   nstab: (b) => { st.tab = b.dataset.v; st.insp = null; S.render(); },
   nsf: (b) => { st.f = b.dataset.v; S.render(); },
   nsappeal: (b) => run(b, async () => {

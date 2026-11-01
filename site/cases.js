@@ -198,6 +198,8 @@ async function pdfFrom(html, filename, avoid = []) {
   box.className = "pdf-host";
   box.innerHTML = html;
   box.firstElementChild.classList.add("pdf");
+  box.querySelectorAll("button, .files, .no-pdf, input, iframe").forEach((n) => n.remove());  // кнопки й посилання на екрані — не для паперу
+  box.querySelectorAll("details").forEach((n) => { n.open = true; });  // згорнуті розділи — у PDF повністю
   document.body.append(box);
   try {
     await window.html2pdf().set({ margin: [8, 8, 10, 8], filename,
@@ -207,6 +209,16 @@ async function pdfFrom(html, filename, avoid = []) {
   } finally { box.remove(); }
 }
 S.pdf = pdfFrom;
+// Кнопка «⬇ PDF» для будь-якого документа: html бланка або селектор елемента на сторінці
+S.pdfBtn = async (b, src, name) => {
+  const html = src.startsWith("<") ? src : (document.querySelector(src) || {}).outerHTML;
+  if (!html) return S.toast("Документ не знайдено на сторінці", 1);
+  const old = b.textContent;
+  b.disabled = true; b.textContent = "Формую PDF…";
+  try { await pdfFrom(html, `${String(name || "документ").replace(/[^\p{L}\p{N}-]+/gu, "_").slice(0, 80)}.pdf`, [".kd-sec h4", ".kd-ev li", ".kd-approved", "tr", "p", "li", "h2", "h3"]); }
+  catch (e) { S.toast(e.message, 1); }
+  finally { b.disabled = false; b.textContent = old; }
+};
 
 async function makePdf(c) {
   await pdfFrom(docHtml(c, true), `${no(c.id)}_${(c.data.title || "").replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, [".kd-p", ".kd-ev li", ".kd-approved"]);
