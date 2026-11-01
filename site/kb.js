@@ -77,7 +77,7 @@ async function lawView() {
       <img src="ng-logo.png" alt="" width="54" height="27"><span class="law-kind">${k === "const" ? "Основний закон" : k === "code" ? "Кодекс" : "Закон"}</span>
       <b>${esc(law ? t.replace(/^Закон про /i, "про ") : t)}</b><span class="lb-foot">Штат NG</span></button>`; };
   const folder = (d) => `<button class="law-folder ${d.sbu ? "sbu" : ""}" data-a="kbopen" data-v="${esc(d.slug)}"><span class="lf-tab">${esc(d.faction_abbr || "NG")}</span>
-    ${d.sbu ? '<span class="lf-stamp">СБУ</span>' : ""}<span class="lf-org">${d.faction_abbr ? "Статут фракції" : "Правила проєкту NG"}</span><b>${esc(short(d.title))}</b></button>`;
+    ${d.sbu ? '<span class="lf-stamp">СБУ</span>' : ""}<span class="lf-org">${d.faction_abbr ? "Документ фракції" : "Правила проєкту NG"}</span><b>${esc(short(d.title))}</b></button>`;
   const CATS = [["sbu", "Документи СБУ", "🛡"], ["const", "Конституція", "📜"], ["code", "Кодекси", "📕"], ["law", "Закони", "📚"], ["fac", "Статути фракцій", "🗂"], ["rules", "Правила проєкту", "📁"]];
   const by = {};
   INDEX.docs.forEach((d) => { const k = kind(d); (by[k] = by[k] || []).push(d); if (d.sbu) (by.sbu = by.sbu || []).push(d); });
