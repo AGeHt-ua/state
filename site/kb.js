@@ -86,6 +86,14 @@ function sectionize(html) {
   let cur = null;
   [...box.childNodes].forEach((n) => {
     if (n.nodeType === 1 && (n.tagName === "H2" || n.classList.contains("kb-sec"))) {
+      if (cur && cur.children.length === 1) {  // «Розділ» одразу за ним «Глава» — глава стає підзаголовком того самого розділу
+        const sub = document.createElement("div");
+        sub.className = "kb-sub";
+        sub.id = n.id || "";
+        sub.innerHTML = n.innerHTML;
+        cur.append(sub);
+        return;
+      }
       cur = document.createElement("details");
       cur.className = "kb-part";
       cur.open = st.fold !== false;

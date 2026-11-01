@@ -177,3 +177,5 @@ mark.hit.cur{background:#ff9f1a;box-shadow:0 0 0 2px #ff9f1a}
   .kb-tools{grid-template-columns:auto minmax(0,1fr)}.kb-find{grid-column:1/-1}.kb-find .i{flex:1;width:auto}
   .kb-reader .kb-doc-wrap{grid-template-columns:1fr}.kb-toc{position:static;max-height:300px}
   .kb-paper2{padding:24px 18px}}
+.law-body .kb-sub{margin-top:12px!important;font:700 calc(var(--fs) - 1px)/1.4 var(--mono);letter-spacing:.05em;text-transform:uppercase;color:#7a5a1a;border-bottom:1px solid rgba(35,28,18,.2);padding-bottom:6px}
+.kb-reader.dark .law-body .kb-sub{color:var(--gold2);border-color:var(--line2)}
