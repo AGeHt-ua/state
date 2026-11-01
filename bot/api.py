@@ -7,6 +7,7 @@ from aiohttp import web
 
 import candidates
 import cases
+import depts
 import config
 import core
 from core import ACTS, RAP_TYPES, Fail
@@ -151,6 +152,7 @@ async def me(request):
         },
         "hr": hr_rights(u),
         "cases": cases.rights(u),
+        "control": depts.control_depts(u),
     })
 
 
@@ -301,6 +303,16 @@ async def cases_decide(request):
     b = await body(request)
     c = await cases.decide(u, int(request.match_info["id"]), b.get("decision"), str(b.get("note") or ""))
     return web.json_response(cases.out(c, u))
+
+
+@routes.get("/api/dept")
+async def dept_overview(request):
+    u = await auth(request)
+    allowed = depts.control_depts(u)
+    if not allowed:
+        raise Fail("Розділ відділу доступний начальникам відділів, Заступнику Голови та Голові СБУ.", 403)
+    d = request.query.get("d") or (u["dept"] if u["dept"] in allowed else allowed[0])
+    return web.json_response({"allowed": allowed, **await depts.overview(u, d)})
 
 
 @routes.get("/api/structure")
