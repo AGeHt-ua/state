@@ -168,7 +168,10 @@ function interact(g) {
   const tx = Math.floor(p.x / T), ty = Math.floor(p.y / T);
   for (let y = ty - 1; y <= ty + 1; y++) for (let x = tx - 1; x <= tx + 1; x++) {
     const k = x + "," + y;
-    if (k in g.doors && Math.hypot(x * T + T / 2 - p.x, y * T + T / 2 - p.y) < 46) { g.doors[k] = !g.doors[k]; return; }
+    if (k in g.doors && Math.hypot(x * T + T / 2 - p.x, y * T + T / 2 - p.y) < 46) {
+      if (g.doors[k] && Math.floor(p.x / T) === x && Math.floor(p.y / T) === y) return;  // не зачиняти двері, стоячи в проході
+      g.doors[k] = !g.doors[k]; return;
+    }
   }
   for (const e of g.ents) {
     if (dist(e, p) > 34) continue;
@@ -291,7 +294,7 @@ function draw(g, ctx) {
   // туман: усе поза полем зору — темне (план приміщень лишається ледь видимим)
   const fog = g.fog || (g.fog = Object.assign(document.createElement("canvas"), { width: CW, height: CH }));
   const f = fog.getContext("2d");
-  f.globalCompositeOperation = "source-over"; f.fillStyle = "rgba(5,7,11,.86)"; f.fillRect(0, 0, CW, CH);
+  f.globalCompositeOperation = "source-over"; f.fillStyle = "rgba(5,7,11,.8)"; f.fillRect(0, 0, CW, CH);
   f.globalCompositeOperation = "destination-out";
   f.beginPath(); f.moveTo(p.x, p.y);
   for (let a = -FOV; a <= FOV; a += .012) { const d = ray(g, p.x, p.y, p.a + a, VIEW); f.lineTo(p.x + Math.cos(p.a + a) * d, p.y + Math.sin(p.a + a) * d); }
@@ -351,7 +354,7 @@ function hud(g, ctx) {
   ctx.fillText(p.reload > 0 ? "Перезаряджаю…" : `Набої ${p.mag}/${p.ammo}`, 186, CH - 12);
   ctx.fillText(`Світлошумові ${p.flash}`, 330, CH - 12);
   ctx.fillStyle = "#8a93a3"; ctx.font = "12px 'Inter', sans-serif";
-  ctx.fillText("WASD рух · Shift тихо · ЛКМ вогонь · R перезарядка · E двері/кайданки/заручник · F «Руки вгору!» · G граната · Esc пауза", 470, CH - 12);
+  ctx.fillText("E двері · кайданки · заручник    F «Руки вгору!»    G світлошумова    R перезарядка    Esc пауза", 470, CH - 12);
 }
 
 // ---------------------------------------------------------------- підсумок
