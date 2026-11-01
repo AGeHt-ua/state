@@ -271,7 +271,7 @@ async def alert_three(target: dict, reps: list[dict]):
              style.c("безумовне звільнення зі складу СБУ. Рішення — Голова СБУ.", "gray")]
     e = style.document("⚠ ПІДСТАВА ДЛЯ ЗВІЛЬНЕННЯ", 0xD4605A, desc=style.block(*lines))
     try:
-        await ch.send(embed=e)
+        await ch.send(embed=e, **core.mention("alert3"))
     except discord.HTTPException:
         pass
 
@@ -313,6 +313,7 @@ async def insp_move(u: dict, iid: int, to: str) -> dict:
         if not i["conclusion"]:
             raise Fail("Додайте висновок перевірки.")
         await db.run("UPDATE inspections SET status='sent', updated=? WHERE id=?", now_ms(), iid)
+        await insp_notice(i, u)
     elif to == "closed" and i["status"] == "sent" and u["rank"] >= 14:
         await db.run("UPDATE inspections SET status='closed', updated=? WHERE id=?", now_ms(), iid)
     elif to == "deleted" and (i["author"] == u["sid"] or u["rank"] >= 14):
@@ -321,6 +322,23 @@ async def insp_move(u: dict, iid: int, to: str) -> dict:
     else:
         raise Fail("Такий перехід неможливий.", 403)
     return await insp_get(iid)
+
+
+async def insp_notice(i: dict, u: dict):
+    """Матеріали службової перевірки направлено Голові: сповіщення в канал дисципліни (без змісту матеріалів)."""
+    ch = await core.channel("disc")
+    if not ch:
+        return
+    t = await core.user(i["sid"])
+    lines = [style.kv("ПЕРЕВІРКА", f"СП-{i['id']:04d} · {i['title'][:40]}", "white", True),
+             style.kv("ЩОДО", f"{t['name']} · №{t['sid']}" if t else f"№{i['sid']}", "white"),
+             style.kv("РЕКОМЕНДАЦІЯ", KINDS[i["recommend"]][0] if i.get("recommend") else "без стягнення", "gold", True),
+             style.rule(), style.kv("НАПРАВИВ", f"{u['name']} · ВВБ", "white"), style.kv("ДАТА", style.when(), "gray")]
+    e = style.document("СЛУЖБОВА ПЕРЕВІРКА · НА РІШЕННЯ ГОЛОВИ", 0x6F9FD6, desc=style.block(*lines), footer="Матеріали — в ЄІС «Сова» → Дисципліна → Службові перевірки")
+    try:
+        await ch.send(embed=e, **core.mention("insp"))
+    except discord.HTTPException as ex:
+        log.warning("Сповіщення про перевірку: %s", ex)
 
 
 # ---------------------------------------------------------------- вибірки для сайту

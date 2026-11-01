@@ -606,7 +606,7 @@ async def post_card(kind: str, row: dict):
                 continue
             try:
                 c = bot.get_channel(cid) or await bot.fetch_channel(cid)
-                m = await c.send(embed=embed)
+                m = await c.send(embed=embed, **mention(f"rap:{row['type']}"))
                 copies.append([str(c.id), str(m.id)])
             except (discord.NotFound, discord.Forbidden, discord.HTTPException) as ex:
                 log.warning("Копія рапорту в канал відділу %s: %s", d, ex)
@@ -909,7 +909,7 @@ async def request_access(member: discord.Member, sid: int, name: str) -> int:
     req["cand_id"] = await approved_candidate(sid)
     ch = await channel("access")
     if ch:
-        msg = await ch.send(embed=access_embed(req, member))
+        msg = await ch.send(embed=access_embed(req, member), **mention("access"))
         await db.run("UPDATE access_requests SET ch_id=?, msg_id=? WHERE id=?", str(ch.id), str(msg.id), rid)
     else:
         log.warning("Канал заявок на допуск не знайдено — заявку №%s збережено без картки", rid)

@@ -190,7 +190,7 @@ async def journal(s: dict, u: dict, label: str):
     e = style.document("ВІДОМІСТЬ ПРЕМІЮВАННЯ ОСОБОВОГО СКЛАДУ", 0x5FB37A if s["status"] == "paid" else 0xC9A05A, desc=style.block(*lines),
                        footer="П. 1.55 Загальних правил держорганізацій · деталі в ЄІС «Сова»")
     try:
-        await ch.send(embed=e, allowed_mentions=discord.AllowedMentions.none())
+        await ch.send(embed=e, **(core.mention("bonus:paid") if s["status"] == "paid" else {"allowed_mentions": discord.AllowedMentions.none()}))
     except discord.HTTPException as ex:
         log.warning("Журнал премій: %s", ex)
 

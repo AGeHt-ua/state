@@ -173,6 +173,7 @@ async def journal(o: dict, u: dict, label: str):
     try:
         # підписаний наказ Голови / Заступника — згадка ролі СБУ; проєкти й відхилення — без згадок
         await ch.send(embed=e, **(core.mention("order") if o["status"] == "active" and "підписано" in label
+                                  else core.mention("order:draft") if o["status"] == "draft"
                                   else {"allowed_mentions": discord.AllowedMentions.none()}))
     except discord.HTTPException as ex:
         log.warning("Журнал наказів: %s", ex)
