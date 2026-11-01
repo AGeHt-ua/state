@@ -363,7 +363,7 @@ async def staff(request):
     u = await auth(request)
     if u["rank"] < 8:
         raise Fail("Недостатній рівень допуску.", 403)
-    rows = await db.all("SELECT * FROM users WHERE status!='dismissed' AND dept!='curator' ORDER BY rank DESC, sid")
+    rows = await db.all("SELECT * FROM users WHERE status NOT IN ('dismissed','removed') AND dept!='curator' ORDER BY rank DESC, sid")
     if _structure_cache[1] is not None:  # картки звіряються з Discord у build_structure: беремо свіжі звання й лише чинний склад
         live = {x["sid"]: x for x in _structure_cache[1]}
         rows = [{**r, "rank": live[r["sid"]]["rank"], "dept": live[r["sid"]]["dept"]} for r in rows if r["sid"] in live]
@@ -861,6 +861,7 @@ async def attempts_delete(request):
 
 _structure_cache: list = [0.0, None]
 _structure_lock = asyncio.Lock()
+_gone: dict[int, float] = {}  # Static ID → коли вперше не знайдено на сервері
 
 
 async def build_structure() -> list:
@@ -872,7 +873,7 @@ async def build_structure() -> list:
 async def _build_structure() -> list:
     if not core.guild():
         raise Fail("Бот ще не підключився до Discord. Спробуйте за хвилину.", 503)
-    rows = await db.all("SELECT * FROM users WHERE status!='dismissed' AND dept!='curator' ORDER BY rank DESC, sid")
+    rows = await db.all("SELECT * FROM users WHERE status NOT IN ('dismissed','removed') AND dept!='curator' ORDER BY rank DESC, sid")
 
     gate = asyncio.Semaphore(2)  # не більше 2 запитів до Discord одночасно — інакше ліміти (429) гальмують увесь сайт
 
@@ -890,7 +891,16 @@ async def _build_structure() -> list:
             return False  # Discord не відповів — лишаємо дані картки як є
     all_roles = await asyncio.gather(*(roles(r) for r in rows))
     out = []
+    now = time.time()
     for r, rs in zip(rows, all_roles):
+        if rs is None and r["discord_id"]:
+            # немає на сервері: видаляємо, якщо це підтвердилось двічі з інтервалом ≥ 10 хв (захист від збою Discord)
+            first = _gone.setdefault(r["sid"], now)
+            if now - first >= 600:
+                await core.remove_account(r)
+                _gone.pop(r["sid"], None)
+            continue
+        _gone.pop(r["sid"], None)
         if rs is None or (rs is not False and not core.resolve(rs)["ok"]):
             continue  # вийшов із сервера або зняли ролі СБУ — у структурі не показуємо
         rs = rs or set()

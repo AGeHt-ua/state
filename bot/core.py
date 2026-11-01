@@ -178,6 +178,8 @@ async def access(u: dict, fresh: bool = False) -> dict:
     """Звіряє ролі в Discord і синхронізує картку співробітника."""
     if u["status"] == "dismissed":
         return {"ok": False, "why": "Співробітника звільнено"}
+    if u["status"] == "removed":
+        return {"ok": False, "why": "Обліковий запис видалено: вас немає на Discord-сервері СБУ"}
     if u.get("blocked"):
         return {"ok": False, "why": "Доступ до сайту заблоковано адміністратором"}
     if not u["discord_id"]:
@@ -996,10 +998,10 @@ def rejection_embed(name: str, note: str = "") -> discord.Embed:
 # ---------------------------------------------------------------- самостійна реєстрація
 async def request_access(member: discord.Member, sid: int, name: str) -> int:
     """Людина подає заявку кнопкою «Отримати допуск»; заявка йде на підтвердження в канал заявок."""
-    own = await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id))
+    own = await db.one("SELECT sid FROM users WHERE discord_id=? AND status!='removed'", str(member.id))
     if own:
         raise Fail(f"Допуск уже оформлено на жетон №{own['sid']}. Загубили код доступу — натисніть «Відновити код доступу».")
-    if await db.one("SELECT sid FROM users WHERE sid=?", sid):
+    if await db.one("SELECT sid FROM users WHERE sid=? AND status!='removed'", sid):
         raise Fail("На цей номер жетона вже оформлено допуск іншій особі. Якщо це ваш номер — зверніться до керівництва.")
     if await db.one("SELECT id FROM access_requests WHERE status='wait' AND (discord_id=? OR sid=?)", str(member.id), sid):
         raise Fail("Заявку вже подано й вона очікує підтвердження. Код доступу надійде в особисті повідомлення.")
@@ -1159,7 +1161,7 @@ async def register(member: discord.Member, sid: int, name: str, reviewer: discor
     """Створює допуск (після підтвердження заявки або командою Голови): ролі, нікнейм, код доступу."""
     if await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id)):
         raise Fail("Цій людині допуск уже оформлено.")
-    if await db.one("SELECT sid FROM users WHERE sid=?", sid):
+    if await db.one("SELECT sid FROM users WHERE sid=? AND status!='removed'", sid):
         raise Fail("На цей номер жетона вже оформлено допуск іншій особі.")
     give = [r for r in (member.guild.get_role(rid) for rid in (*config.JOIN_ROLES, *extra_roles)) if r and r not in member.roles]
     if resolve({r.id for r in member.roles}).get("dept") in ("prosecutor", "curator"):
@@ -1175,8 +1177,12 @@ async def register(member: discord.Member, sid: int, name: str, reviewer: discor
     rank, dept = (a["rank"], a["dept"]) if a["ok"] else (1, "academy")
     pw = new_password()
     t = now_ms()
-    await db.run("INSERT INTO users(sid,name,discord_id,pw_hash,pw_set,rank,dept,since,created) VALUES(?,?,?,?,?,?,?,?,?)",
-                 sid, name[:60], str(member.id), hash_password(pw), t, rank, dept, t, t)
+    if await db.one("SELECT sid FROM users WHERE sid=? AND status='removed'", sid):  # повернувся на сервер — той самий жетон, нова картка
+        await db.run("UPDATE users SET name=?, discord_id=?, pw_hash=?, pw_set=?, rank=?, dept=?, since=?, status='active', blocked=0, callsign=NULL WHERE sid=?",
+                     name[:60], str(member.id), hash_password(pw), t, rank, dept, t, sid)
+    else:
+        await db.run("INSERT INTO users(sid,name,discord_id,pw_hash,pw_set,rank,dept,since,created) VALUES(?,?,?,?,?,?,?,?,?)",
+                     sid, name[:60], str(member.id), hash_password(pw), t, rank, dept, t, t)
     approver = await db.one("SELECT sid FROM users WHERE discord_id=?", str(reviewer.id)) if reviewer else None
     await db.audit(approver["sid"] if approver else 0, "Оформлено допуск до ЄІС", sid,
                    f"{'підтвердив ' + reviewer.display_name if reviewer else 'через Discord'} · {rank_name(rank) if a['ok'] else 'без ролей СБУ'}")
@@ -1218,9 +1224,21 @@ async def member_left(member: discord.Member):
     _roles_cache.pop(str(member.id), None)
     if not u:
         return
+    await remove_account(u)
+
+
+async def remove_account(u: dict):
+    """Немає на Discord-сервері → обліковий запис видаляється з сайту (вхід закрито, зникає з усіх списків).
+    Запис лишається в архіві бази, щоб не зламати історію документів; повернувся на сервер — «Отримати допуск» знову (той самий жетон)."""
+    if u["status"] == "removed":
+        return
+    await db.run("UPDATE users SET status='removed', discord_id=NULL, callsign=NULL WHERE sid=?", u["sid"])
     await db.run("DELETE FROM sessions WHERE sid=?", u["sid"])
-    await db.audit(0, "Вийшов із сервера", u["sid"], "доступ до кабінету закрито автоматично")
+    await db.run("UPDATE callsigns SET status='cancel' WHERE sid=? AND status='wait'", u["sid"])
+    _roles_cache.pop(str(u.get("discord_id")), None)
+    await db.audit(0, "Видалено обліковий запис", u["sid"], f"немає на Discord-сервері СБУ · {rank_name(u['rank'])} · Discord {u.get('discord_id')}")
     await send_audit(u)
+    log.info("Видалено обліковий запис №%s %s: немає на сервері", u["sid"], u["name"])
 
 
 # ---------------------------------------------------------------- файли

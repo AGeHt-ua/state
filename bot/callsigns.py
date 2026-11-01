@@ -29,7 +29,7 @@ def clean(cs: str) -> str:
 
 
 async def taken(cs: str, sid: int) -> bool:
-    a = await db.one("SELECT sid FROM users WHERE upper(callsign)=? AND sid!=? AND status!='dismissed'", cs, sid)
+    a = await db.one("SELECT sid FROM users WHERE upper(callsign)=? AND sid!=? AND status NOT IN ('dismissed','removed')", cs, sid)
     b = await db.one("SELECT sid FROM callsigns WHERE upper(callsign)=? AND sid!=? AND status='wait'", cs, sid)
     return bool(a or b)
 

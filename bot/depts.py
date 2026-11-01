@@ -27,7 +27,7 @@ async def overview(u: dict, d: str) -> dict:
         raise Fail("Немає доступу до розділу цього відділу.", 403)
     c = await core.coef()
     ws, pws, now = core.week_start(0), core.week_start(1), now_ms()
-    staff = await db.all("SELECT * FROM users WHERE dept=? AND status!='dismissed' ORDER BY rank DESC, sid", d)
+    staff = await db.all("SELECT * FROM users WHERE dept=? AND status NOT IN ('dismissed','removed') ORDER BY rank DESC, sid", d)
     acts = await db.all("SELECT * FROM acts WHERE dept=? AND t>=? AND status!='deleted'", d, pws)
     pts = lambda a: c.get(a["type"], 0) * (a["qty"] or 1)
     last = {r["by_sid"]: r["t"] for r in await db.all("SELECT by_sid, MAX(t) AS t FROM acts WHERE dept=? AND status!='deleted' GROUP BY by_sid", d)}

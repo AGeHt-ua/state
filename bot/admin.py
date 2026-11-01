@@ -61,7 +61,7 @@ async def note(u: dict, action: str, target: int, details: str):
 # ---------------------------------------------------------------- користувачі
 async def users() -> list[dict]:
     rows = await db.all("SELECT u.*, (SELECT MAX(created) FROM sessions s WHERE s.sid=u.sid) AS last_login, "
-                        "(SELECT COUNT(*) FROM sessions s WHERE s.sid=u.sid AND s.expires>?) AS sessions FROM users u ORDER BY u.rank DESC, u.sid",
+                        "(SELECT COUNT(*) FROM sessions s WHERE s.sid=u.sid AND s.expires>?) AS sessions FROM users u WHERE u.status!='removed' ORDER BY u.rank DESC, u.sid",
                         now_ms())
     return [{"sid": r["sid"], "name": r["name"], "rank": r["rank"], "rankName": "Куратор СБУ" if r["dept"] == "curator" else rank_name(r["rank"]),
              "dept": r["dept"], "deptName": DEPTS.get(r["dept"], {}).get("s", r["dept"]), "status": r["status"], "blocked": bool(r.get("blocked")),
@@ -231,7 +231,7 @@ async def system() -> dict:
     return {
         "bot": str(core.bot.user) if core.bot.user else None, "guild": g.name if g else None, "latency": round(core.bot.latency * 1000) if core.bot.latency == core.bot.latency else None,
         "members": g.member_count if g else 0, "uptime": int(time.time() - STARTED), "dbSize": db_size,
-        "users": (await db.one("SELECT COUNT(*) AS n FROM users WHERE status!='dismissed'"))["n"],
+        "users": (await db.one("SELECT COUNT(*) AS n FROM users WHERE status NOT IN ('dismissed','removed')"))["n"],
         "sessions": (await db.one("SELECT COUNT(*) AS n FROM sessions WHERE expires>?", now_ms()))["n"],
         "backups": [{"name": f.name, "size": f.stat().st_size, "t": int(f.stat().st_mtime * 1000)} for f in files[:8]],
         "warnings": warn, "errors": list(ERRORS)[::-1][:40],
@@ -251,7 +251,7 @@ async def admin_log() -> list[dict]:
 # ---------------------------------------------------------------- нікнейми й позивні
 async def nick_view() -> dict:
     from roles import CALLSIGN_DEPTS, CALLSIGN_TPL, NICK_TPL, RANK_SHORT, callsign_depts, nickname, rank_short
-    rows = await db.all("SELECT * FROM users WHERE status!='dismissed' AND dept NOT IN ('prosecutor','curator') ORDER BY rank DESC, sid")
+    rows = await db.all("SELECT * FROM users WHERE status NOT IN ('dismissed','removed') AND dept NOT IN ('prosecutor','curator') ORDER BY rank DESC, sid")
     return {
         "tpl": ov.nick.get("tpl") or NICK_TPL, "callsignTpl": ov.nick.get("callsign_tpl") or CALLSIGN_TPL,
         "defTpl": NICK_TPL, "defCallsignTpl": CALLSIGN_TPL, "defRanks": RANK_SHORT, "defDepts": CALLSIGN_DEPTS,
@@ -289,7 +289,7 @@ async def apply_all(u: dict) -> dict:
     import asyncio
     if _applying["busy"]:
         return dict(_applying)
-    rows = await db.all("SELECT * FROM users WHERE status!='dismissed' AND discord_id IS NOT NULL AND dept NOT IN ('prosecutor','curator')")
+    rows = await db.all("SELECT * FROM users WHERE status NOT IN ('dismissed','removed') AND discord_id IS NOT NULL AND dept NOT IN ('prosecutor','curator')")
     _applying.update(busy=True, done=0, total=len(rows))
 
     async def go():

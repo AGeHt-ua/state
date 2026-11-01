@@ -135,7 +135,7 @@ class Admin(app_commands.Group):
             await head_only(interaction)
             await interaction.response.defer(ephemeral=True)
             done = fail = 0
-            for u in await db.all("SELECT * FROM users WHERE status!='dismissed' AND discord_id IS NOT NULL"):
+            for u in await db.all("SELECT * FROM users WHERE status NOT IN ('dismissed','removed') AND discord_id IS NOT NULL"):
                 await core.access(u, fresh=True)
                 if await core.set_nick(u):
                     done += 1

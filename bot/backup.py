@@ -32,7 +32,7 @@ async def make_backup(reason: str) -> tuple[str, int]:
     ch = await core.channel("backups")
     if ch:
         fits = size <= config.MAX_UPLOAD_MB * 1024 * 1024
-        users = await db.one("SELECT COUNT(*) AS n FROM users WHERE status!='dismissed'")
+        users = await db.one("SELECT COUNT(*) AS n FROM users WHERE status NOT IN ('dismissed','removed')")
         lines = [style.kv("АРХІВ", gz.name, "white", True), style.kv("ПІДСТАВА", reason, "white"),
                  style.kv("РОЗМІР", f"{size / 1024:.0f} КБ", "cyan"), style.kv("ОСОБОВИЙ СКЛАД", f"{users['n']} осіб", "white"),
                  style.rule(),

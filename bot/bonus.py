@@ -56,7 +56,7 @@ def week_label(ws: int) -> str:
 
 
 async def calc_rows(ws: int, c: dict) -> list[dict]:
-    staff = await db.all("SELECT * FROM users WHERE status!='dismissed' AND dept NOT IN ('prosecutor','curator') ORDER BY dept, rank DESC, sid")
+    staff = await db.all("SELECT * FROM users WHERE status NOT IN ('dismissed','removed') AND dept NOT IN ('prosecutor','curator') ORDER BY dept, rank DESC, sid")
     pts = await core.coef()
     acts = await db.all("SELECT by_sid, type, qty FROM acts WHERE status='ok' AND t>=? AND t<?", ws, ws + 7 * DAY)
     by = {}
