@@ -191,18 +191,25 @@ function loadPdf() {
     document.head.append(s);
   }));
 }
-async function makePdf(c) {
+// Спільний генератор PDF для документів на бланку (.kd): кейс-файли, відомості премій
+async function pdfFrom(html, filename, avoid = []) {
   await loadPdf();
   const box = document.createElement("div");
   box.className = "pdf-host";
-  box.innerHTML = docHtml(c, true);
+  box.innerHTML = html;
+  box.firstElementChild.classList.add("pdf");
   document.body.append(box);
   try {
-    await window.html2pdf().set({ margin: [8, 8, 10, 8], filename: `${no(c.id)}_${(c.data.title || "").replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`,
+    await window.html2pdf().set({ margin: [8, 8, 10, 8], filename,
       image: { type: "jpeg", quality: 0.96 }, html2canvas: { scale: 2, backgroundColor: "#f3eee2", useCORS: true },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }, pagebreak: { mode: ["css", "legacy"], avoid: [".kd-p", ".kd-ev li", ".kf-visa", ".kd-approved"] } })
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }, pagebreak: { mode: ["css", "legacy"], avoid: [".kf-visa", ...avoid] } })
       .from(box.firstElementChild).save();
   } finally { box.remove(); }
+}
+S.pdf = pdfFrom;
+
+async function makePdf(c) {
+  await pdfFrom(docHtml(c, true), `${no(c.id)}_${(c.data.title || "").replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, [".kd-p", ".kd-ev li", ".kd-approved"]);
 }
 
 /* ---------- підключення до кабінету ---------- */
