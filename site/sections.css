@@ -189,3 +189,11 @@
 .org-academy{grid-column:1/-1}
 .org-academy .org-tier{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px}
 .org-academy .org-tier-t{grid-column:1/-1}
+/* ---------- накази Голови ---------- */
+.ng-list{display:grid;gap:18px;justify-items:center}
+.ng-doc{width:min(760px,100%);rotate:0deg;padding:44px 52px 36px}
+.ng-title{text-align:center;font:700 17px "PT Serif",Georgia,serif;margin:0 0 14px;color:#231c12}
+.ng-body{white-space:pre-wrap;text-indent:0!important}
+.ng-act{margin-top:14px;display:flex;justify-content:flex-end}
+.ng-act .btn{background:#7d1410;color:#f3eee2;border-color:#7d1410}
+@media (max-width:760px){.ng-doc{padding:40px 20px 24px}}

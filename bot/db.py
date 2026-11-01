@@ -179,7 +179,8 @@ class DB:
         for sql in ("ALTER TABLE candidates ADD COLUMN discord_name TEXT", "ALTER TABLE candidates ADD COLUMN extra TEXT",
                     "ALTER TABLE candidates ADD COLUMN photo TEXT",
                     "ALTER TABLE orders ADD COLUMN signed_by INTEGER", "ALTER TABLE orders ADD COLUMN signed INTEGER", "ALTER TABLE orders ADD COLUMN note TEXT",
-                    "ALTER TABLE raps ADD COLUMN copies TEXT"):
+                    "ALTER TABLE raps ADD COLUMN copies TEXT",
+                    "ALTER TABLE orders ADD COLUMN title TEXT", "ALTER TABLE orders ADD COLUMN body TEXT"):
             try:
                 await self.conn.execute(sql)
             except Exception:

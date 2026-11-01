@@ -112,3 +112,53 @@ S.actions.apcancel = async (b) => {
   } catch (e) { toast(e.message, 1); b.disabled = false; }
 };
 })();
+
+/* ---------- довільні накази Голови / Заступника (НГ-…): бачать усі, видають звання 14–15 ---------- */
+(() => {
+const S = window.SOVA;
+const { esc, call, toast, fmtDT } = S;
+const fs = { title: "", body: "" };
+const no = (id) => `НГ-${String(id).padStart(4, "0")}`;
+const paper = (o, draft) => `<article class="blank ng-doc">
+    <div class="rap-no">${draft ? "НГ-нов." : no(o.id)}</div>
+    <div class="blank-to">СЛУЖБА БЕЗПЕКИ ШТАТУ NG</div>
+    <div class="blank-title">Н А К А З</div>
+    <div style="text-align:center;margin:-8px 0 16px">${draft ? new Date().toLocaleDateString("uk-UA") : fmtDT(o.t)}</div>
+    <h3 class="ng-title">${esc(o.title || "Назва наказу")}</h3>
+    <p class="ng-body">${esc(o.body || "Текст наказу…")}</p>
+    <div class="blank-sign"><span>${esc(o.byRank || S.ME().me.rankName)}</span><span class="kf-sign">${esc(o.byName || S.ME().me.name)}</span></div>
+    <div class="blank-stamp">ЄІС «СОВА»</div>
+    ${!draft && (o.by_sid === S.ME().me.sid || S.ME().me.rank === 15) ? `<div class="ng-act"><button class="btn sm bad" data-a="ngdel" data-id="${o.id}">↩ Скасувати наказ</button></div>` : ""}
+  </article>`;
+S.freeOrdersView = async (head) => {
+  const list = await call("/api/orders/free");
+  const can = S.ME().me.rank >= 14;
+  return head + (can ? `<div class="grid2 rap-wrap"><form class="card" data-f="ngsave"><header><h3>Новий наказ Голови СБУ</h3></header>
+      <p class="note">Наказ одразу з'явиться в Discord у каналі наказів зі згадкою @СБУ і в цьому реєстрі для всього особового складу.</p>
+      <div class="form-grid"><label class="f wide"><span>Назва наказу</span><input class="i" data-ng="title" maxlength="150" value="${esc(fs.title)}" placeholder="напр. Про посилення патрулювання в районі порту"></label>
+        <label class="f wide"><span>Текст наказу</span><textarea class="i kf-big" data-ng="body" maxlength="3500" placeholder="Керуючись… НАКАЗУЮ: 1. … 2. …">${esc(fs.body)}</textarea></label></div>
+      <div><button class="btn gold" type="submit">Підписати й оголосити</button></div></form>
+      <div id="ng-prev">${paper(fs, true)}</div></div>` : "")
+    + `<h3 class="bn-h" style="margin-top:18px">Реєстр наказів Голови СБУ</h3>`
+    + (list.length ? `<div class="ng-list">${list.map((o) => paper(o, false)).join("")}</div>` : '<div class="empty">Наказів ще немає.</div>');
+};
+document.addEventListener("input", (e) => {
+  if (!e.target.dataset || !e.target.dataset.ng) return;
+  fs[e.target.dataset.ng] = e.target.value;
+  const p = document.getElementById("ng-prev");
+  if (p) p.innerHTML = paper(fs, true);
+});
+S.forms.ngsave = async (f) => {
+  const b = f.querySelector("button[type=submit]");
+  if (!confirm("Підписати й оголосити наказ? Усі з роллю СБУ отримають сповіщення.")) return;
+  b.disabled = true;
+  try { await call("/api/orders/free", { json: fs }); toast("Наказ оголошено"); fs.title = ""; fs.body = ""; S.render(); }
+  catch (e) { toast(e.message, 1); b.disabled = false; }
+};
+S.actions.ngdel = async (b) => {
+  if (!confirm("Скасувати наказ? У Discord з'явиться повідомлення про скасування.")) return;
+  b.disabled = true;
+  try { await call(`/api/orders/free/${b.dataset.id}/delete`, { json: {} }); toast("Наказ скасовано"); S.render(); }
+  catch (e) { toast(e.message, 1); b.disabled = false; }
+};
+})();

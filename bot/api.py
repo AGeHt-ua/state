@@ -536,6 +536,26 @@ async def orders_create(request):
     return web.json_response({"id": o["id"]}, status=201)
 
 
+@routes.get("/api/orders/free")
+async def orders_free_list(request):
+    await auth(request)
+    return web.json_response(await orders.listing_free())
+
+
+@routes.post("/api/orders/free")
+async def orders_free_create(request):
+    u = await auth(request)
+    o = await orders.create_free(u, await body(request))
+    return web.json_response({"id": o["id"]}, status=201)
+
+
+@routes.post("/api/orders/free/{id}/delete")
+async def orders_free_delete(request):
+    u = await auth(request)
+    await orders.delete_free(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
 @routes.post("/api/orders/{id}/sign")
 async def orders_sign(request):
     u = await auth(request)

@@ -180,7 +180,7 @@ async def journal(o: dict, u: dict, label: str):
 
 
 async def listing() -> list[dict]:
-    rows = await db.all("SELECT * FROM orders WHERE status!='deleted' ORDER BY t DESC LIMIT 100")
+    rows = await db.all("SELECT * FROM orders WHERE kind='appoint' AND status!='deleted' ORDER BY t DESC LIMIT 100")
     out = []
     for o in rows:
         p, by = await core.user(o["sid"]), await core.user(o["by_sid"])
@@ -188,4 +188,58 @@ async def listing() -> list[dict]:
         out.append({**o, "name": p["name"] if p else f"№{o['sid']}", "byName": by["name"] if by else "—", "signedName": sg["name"] if sg else None,
                     "curRank": rank_name(p["rank"]) if p else "",
                     "fromRank": rank_name(o["from_rank"]), "toRank": rank_name(o["to_rank"])})
+    return out
+
+
+# ---------------------------------------------------------------- довільні накази Голови / Заступника (НГ-…)
+async def create_free(u: dict, b: dict) -> dict:
+    if not can_sign(u):
+        raise Fail("Накази видають Голова СБУ та Заступник Голови.", 403)
+    title = str(b.get("title") or "").strip()[:150]
+    text = str(b.get("body") or "").strip()[:3500]
+    if not title or len(text) < 10:
+        raise Fail("Вкажіть назву наказу й текст.")
+    oid = await db.run("INSERT INTO orders(sid,kind,title,body,by_sid,t,status) VALUES(?,?,?,?,?,?,?)",
+                       u["sid"], "free", title, text, u["sid"], now_ms(), "active")
+    o = await get(oid)
+    await free_post(o, u)
+    await db.audit(u["sid"], "Наказ Голови СБУ", 0, f"НГ-{oid:04d} · {title[:80]}")
+    return o
+
+
+async def free_post(o: dict, u: dict, cancelled: bool = False):
+    ch = await core.channel("orders")
+    if not ch:
+        return
+    if cancelled:
+        e = style.document(f"НАКАЗ НГ-{o['id']:04d} СКАСОВАНО", 0x5F6A7A, desc=f"«{o['title']}»\nСкасував: {u['name']} · {style.when()}")
+        kw = {"allowed_mentions": discord.AllowedMentions.none()}
+    else:
+        e = style.document(f"НАКАЗ № НГ-{o['id']:04d}", 0xC9A05A,
+                           desc=f"**{o['title'].upper()}**\n\n{o['body']}\n\n*{rank_name(u['rank'])} {u['name']}* · {style.when(o['t'])}",
+                           footer="Наказ обов'язковий до виконання всім особовим складом СБУ")
+        kw = core.mention("order")
+    try:
+        await ch.send(embed=e, **kw)
+    except discord.HTTPException as ex:
+        log.warning("Наказ НГ: %s", ex)
+
+
+async def delete_free(u: dict, oid: int):
+    o = await get(oid)
+    if o["kind"] != "free":
+        raise Fail("Це не наказ Голови.", 400)
+    if not (o["by_sid"] == u["sid"] or u["rank"] == 15):
+        raise Fail("Скасувати наказ може той, хто його видав, або Голова СБУ.", 403)
+    await db.run("UPDATE orders SET status='deleted', cancelled_by=?, cancelled=? WHERE id=?", u["sid"], now_ms(), oid)
+    await db.audit(u["sid"], "Наказ Голови скасовано", 0, f"НГ-{oid:04d}")
+    await free_post(o, u, cancelled=True)
+
+
+async def listing_free() -> list[dict]:
+    rows = await db.all("SELECT * FROM orders WHERE kind='free' AND status!='deleted' ORDER BY t DESC LIMIT 100")
+    out = []
+    for o in rows:
+        by = await core.user(o["by_sid"])
+        out.append({k: o[k] for k in ("id", "title", "body", "t", "by_sid")} | {"byName": by["name"] if by else "—", "byRank": rank_name(by["rank"]) if by else ""})
     return out
