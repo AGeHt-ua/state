@@ -155,6 +155,27 @@ CREATE TABLE IF NOT EXISTS orders (
   status     TEXT DEFAULT 'active',        -- active | deleted
   cancelled_by INTEGER, cancelled INTEGER
 );
+CREATE TABLE IF NOT EXISTS kb_docs (
+  slug TEXT PRIMARY KEY, title TEXT, section TEXT, grp TEXT, grp_title TEXT, faction TEXT, faction_abbr TEXT,
+  html TEXT, text TEXT, hash TEXT, toc TEXT, sbu INTEGER DEFAULT 0, short TEXT, updated INTEGER, checked INTEGER
+);
+CREATE TABLE IF NOT EXISTS kb_changes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, t INTEGER, slug TEXT, title TEXT, kind TEXT,  -- new | changed | removed
+  added INTEGER, removed INTEGER, diff TEXT, summary TEXT, by_sid INTEGER
+);
+CREATE TABLE IF NOT EXISTS kb_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, cat TEXT, title TEXT, body TEXT, files TEXT,
+  author INTEGER, t INTEGER, updated INTEGER, status TEXT DEFAULT 'active'
+);
+CREATE TABLE IF NOT EXISTS exams (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, descr TEXT, questions TEXT, pass_pct INTEGER DEFAULT 70, minutes INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'draft', author INTEGER, t INTEGER, updated INTEGER       -- draft | published | deleted
+);
+CREATE TABLE IF NOT EXISTS attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, exam_id INTEGER, sid INTEGER, answers TEXT, auto REAL, total REAL, score REAL,
+  status TEXT,                                                                  -- progress | submitted | graded | deleted
+  started INTEGER, finished INTEGER, late INTEGER DEFAULT 0, grader INTEGER, graded INTEGER, note TEXT
+);
 CREATE INDEX IF NOT EXISTS disc_sid ON discipline(sid);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);
 CREATE INDEX IF NOT EXISTS acts_status ON acts(status);

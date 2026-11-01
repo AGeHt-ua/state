@@ -107,6 +107,7 @@ function logout(silent) {
 
 /* ---------------- оболонка ---------------- */
 const IC = {
+  kb: '<path d="M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5M8 7h7M8 11h7"/>',
   disc: '<path d="M12 3v18M7 21h10M5 7h14M5 7l-2.5 6a3 3 0 0 0 5 0zM19 7l-2.5 6a3 3 0 0 0 5 0z"/>',
   bonus: '<circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.2c-.5-.9-1.6-1.4-2.8-1.4-1.6 0-2.8.8-2.8 2 0 2.8 5.6 1.4 5.6 4.2 0 1.2-1.2 2.1-2.8 2.1-1.3 0-2.4-.6-2.9-1.5M12 6.3v1.5M12 16.9v1.4"/>',
   dept: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12.5l2.3 2.3 4.7-5"/>',
@@ -125,6 +126,7 @@ const NAV = [
   ["act", "Моя активність", () => true],
   ["rap", "Рапорти", () => true],
   ["staff", "Особовий склад", () => true],
+  ["kb", "База даних", () => true],
   ["bonus", "Премії", () => true],
   ["disc", "Дисципліна", () => true],
   ["dept", "Розділ відділу", () => !!(ME.control && ME.control.length)],
@@ -135,11 +137,11 @@ const NAV = [
 const SOON = [];
 // Генеральний прокурор (не співробітник СБУ) бачить лише кейс-файли
 const navOk = (n) => n[2](ME.me) && (ME.me.dept !== "prosecutor" || n[0] === "cases");
-const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Розділ відділу", bonus: "Премії", disc: "Дисципліна" };
+const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Розділ відділу", bonus: "Премії", disc: "Дисципліна", kb: "База даних" };
 
 function viewShell(inner) {
   const p = ME.pending || {};
-  const badge = { staff: p.orders, act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases, disc: p.disc || (ME.disc && ME.disc.active) || 0 };
+  const badge = { kb: p.exams, staff: p.orders, act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases, disc: p.disc || (ME.disc && ME.disc.active) || 0 };
   const c = META.depts[ME.me.dept].color;
   return `<div class="shell" style="--dept:${c}">
   <aside class="side">

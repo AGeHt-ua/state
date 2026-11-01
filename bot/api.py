@@ -11,6 +11,8 @@ import bonus
 import cases
 import depts
 import discipline
+import kb
+import library
 import orders
 import config
 import core
@@ -154,11 +156,13 @@ async def me(request):
             "hr": await hr_pending(u),
             "cases": await cases.pending(u),
             "disc": await disc_pending(u),
+            "exams": (await db.one("SELECT COUNT(*) AS n FROM attempts WHERE status='submitted'"))["n"] if library.is_examiner(u) else 0,
             "orders": (await db.one("SELECT COUNT(*) AS n FROM orders WHERE status='draft'"))["n"] if orders.can_sign(u) else 0,
         },
         "hr": hr_rights(u),
         "cases": cases.rights(u),
         "control": depts.control_depts(u),
+        "kb": {"sync": u["rank"] == 15, "lib": library.can_edit_lib(u), "exam": library.is_examiner(u)},
         "appoint": {"prepare": orders.can_prepare(u), "sign": orders.can_sign(u)} if orders.can_prepare(u) else None,
         "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
         "bonus": {"manage": bonus.can_manage(u), "finalize": bonus.can_finalize(u)},
@@ -586,6 +590,158 @@ async def orders_cancel(request):
     return web.json_response(r)
 
 
+# ---------------------------------------------------------------- база даних: законодавство, бібліотека, іспити
+async def kb_auth(request) -> dict:
+    u = await auth(request)
+    if u["dept"] == "prosecutor":
+        raise Fail("База даних доступна особовому складу СБУ.", 403)
+    return u
+
+
+@routes.get("/api/kb")
+async def kb_index(request):
+    u = await kb_auth(request)
+    rows = await db.all("SELECT slug, title, section, grp, grp_title, faction, faction_abbr, sbu, short, updated, length(text) AS size FROM kb_docs ORDER BY section, grp, title")
+    return web.json_response({"docs": rows, "checked": await db.get_setting("kb_checked", None), "syncing": kb._sync_lock.locked(),
+                              "canSync": u["rank"] == 15, "ai": bool(config.AI_KEY),
+                              "changes": (await db.one("SELECT COUNT(*) AS n FROM kb_changes"))["n"]})
+
+
+@routes.get("/api/kb/doc/{slug}")
+async def kb_doc(request):
+    await kb_auth(request)
+    d = await db.one("SELECT slug, title, grp_title, faction_abbr, sbu, html, toc, updated, checked FROM kb_docs WHERE slug=?", request.match_info["slug"])
+    if not d:
+        raise Fail("Документ не знайдено.", 404)
+    d["toc"] = json.loads(d["toc"] or "[]")
+    return web.json_response(d)
+
+
+@routes.get("/api/kb/search")
+async def kb_search(request):
+    await kb_auth(request)
+    return web.json_response(await kb.search(request.query.get("q", ""), request.query.get("sbu") == "1"))
+
+
+@routes.get("/api/kb/changes")
+async def kb_changes(request):
+    await kb_auth(request)
+    return web.json_response(await db.all("SELECT * FROM kb_changes ORDER BY id DESC LIMIT 100"))
+
+
+@routes.post("/api/kb/sync")
+async def kb_sync(request):
+    u = await kb_auth(request)
+    if u["rank"] != 15:
+        raise Fail("Оновлювати законодавчу базу може лише Голова СБУ.", 403)
+    if kb._sync_lock.locked():
+        raise Fail("Оновлення вже триває.", 409)
+
+    async def run():
+        try:
+            await db.set_setting("kb_last", await kb.sync(u))
+        except Exception as e:
+            await db.set_setting("kb_last", {"error": str(e)})
+    asyncio.create_task(run())
+    return web.json_response({"started": True})
+
+
+@routes.get("/api/kb/sync")
+async def kb_sync_state(request):
+    await kb_auth(request)
+    return web.json_response({"syncing": kb._sync_lock.locked(), "last": await db.get_setting("kb_last", None)})
+
+
+@routes.get("/api/lib")
+async def lib_list(request):
+    await kb_auth(request)
+    return web.json_response({"items": await library.lib_list(), "cats": library.CATS})
+
+
+@routes.get("/api/lib/{id}")
+async def lib_get(request):
+    await kb_auth(request)
+    return web.json_response(await library.lib_get(int(request.match_info["id"])))
+
+
+@routes.post("/api/lib")
+async def lib_create(request):
+    u = await kb_auth(request)
+    return web.json_response(await library.lib_save(u, await body(request)), status=201)
+
+
+@routes.post("/api/lib/{id}")
+async def lib_update(request):
+    u = await kb_auth(request)
+    return web.json_response(await library.lib_save(u, await body(request), int(request.match_info["id"])))
+
+
+@routes.post("/api/lib/{id}/delete")
+async def lib_delete(request):
+    u = await kb_auth(request)
+    await library.lib_delete(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@routes.get("/api/exams")
+async def exams_home(request):
+    u = await kb_auth(request)
+    return web.json_response(await library.overview(u))
+
+
+@routes.get("/api/exams/{id}")
+async def exams_get(request):
+    u = await kb_auth(request)
+    if not library.is_examiner(u):
+        raise Fail("Повний іспит із відповідями доступний ВКПП.", 403)
+    return web.json_response(await library.exam_get(int(request.match_info["id"])))
+
+
+@routes.post("/api/exams")
+async def exams_create(request):
+    u = await kb_auth(request)
+    return web.json_response(await library.exam_save(u, await body(request)), status=201)
+
+
+@routes.post("/api/exams/{id}")
+async def exams_update(request):
+    u = await kb_auth(request)
+    return web.json_response(await library.exam_save(u, await body(request), int(request.match_info["id"])))
+
+
+@routes.post("/api/exams/{id}/delete")
+async def exams_delete(request):
+    u = await kb_auth(request)
+    await library.exam_delete(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/exams/{id}/start")
+async def exams_start(request):
+    u = await kb_auth(request)
+    return web.json_response(await library.start(u, int(request.match_info["id"])))
+
+
+@routes.post("/api/exams/{id}/submit")
+async def exams_submit(request):
+    u = await kb_auth(request)
+    return web.json_response(await library.submit(u, int(request.match_info["id"]), (await body(request)).get("answers") or {}))
+
+
+@routes.post("/api/attempts/{id}/grade")
+async def attempts_grade(request):
+    u = await kb_auth(request)
+    b = await body(request)
+    return web.json_response(await library.grade(u, int(request.match_info["id"]), b.get("points") or {}, str(b.get("note") or "")))
+
+
+@routes.post("/api/attempts/{id}/delete")
+async def attempts_delete(request):
+    u = await kb_auth(request)
+    await library.attempt_delete(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
 _structure_cache: list = [0.0, None]
 
 
@@ -789,4 +945,5 @@ async def start() -> web.AppRunner:
     await web.TCPSite(runner, config.API_HOST, config.API_PORT).start()
     log.info("API слухає %s:%s", config.API_HOST, config.API_PORT)
     asyncio.create_task(structure_loop())
+    asyncio.create_task(kb.ensure_seeded())
     return runner

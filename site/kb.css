@@ -1,0 +1,82 @@
+/* База даних: законодавство, витяги, зміни, бібліотека, іспити. */
+.kb-law{display:grid;grid-template-columns:300px minmax(0,1fr);gap:18px;align-items:start}
+.kb-side{position:sticky;top:12px;max-height:calc(100vh - 120px);overflow:auto;border:1px solid var(--line);background:var(--panel);padding:12px}
+.kb-search{display:grid;grid-template-columns:1fr auto;gap:6px}
+.kb-sbu{display:flex;gap:8px;align-items:center;font-size:13px;margin:10px 0 4px;cursor:pointer}
+.kb-meta{font:11px var(--mono);color:var(--dim);margin-bottom:8px}
+.kb-grp{border-top:1px solid var(--line);padding:6px 0}
+.kb-grp summary{cursor:pointer;font:500 11.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--gold);display:flex;justify-content:space-between;padding:4px 2px}
+.kb-grp summary span{color:var(--dim)}
+.kb-doc{display:block;width:100%;text-align:left;padding:6px 8px;border:0;border-left:2px solid transparent;background:none;color:var(--muted);font-size:13px;cursor:pointer;line-height:1.35}
+.kb-doc:hover{color:var(--fg);background:var(--bg2)}
+.kb-doc.on{color:var(--gold2);border-left-color:var(--gold);background:var(--gold-soft)}
+.kb-doc.sbu::after{content:" · СБУ";font:10px var(--mono);color:var(--gold)}
+.kb-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:8px}
+.kb-card{display:grid;gap:4px;text-align:left;padding:14px;border:1px solid var(--line2);border-left:3px solid var(--gold);background:var(--panel);color:var(--fg);cursor:pointer;transition:transform .15s,border-color .2s}
+.kb-card:hover{transform:translateY(-2px);border-color:var(--gold)}
+.kb-card b{font-size:14px}.kb-card span{font:11px var(--mono);color:var(--muted)}
+.kb-res{display:grid;gap:10px}
+.kb-hit{padding:12px 14px;border:1px solid var(--line);background:var(--panel);cursor:pointer;display:grid;gap:4px}
+.kb-hit:hover{border-color:var(--gold)}
+.kb-hit p{margin:2px 0;font-size:13px;color:#d9d3c4}
+mark{background:rgba(226,192,127,.35);color:inherit;padding:0 2px}
+.kb-bar{display:flex;gap:8px;align-items:center;margin-bottom:12px}.kb-bar .sp{flex:1}
+.kb-doc-wrap{display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;align-items:start}
+.kb-toc{position:sticky;top:12px;max-height:calc(100vh - 140px);overflow:auto;border:1px solid var(--line);background:var(--panel);padding:10px;font-size:12.5px}
+.kb-toc label{display:flex;gap:6px;align-items:flex-start;padding:3px 0}
+.kb-toc label.lv1{font-weight:600;color:var(--gold2);margin-top:6px}
+.kb-toc label.lv2{padding-left:10px}
+.kb-toc a{color:inherit;text-decoration:none}.kb-toc a:hover{color:var(--gold2)}
+.kb-paper{width:100%}
+.kb-title{text-align:center;font:700 22px "PT Serif",Georgia,serif;margin:18px 0}
+.law-body{font:15px/1.65 "PT Serif",Georgia,serif;color:#231c12}
+.law-body .kb-sec,.law-body h2{font:700 15px var(--mono);letter-spacing:.06em;text-transform:uppercase;margin:24px 0 10px;padding-bottom:4px;border-bottom:1px solid rgba(35,28,18,.3)}
+.law-body .kb-art{font-weight:700;margin:16px 0 6px}
+.law-body p{margin:0 0 8px;text-align:justify}
+.law-body table{border-collapse:collapse;width:100%;font-size:13.5px;margin:8px 0}
+.law-body td,.law-body th{border:1px solid rgba(35,28,18,.3);padding:4px 6px}
+.law-body a{color:#1e4f8c}
+.kb-flash{animation:kbflash 1.6s ease}
+@keyframes kbflash{0%,40%{background:rgba(226,192,127,.55)}100%{background:transparent}}
+.ext-doc{position:relative}
+.ext-stamp{position:absolute;right:40px;bottom:60px;font:700 13px var(--mono);letter-spacing:.12em;color:rgba(30,70,140,.7);border:3px double rgba(30,70,140,.6);padding:6px 12px;rotate:-10deg}
+.kb-sync{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:16px 18px;border:1px solid var(--line2);background:linear-gradient(90deg,rgba(111,159,214,.1),transparent),var(--panel);margin-bottom:16px}
+.kb-sync b{font:18px var(--display)}
+.kb-ai{border-left:3px solid var(--info);background:var(--info-soft);padding:8px 12px;font-size:13.5px}
+.kb-ai p{margin:4px 0 0;white-space:pre-wrap}
+.kb-diff summary{cursor:pointer;font-size:12.5px;color:var(--gold)}
+.kb-diff pre{max-height:360px;overflow:auto;background:#0b0f15;border:1px solid var(--line);padding:10px;font:12px/1.5 var(--mono);white-space:pre-wrap}
+.kb-diff .add{color:#7fd39a;background:rgba(95,179,122,.1);display:block}
+.kb-diff .del{color:#f0a19b;background:rgba(212,96,90,.1);display:block;text-decoration:line-through}
+.kb-diff .hunk{color:var(--info)}
+.lib-sec{margin-bottom:18px}
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.lib-card{display:grid;gap:6px;text-align:left;padding:14px 16px;background:#efe9da;color:#231c12;border:0;border-left:4px solid var(--gold);cursor:pointer;box-shadow:0 8px 20px rgba(0,0,0,.35);transition:transform .15s}
+.lib-card:hover{transform:translateY(-2px) rotate(-.3deg)}
+.lib-card b{font:700 15px "PT Serif",Georgia,serif}.lib-card span{font:11px var(--mono);color:#6b6253}
+.lib-doc .law-body h3{font:700 16px "PT Serif",serif;margin:18px 0 8px}
+.kb-edit{min-height:360px;font:14px/1.6 var(--body)}
+.ex-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.ex-card{display:grid;gap:6px;padding:16px;border:1px solid var(--line2);background:var(--panel);border-top:3px solid var(--gold)}
+.ex-card.draft{border-top-color:var(--dim);opacity:.85}
+.ex-card h3{font:16px var(--display)}
+.ex-meta{display:flex;flex-wrap:wrap;gap:6px}.ex-meta span{font:11px var(--mono);border:1px solid var(--line2);padding:2px 6px;color:var(--muted)}
+.ex-q{border:1px solid var(--line);border-left:3px solid var(--gold);background:var(--bg2);padding:10px;display:grid;gap:8px;margin-bottom:10px}
+.ex-q-h{display:flex;gap:8px;align-items:center}.ex-q-h b{flex:1}
+.ex-take{max-width:900px}
+.ex-timer{font:28px var(--display);color:var(--gold2);border:1px solid var(--gold);padding:4px 14px}
+.ex-timer.low{color:var(--bad);border-color:var(--bad);animation:pulse 1s infinite}
+.ex-tq{border:1px solid var(--line);padding:12px 14px;margin:0 0 12px}
+.ex-tq legend{font-weight:600;padding:0 6px}
+.ex-opt{display:flex;gap:8px;align-items:flex-start;padding:5px 0;cursor:pointer}
+.ex-score{display:grid;justify-items:center;font:40px var(--display);border:3px double var(--line2);padding:6px 16px}
+.ex-score span{font:11px var(--mono);letter-spacing:.14em}
+.ex-score.ok{color:var(--ok);border-color:var(--ok)}.ex-score.bad{color:var(--bad);border-color:var(--bad)}
+.ex-rq{border-left:3px solid var(--line2);padding:8px 12px;margin-bottom:10px;background:var(--bg2)}
+.ex-rq.ok{border-left-color:var(--ok)}.ex-rq.bad{border-left-color:var(--bad)}
+.ex-rq ul{margin:6px 0 0;padding-left:18px}
+.ex-rq li.right{color:var(--ok)}.ex-rq li.right::after{content:" ✔"}
+.ex-rq li.chosen:not(.right){color:var(--bad);text-decoration:line-through}
+.ex-rq li.chosen.right{font-weight:600}
+.ex-txt{white-space:pre-wrap;border:1px dashed var(--line2);padding:8px;margin:6px 0}
+@media (max-width:1000px){.kb-law,.kb-doc-wrap{grid-template-columns:1fr}.kb-side,.kb-toc{position:static;max-height:none}}

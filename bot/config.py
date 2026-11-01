@@ -34,6 +34,7 @@ BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 # Тунель Cloudflare + ретранслятор (Cloudflare Worker) — постійна HTTPS-адреса для сайту
 TUNNEL = env("SOVA_TUNNEL", "1")
 RELAY_URL = env("RELAY_URL", "https://sova.d-f-12339.workers.dev")
+AI_KEY = env("ANTHROPIC_API_KEY", "")  # необов'язково: ШІ-підсумок змін законодавства (вписує власник у .env)
 
 BACKUP_EVERY_HOURS =float(env("BACKUP_EVERY_HOURS", "6"))
 BACKUP_KEEP_DAYS = int(env("BACKUP_KEEP_DAYS", "30"))
