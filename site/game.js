@@ -79,7 +79,7 @@ const st = { lvl: null, g: null, raf: 0, best: {}, board: null };
 // ---------------------------------------------------------------- світ
 function build(i) {
   const L = LEVELS[i], g = { i, L, grid: L.map.map((r) => r.split("")), doors: {}, ents: [], shots: [], fx: [], nades: [], msgs: [], t: 0,
-    stats: { fired: 0, hits: 0, kills: 0, arrests: 0, hostages: 0, civHit: 0, hostHit: 0, shoutOk: 0 }, over: null, keys: {}, mx: CW / 2, my: CH / 2, down: false };
+    stats: { fired: 0, hits: 0, kills: 0, arrests: 0, hostages: 0, civHit: 0, hostHit: 0, shoutOk: 0 }, decals: [], shake: 0, over: null, keys: {}, mx: CW / 2, my: CH / 2, down: false };
   g.grid.forEach((row, y) => row.forEach((c, x) => {
     const cx = x * T + T / 2, cy = y * T + T / 2;
     if (c === "P") { g.p = { x: cx, y: cy, a: 0, hp: 100, mag: 30, ammo: 90, flash: L.flash, reload: 0, cd: 0, shout: 0, blind: 0 }; row[x] = "."; }
@@ -149,7 +149,7 @@ function shoot(g) {
     if (along < 0 || along > hd) continue;
     if (Math.abs(ex * dy - ey * dx) < 11) { hit = e; hd = along; }
   }
-  g.shots.push({ x1: p.x + dx * 14, y1: p.y + dy * 14, x2: p.x + dx * hd, y2: p.y + dy * hd, t: .08 });
+  fxShot(g, p, a, hd, !!hit, false);
   noise(g, p.x, p.y, 430);
   if (!hit) return;
   g.stats.hits++;
@@ -160,6 +160,7 @@ function shoot(g) {
     else { hit.st = "alert"; hit.last = { x: p.x, y: p.y }; }
   } else if (hit.k === "civ") { hit.st = "down"; g.stats.civHit++; say(g, hit.x, hit.y - 18, "Поранено цивільного! ст. 37 ПК", "#d4605a"); }
   else if (hit.k === "host") { hit.st = "down"; g.stats.hostHit++; say(g, hit.x, hit.y - 18, "Поранено заручника!", "#d4605a"); }
+  if (hit.st === "down" && !hit.bled) { hit.bled = 1; blood(g, hit); }
 }
 function reload(g) { const p = g.p; if (p.reload > 0 || p.mag === 30 || p.ammo <= 0) return; p.reload = 1.5; say(g, p.x, p.y - 20, "Перезаряджаю"); }
 function interact(g) {
@@ -205,6 +206,7 @@ function throwFlash(g) {
 }
 function explode(g, n) {
   g.fx.push({ k: "flash", x: n.tx, y: n.ty, t: .5 });
+  g.shake = 9;
   const pt = { x: n.tx, y: n.ty };
   for (const e of g.ents) if (e.st !== "down" && e.st !== "cuffed" && dist(e, pt) < 175 && los(g, pt, e)) { if (e.k === "foe" && e.st !== "surr") e.st = "stun"; e.stun = 3.6; }
   if (dist(g.p, pt) < 130 && los(g, pt, g.p) && Math.abs(adiff(g.p.a, angTo(g.p, pt))) < 1.2) g.p.blind = 1.6;
@@ -221,6 +223,8 @@ function update(g, dt) {
   let vx = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0), vy = (k.KeyS ? 1 : 0) - (k.KeyW ? 1 : 0);
   if (vx && vy) { vx *= .707; vy *= .707; }
   move(g, p, vx * sp, vy * sp);
+  p.walk = (p.walk || 0) + Math.hypot(vx, vy) * sp;
+  g.shake = Math.max(0, (g.shake || 0) - dt * 14);
   for (const key of ["cd", "shout", "blind"]) p[key] = Math.max(0, p[key] - dt);
   if (p.reload > 0) { p.reload -= dt; if (p.reload <= 0) { const n = Math.min(30 - p.mag, p.ammo); p.mag += n; p.ammo -= n; } }
   if (g.down) shoot(g);
@@ -240,7 +244,7 @@ function update(g, dt) {
         const chance = Math.max(.12, .62 - d / 1100 + (still ? .12 : 0));
         const miss = Math.random() > chance;
         const aa = toP + (miss ? (Math.random() - .5) * .35 : 0), hd = miss ? ray(g, e.x, e.y, aa, 700) : d;
-        g.shots.push({ x1: e.x, y1: e.y, x2: e.x + Math.cos(aa) * hd, y2: e.y + Math.sin(aa) * hd, t: .08, foe: true });
+        fxShot(g, e, aa, hd, !miss, true);
         if (!miss) { p.hp -= 18; g.fx.push({ k: "hurt", t: .25 }); }
         noise(g, e.x, e.y, 300);
       }
@@ -249,13 +253,13 @@ function update(g, dt) {
       if (e.st === "alert" && e.last) {
         const la = angTo(e, e.last);
         e.a += Math.max(-2.5 * dt, Math.min(2.5 * dt, adiff(e.a, la)));
-        if (dist(e, e.last) > 40) move(g, e, Math.cos(la) * 55 * dt, Math.sin(la) * 55 * dt);
+        if (dist(e, e.last) > 40) { move(g, e, Math.cos(la) * 55 * dt, Math.sin(la) * 55 * dt); e.walk = (e.walk || 0) + 55 * dt; }
       } else e.a += Math.sin(g.t * .7 + e.x) * e.sweep * dt;  // огляд на посту
     }
   }
   for (const s of g.shots) s.t -= dt;
   g.shots = g.shots.filter((s) => s.t > 0);
-  for (const f of g.fx) f.t -= dt;
+  for (const f of g.fx) { f.t -= dt; if (f.vx !== undefined) { f.x += f.vx * dt; f.y += f.vy * dt; f.vx *= .9; f.vy *= .9; if (f.r !== undefined) f.r += dt * 14; } }
   g.fx = g.fx.filter((f) => f.t > 0);
   for (const m of g.msgs) { m.t -= dt; m.y -= 14 * dt; }
   g.msgs = g.msgs.filter((m) => m.t > 0);
@@ -268,93 +272,283 @@ function update(g, dt) {
   if (!foesLeft && !hostLeft) finish(g, true);
 }
 
-// ---------------------------------------------------------------- малювання
-const COL = { floor: "#141922", carpet: "#1d1a22", wall: "#2b333f", wallTop: "#3a4555", door: "#8a6038", gold: "#c9a24d", foe: "#d4605a", civ: "#9cc3f0", host: "#5fb37a" };
+// ---------------------------------------------------------------- малювання (процедурна графіка: текстури, світло, анімація, ефекти)
+const COL = { gold: "#c9a24d", foe: "#d4605a", civ: "#9cc3f0", host: "#5fb37a" };
+const hash = (x, y, s = 0) => { let h = (x * 374761393 + y * 668265263 + s * 982451653) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+const mk = (w, h) => Object.assign(document.createElement("canvas"), { width: w, height: h });
+
+// статичний шар рівня: підлога з текстурою, стіни з об'ємом, ящики, тіні біля стін — малюється один раз
+function prerender(g) {
+  const c = mk(CW, CH), x2 = c.getContext("2d"), kind = ["concrete", "office", "parquet"][g.i] || "concrete";
+  const wall = (x, y) => tile(g, x, y) === "#";
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+    const ch = g.grid[y][x], X = x * T, Y = y * T;
+    if (ch === "#") continue;
+    if (ch === ",") {                                  // килим: глибокий колір + дрібний візерунок
+      x2.fillStyle = g.i === 2 ? "#3a1c22" : "#1e2633"; x2.fillRect(X, Y, T, T);
+      for (let i = 0; i < 14; i++) { x2.fillStyle = `rgba(255,255,255,${.015 + hash(x, y, i) * .03})`; x2.fillRect(X + hash(x, y, i + 9) * T, Y + hash(x, y, i + 20) * T, 1.5, 1.5); }
+      if ((x + y) % 2 === 0) { x2.strokeStyle = "rgba(201,162,77,.06)"; x2.strokeRect(X + 8, Y + 8, 16, 16); }
+    } else if (kind === "concrete") {                  // бетон складу: плями, шви, жовта розмітка
+      const v = 40 + hash(x, y) * 8; x2.fillStyle = `rgb(${v},${v + 2},${v + 5})`; x2.fillRect(X, Y, T, T);
+      for (let i = 0; i < 22; i++) { const s = hash(x, y, i); x2.fillStyle = `rgba(${s > .5 ? "255,255,255" : "0,0,0"},${.03 + s * .04})`; x2.fillRect(X + hash(x, y, i + 3) * T, Y + hash(x, y, i + 5) * T, 2, 2); }
+      if (hash(x, y, 77) > .93) { const gr = x2.createRadialGradient(X + 16, Y + 16, 1, X + 16, Y + 16, 18); gr.addColorStop(0, "rgba(10,10,8,.35)"); gr.addColorStop(1, "rgba(10,10,8,0)"); x2.fillStyle = gr; x2.fillRect(X - 4, Y - 4, T + 8, T + 8); }
+      if (x % 4 === 0) { x2.fillStyle = "rgba(0,0,0,.18)"; x2.fillRect(X, Y, 1, T); }
+      if (y % 4 === 0) { x2.fillStyle = "rgba(0,0,0,.18)"; x2.fillRect(X, Y, T, 1); }
+    } else if (kind === "office") {                    // офісна плитка
+      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) { const v = 52 + hash(x * 2 + i, y * 2 + j) * 7; x2.fillStyle = `rgb(${v},${v + 4},${v + 10})`; x2.fillRect(X + i * 16, Y + j * 16, 16, 16); }
+      x2.fillStyle = "rgba(0,0,0,.28)"; x2.fillRect(X, Y, T, 1); x2.fillRect(X, Y, 1, T); x2.fillRect(X + 16, Y, 1, T); x2.fillRect(X, Y + 16, T, 1);
+      x2.fillStyle = "rgba(255,255,255,.035)"; x2.fillRect(X + 1, Y + 1, 15, 1);
+    } else {                                           // паркет особняка: дошки з текстурою
+      for (let i = 0; i < 4; i++) {
+        const v = hash(x, y * 4 + i); x2.fillStyle = `rgb(${78 + v * 22},${50 + v * 14},${30 + v * 8})`; x2.fillRect(X, Y + i * 8, T, 8);
+        x2.fillStyle = "rgba(0,0,0,.35)"; x2.fillRect(X, Y + i * 8 + 7, T, 1);
+        x2.fillRect(X + ((x + i) % 2 ? 10 : 24), Y + i * 8, 1, 8);
+        x2.strokeStyle = "rgba(0,0,0,.08)"; x2.beginPath(); x2.moveTo(X, Y + i * 8 + 3 + v * 2); x2.bezierCurveTo(X + 10, Y + i * 8 + 2, X + 22, Y + i * 8 + 5, X + T, Y + i * 8 + 3); x2.stroke();
+      }
+    }
+    // м'яка тінь біля стін (ambient occlusion)
+    const ao = (cond, x0, y0, x1, y1) => { if (!cond) return; const gr = x2.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, "rgba(0,0,0,.45)"); gr.addColorStop(1, "rgba(0,0,0,0)"); x2.fillStyle = gr; x2.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0) || T, Math.abs(y1 - y0) || T); };
+    ao(wall(x, y - 1), X, Y, X, Y + 12); ao(wall(x - 1, y), X, Y, X + 10, Y); ao(wall(x + 1, y), X + T, Y, X + T - 7, Y); ao(wall(x, y + 1), X, Y + T, X, Y + T - 6);
+    if (ch === "B") {                                  // дерев'яний ящик з тінню
+      x2.fillStyle = "rgba(0,0,0,.4)"; x2.fillRect(X + 5, Y + 6, T - 6, T - 6);
+      const gr = x2.createLinearGradient(X, Y, X + T, Y + T); gr.addColorStop(0, "#8a6a40"); gr.addColorStop(1, "#5a4126"); x2.fillStyle = gr; x2.fillRect(X + 2, Y + 2, T - 6, T - 6);
+      x2.strokeStyle = "#3d2b17"; x2.lineWidth = 2; x2.strokeRect(X + 3, Y + 3, T - 8, T - 8);
+      x2.strokeStyle = "rgba(61,43,23,.8)"; x2.lineWidth = 1.5; x2.beginPath(); x2.moveTo(X + 4, Y + 4); x2.lineTo(X + T - 6, Y + T - 6); x2.moveTo(X + T - 6, Y + 4); x2.lineTo(X + 4, Y + T - 6); x2.stroke();
+      x2.fillStyle = "rgba(255,240,200,.12)"; x2.fillRect(X + 3, Y + 3, T - 8, 2); x2.lineWidth = 1;
+    }
+  }
+  // стіни: тінь, «тіло», світла верхня грань
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) if (wall(x, y)) {
+    const X = x * T, Y = y * T;
+    x2.fillStyle = "#1b2027"; x2.fillRect(X, Y, T, T);
+    x2.fillStyle = "#2e3641"; x2.fillRect(X + 1, Y + 1, T - 2, T - 6);
+    if (!wall(x, y - 1)) { x2.fillStyle = "#4a5565"; x2.fillRect(X, Y, T, 2); }
+    if (!wall(x - 1, y)) { x2.fillStyle = "#3d4755"; x2.fillRect(X, Y, 2, T); }
+    if (!wall(x, y + 1)) { x2.fillStyle = "#12161b"; x2.fillRect(X, Y + T - 5, T, 5); }
+    x2.fillStyle = `rgba(255,255,255,${.015 + hash(x, y, 4) * .02})`; x2.fillRect(X + 4, Y + 6, T - 10, 1);
+  }
+  return c;
+}
+
 function visible(g, e) {
   const p = g.p, d = dist(p, e);
   if (d > VIEW) return false;
   if (d > NEAR && Math.abs(adiff(p.a, angTo(p, e))) > FOV) return false;
   return los(g, p, e);
 }
+function conePath(g, c, a0, a1, step, max) {
+  const p = g.p;
+  c.beginPath(); c.moveTo(p.x, p.y);
+  for (let a = a0; a <= a1; a += step) { const d = ray(g, p.x, p.y, p.a + a, max); c.lineTo(p.x + Math.cos(p.a + a) * d, p.y + Math.sin(p.a + a) * d); }
+  c.closePath();
+}
+function nearPath(g, c) {
+  const p = g.p; c.beginPath();
+  for (let a = 0; a <= 6.3; a += .07) { const d = ray(g, p.x, p.y, a, NEAR); c.lineTo(p.x + Math.cos(a) * d, p.y + Math.sin(a) * d); }
+  c.closePath();
+}
+
+function drawDoor(ctx, g, x, y) {
+  const X = x * T, Y = y * T, open = g.doors[x + "," + y], vert = tile(g, x, y - 1) === "#" || tile(g, x, y + 1) === "#";
+  ctx.save(); ctx.translate(X + T / 2, Y + T / 2); if (vert) ctx.rotate(Math.PI / 2);
+  ctx.fillStyle = "#14181d"; ctx.fillRect(-T / 2, -6, 4, 12); ctx.fillRect(T / 2 - 4, -6, 4, 12);      // одвірки
+  if (!open) {
+    const gr = ctx.createLinearGradient(0, -5, 0, 5); gr.addColorStop(0, "#9a6f42"); gr.addColorStop(1, "#5e4024");
+    ctx.fillStyle = gr; ctx.fillRect(-T / 2 + 4, -4, T - 8, 8); ctx.fillStyle = "#d8b56a"; ctx.fillRect(T / 2 - 10, -1.5, 3, 3);
+  } else {
+    ctx.fillStyle = "#7a5634"; ctx.save(); ctx.translate(-T / 2 + 4, 0); ctx.rotate(-1.35); ctx.fillRect(0, -3, T - 8, 6); ctx.restore();
+  }
+  ctx.restore();
+}
+
+// людина згори: тінь, ноги (анімація кроку), торс, руки, зброя, голова
+const LOOK = {
+  me: { torso: "#2f3b33", torso2: "#1e2622", head: "#2b3328", accent: "#c9a24d" },
+  foe: { torso: "#7c2b26", torso2: "#4a1714", head: "#1c1c1c", accent: "#d4605a" },
+  civ: [{ torso: "#3d6d9a", torso2: "#29496a", head: "#5a3b22" }, { torso: "#c9c4b6", torso2: "#8f8a7d", head: "#2b2018" }, { torso: "#3a8a86", torso2: "#245a57", head: "#b58b4c" }],
+  host: { torso: "#6c7480", torso2: "#4a5059", head: "#3a2a1e" },
+};
+function drawPerson(ctx, e, g) {
+  const look = e.k === "me" ? LOOK.me : e.k === "foe" ? LOOK.foe : e.k === "host" ? LOOK.host : LOOK.civ[Math.floor(hash(Math.round(e.x), Math.round(e.y)) * 3)];
+  if (e.st === "down") {                             // лежить
+    ctx.save(); ctx.translate(e.x, e.y); ctx.rotate(e.a + 1.2);
+    ctx.fillStyle = look.torso2; ctx.beginPath(); ctx.ellipse(0, 0, 14, 7, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = look.head; ctx.beginPath(); ctx.arc(15, 2, 5.5, 0, 7); ctx.fill(); ctx.restore(); return;
+  }
+  const armed = e.k === "me" || (e.k === "foe" && !["surr", "cuffed"].includes(e.st));
+  const walk = Math.sin((e.walk || 0) * .22) * 4, small = e.st === "cower" || e.k === "host";
+  ctx.save(); ctx.translate(e.x, e.y);
+  ctx.fillStyle = "rgba(0,0,0,.38)"; ctx.beginPath(); ctx.ellipse(3, 4, 13, 10, 0, 0, 7); ctx.fill();          // тінь
+  if (e.k === "foe" || e.k === "host" || e.k === "civ") {                                                          // кільце-ідентифікатор
+    ctx.strokeStyle = e.k === "foe" ? "rgba(212,96,90,.55)" : e.k === "host" ? "rgba(95,179,122,.6)" : "rgba(156,195,240,.45)";
+    ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, 15, 0, 7); ctx.stroke();
+  }
+  ctx.rotate(e.a); if (small) ctx.scale(.85, .85);
+  ctx.fillStyle = "#15181c";                                                                                         // ноги
+  ctx.beginPath(); ctx.ellipse(walk, -5, 5, 3, 0, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(-walk, 5, 5, 3, 0, 0, 7); ctx.fill();
+  const gr = ctx.createLinearGradient(-8, -10, 8, 10); gr.addColorStop(0, look.torso); gr.addColorStop(1, look.torso2);
+  ctx.fillStyle = gr; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.ellipse(0, 0, 8, 12, 0, 0, 7); ctx.fill(); ctx.stroke();                                   // торс
+  if (e.k === "me") { ctx.fillStyle = look.accent; ctx.fillRect(-6, -9, 3, 18); }                                   // нашивка «Альфа»
+  if (armed) {                                                                                                      // руки й автомат
+    ctx.fillStyle = "#101215"; ctx.fillRect(4, -2.5, 22, 5); ctx.fillStyle = "#2a2e34"; ctx.fillRect(6, -1.5, 10, 3);
+    ctx.fillStyle = "#3a3f46"; ctx.fillRect(22, -1.5, 5, 3);
+    ctx.fillStyle = look.torso; ctx.beginPath(); ctx.arc(8, 6, 3.5, 0, 7); ctx.arc(17, 2.5, 3.2, 0, 7); ctx.fill();
+  } else if (e.st === "surr") {                                                                                      // руки вгору
+    ctx.fillStyle = "#c99a74"; ctx.beginPath(); ctx.arc(3, -12, 3.2, 0, 7); ctx.arc(3, 12, 3.2, 0, 7); ctx.fill();
+  } else if (e.st === "cuffed") {                                                                                    // руки за спиною в кайданках
+    ctx.fillStyle = "#c99a74"; ctx.beginPath(); ctx.arc(-9, -4, 3, 0, 7); ctx.arc(-9, 4, 3, 0, 7); ctx.fill();
+    ctx.strokeStyle = "#cfd6df"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-9, -4); ctx.lineTo(-9, 4); ctx.stroke();
+  } else {                                                                                                           // руки вздовж тіла
+    ctx.fillStyle = look.torso2; ctx.beginPath(); ctx.arc(1, -11, 3, 0, 7); ctx.arc(1, 11, 3, 0, 7); ctx.fill();
+  }
+  // голова
+  ctx.fillStyle = look.head; ctx.strokeStyle = "rgba(0,0,0,.6)"; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(1, 0, e.k === "me" ? 6.8 : 6, 0, 7); ctx.fill(); ctx.stroke();
+  if (e.k === "me") { ctx.fillStyle = look.accent; ctx.fillRect(-2, -1, 7, 2); }                                     // шолом із золотою смугою
+  if (e.k === "foe") { ctx.fillStyle = "rgba(212,96,90,.8)"; ctx.fillRect(-1, -6, 2, 12); }                          // балаклава
+  if (e.k === "host") { ctx.fillStyle = "#e8e2d4"; ctx.fillRect(3, -6, 2, 12); ctx.strokeStyle = "#b08a52"; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(0, 0, 9, 13, 0, 0, 7); ctx.stroke(); }
+  ctx.restore();
+  // позначки над головою
+  ctx.font = "bold 12px 'Inter', sans-serif"; ctx.textAlign = "center";
+  const tag = (t, c) => { ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.beginPath(); ctx.roundRect(e.x - 13, e.y - 32, 26, 15, 4); ctx.fill(); ctx.fillStyle = c; ctx.fillText(t, e.x, e.y - 21); };
+  if (e.st === "surr") tag("E ⛓", "#e9d9a8");
+  else if (e.st === "cuffed") tag("⛓", "#9aa7b8");
+  else if (e.k === "host") tag(e.st === "safe" ? "✔" : "E", e.st === "safe" ? COL.host : "#e9d9a8");
+  else if (e.k === "foe" && e.st === "alert") tag("!", COL.foe);
+  if (e.stun > 0) { for (let i = 0; i < 3; i++) { const a = g.t * 5 + i * 2.1; ctx.fillStyle = "#fff6c8"; ctx.fillText("✦", e.x + Math.cos(a) * 11, e.y - 14 + Math.sin(a) * 4); } }
+}
+
+// ефекти пострілу: спалах, трасер, гільза, іскри, тремтіння
+function fxShot(g, src, a, len, hit, foe) {
+  const x1 = src.x + Math.cos(a) * 24, y1 = src.y + Math.sin(a) * 24, x2 = src.x + Math.cos(a) * len, y2 = src.y + Math.sin(a) * len;
+  g.shots.push({ x1, y1, x2, y2, t: .07, foe });
+  g.fx.push({ k: "muzzle", x: x1, y: y1, a, t: .05 });
+  const side = a + Math.PI / 2;
+  g.fx.push({ k: "casing", x: src.x + Math.cos(a) * 10, y: src.y + Math.sin(a) * 10, vx: Math.cos(side) * (60 + Math.random() * 40), vy: Math.sin(side) * (60 + Math.random() * 40), r: Math.random() * 6, t: .5 });
+  if (!hit) {
+    for (let i = 0; i < 5; i++) { const b = a + Math.PI + (Math.random() - .5) * 1.6, s = 60 + Math.random() * 120; g.fx.push({ k: "spark", x: x2, y: y2, vx: Math.cos(b) * s, vy: Math.sin(b) * s, t: .18 + Math.random() * .12 }); }
+    g.decals.push({ k: "hole", x: x2 - Math.cos(a) * 2, y: y2 - Math.sin(a) * 2 }); if (g.decals.length > 200) g.decals.shift();
+  }
+  g.shake = Math.max(g.shake || 0, foe ? 1.5 : 2.6);
+}
+function blood(g, e) { g.decals.push({ k: "blood", x: e.x, y: e.y, s: Math.random() * 1000 }); }
+
 function draw(g, ctx) {
   const p = g.p;
-  // підлога, стіни, двері
-  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
-    const c = g.grid[y][x], X = x * T, Y = y * T;
-    ctx.fillStyle = c === "," ? COL.carpet : COL.floor; ctx.fillRect(X, Y, T, T);
-    if (c === "#") { ctx.fillStyle = COL.wall; ctx.fillRect(X, Y, T, T); ctx.fillStyle = COL.wallTop; ctx.fillRect(X, Y, T, 5); }
-    else if (c === "B") { ctx.fillStyle = "#4a3a26"; ctx.fillRect(X + 2, Y + 2, T - 4, T - 4); ctx.strokeStyle = "#6b5233"; ctx.strokeRect(X + 5, Y + 5, T - 10, T - 10); }
-    else if (c === "D") {
-      const open = g.doors[x + "," + y], vert = tile(g, x, y - 1) === "#" || tile(g, x, y + 1) === "#";
-      ctx.fillStyle = COL.door;
-      if (!open) ctx.fillRect(vert ? X + 11 : X, vert ? Y : Y + 11, vert ? 10 : T, vert ? T : 10);
-      else ctx.fillRect(vert ? X + 11 : X, vert ? Y : Y + 11, vert ? 10 : 6, vert ? 6 : 10);
-    } else { ctx.strokeStyle = "rgba(255,255,255,.025)"; ctx.strokeRect(X + .5, Y + .5, T, T); }
+  if (!g.bg) g.bg = prerender(g);
+  if (!g.mem) g.mem = mk(CW, CH);
+  ctx.save();
+  if (g.shake > .1) ctx.translate((Math.random() - .5) * g.shake * 2, (Math.random() - .5) * g.shake * 2);
+  ctx.drawImage(g.bg, 0, 0);
+  // сліди: кров, отвори від куль
+  for (const d of g.decals) {
+    if (d.k === "hole") { ctx.fillStyle = "rgba(0,0,0,.7)"; ctx.beginPath(); ctx.arc(d.x, d.y, 1.6, 0, 7); ctx.fill(); continue; }
+    ctx.fillStyle = "rgba(110,14,14,.55)";
+    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(d.x + (hash(d.s, i) - .5) * 22, d.y + (hash(d.s, i + 7) - .5) * 22, 3 + hash(d.s, i + 3) * 7, 0, 7); ctx.fill(); }
   }
-  // туман: усе поза полем зору — темне (план приміщень лишається ледь видимим)
-  const fog = g.fog || (g.fog = Object.assign(document.createElement("canvas"), { width: CW, height: CH }));
-  const f = fog.getContext("2d");
-  f.globalCompositeOperation = "source-over"; f.fillStyle = "rgba(5,7,11,.8)"; f.fillRect(0, 0, CW, CH);
+  for (const k in g.doors) { const [x, y] = k.split(",").map(Number); drawDoor(ctx, g, x, y); }
+  // пам'ять розвіданого + світло ліхтаря
+  const mem = g.mem.getContext("2d");
+  mem.fillStyle = "#fff"; conePath(g, mem, -FOV, FOV, .02, VIEW); mem.fill(); nearPath(g, mem); mem.fill();
+  const fog = g.fog || (g.fog = mk(CW, CH)), f = fog.getContext("2d");
+  f.globalCompositeOperation = "source-over"; f.fillStyle = "rgba(3,5,9,.97)"; f.fillRect(0, 0, CW, CH);
   f.globalCompositeOperation = "destination-out";
-  f.beginPath(); f.moveTo(p.x, p.y);
-  for (let a = -FOV; a <= FOV; a += .012) { const d = ray(g, p.x, p.y, p.a + a, VIEW); f.lineTo(p.x + Math.cos(p.a + a) * d, p.y + Math.sin(p.a + a) * d); }
-  f.closePath(); f.fill();
-  f.beginPath();
-  for (let a = 0; a <= 6.3; a += .08) { const d = ray(g, p.x, p.y, a, NEAR); f.lineTo(p.x + Math.cos(a) * d, p.y + Math.sin(a) * d); }
-  f.closePath(); f.fill();
+  f.globalAlpha = .2; f.drawImage(g.mem, 0, 0); f.globalAlpha = 1;                       // розвідане — ледь видно
+  const lg = f.createRadialGradient(p.x, p.y, 20, p.x, p.y, VIEW);
+  lg.addColorStop(0, "rgba(0,0,0,1)"); lg.addColorStop(.55, "rgba(0,0,0,.92)"); lg.addColorStop(1, "rgba(0,0,0,.45)");
+  f.fillStyle = lg; conePath(g, f, -FOV, FOV, .012, VIEW); f.fill();
+  const ng = f.createRadialGradient(p.x, p.y, 10, p.x, p.y, NEAR); ng.addColorStop(0, "rgba(0,0,0,1)"); ng.addColorStop(1, "rgba(0,0,0,.55)");
+  f.fillStyle = ng; nearPath(g, f); f.fill();
   ctx.drawImage(fog, 0, 0);
-  // люди (лише видимі)
+  // теплий відблиск ліхтаря
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  const wg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, VIEW * .8); wg.addColorStop(0, "rgba(255,236,190,.10)"); wg.addColorStop(1, "rgba(255,236,190,0)");
+  ctx.fillStyle = wg; conePath(g, ctx, -FOV, FOV, .03, VIEW); ctx.fill(); ctx.restore();
+  // люди
   for (const e of g.ents) if (visible(g, e) || e.st === "safe" || e.st === "cuffed") drawPerson(ctx, e, g);
-  // гравець
-  drawPerson(ctx, { k: "me", x: p.x, y: p.y, a: p.a, st: "me" }, g);
-  // постріли, гранати, ефекти
-  for (const s of g.shots) { ctx.strokeStyle = s.foe ? "rgba(255,120,90,.9)" : "rgba(255,230,150,.95)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke(); }
-  for (const n of g.nades) { const k = Math.min(1, n.t / .5); ctx.fillStyle = "#cfd6df"; ctx.beginPath(); ctx.arc(n.x + (n.tx - n.x) * k, n.y + (n.ty - n.y) * k, 4, 0, 7); ctx.fill(); }
-  for (const fx of g.fx) if (fx.k === "flash") { ctx.fillStyle = `rgba(255,255,240,${fx.t * 1.6})`; ctx.beginPath(); ctx.arc(fx.x, fx.y, 175 * (1 - fx.t), 0, 7); ctx.fill(); }
+  drawPerson(ctx, { k: "me", x: p.x, y: p.y, a: p.a, st: "me", walk: p.walk }, g);
+  // гранати
+  for (const n of g.nades) {
+    const k = Math.min(1, n.t / .5), x = n.x + (n.tx - n.x) * k, y = n.y + (n.ty - n.y) * k, h = Math.sin(k * Math.PI) * 14;
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.arc(x + 2, y + 3, 4, 0, 7); ctx.fill();
+    ctx.fillStyle = "#cfd6df"; ctx.beginPath(); ctx.arc(x, y - h, 4.5, 0, 7); ctx.fill(); ctx.fillStyle = "#c9a24d"; ctx.fillRect(x - 1, y - h - 6, 2, 3);
+  }
+  // трасери зі світінням
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round";
+  for (const s of g.shots) {
+    ctx.strokeStyle = s.foe ? "rgba(255,90,60,.35)" : "rgba(255,210,120,.35)"; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
+    ctx.strokeStyle = s.foe ? "#ffb39a" : "#fff1c4"; ctx.lineWidth = 1.6; ctx.stroke();
+  }
+  for (const fx of g.fx) {
+    if (fx.k === "muzzle") {
+      const r = 16 * (fx.t / .05), mg = ctx.createRadialGradient(fx.x, fx.y, 0, fx.x, fx.y, r);
+      mg.addColorStop(0, "rgba(255,250,220,1)"); mg.addColorStop(.4, "rgba(255,190,90,.8)"); mg.addColorStop(1, "rgba(255,120,40,0)");
+      ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(fx.x, fx.y, r, 0, 7); ctx.fill();
+    } else if (fx.k === "spark") { ctx.fillStyle = `rgba(255,${180 + Math.random() * 60},90,${fx.t * 4})`; ctx.fillRect(fx.x, fx.y, 2, 2); }
+    else if (fx.k === "flash") {
+      const k = 1 - fx.t / .5, bg = ctx.createRadialGradient(fx.x, fx.y, 0, fx.x, fx.y, 40 + 180 * k);
+      bg.addColorStop(0, `rgba(255,255,245,${1 - k})`); bg.addColorStop(1, "rgba(255,255,245,0)");
+      ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(fx.x, fx.y, 40 + 180 * k, 0, 7); ctx.fill();
+      ctx.strokeStyle = `rgba(255,255,255,${(1 - k) * .8})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(fx.x, fx.y, 175 * k, 0, 7); ctx.stroke();
+    }
+  }
+  ctx.restore();
+  for (const fx of g.fx) if (fx.k === "casing") { ctx.save(); ctx.translate(fx.x, fx.y); ctx.rotate(fx.r); ctx.fillStyle = "#d8b56a"; ctx.fillRect(-2.5, -1, 5, 2); ctx.restore(); }
+  // написи
   ctx.font = "bold 12px 'Inter', sans-serif"; ctx.textAlign = "center";
-  for (const m of g.msgs) { ctx.globalAlpha = Math.min(1, m.t); ctx.fillStyle = "#000"; ctx.fillText(m.text, m.x + 1, m.y + 1); ctx.fillStyle = m.col; ctx.fillText(m.text, m.x, m.y); }
+  for (const m of g.msgs) { ctx.globalAlpha = Math.min(1, m.t); ctx.fillStyle = "rgba(0,0,0,.75)"; ctx.fillText(m.text, m.x + 1, m.y + 1); ctx.fillStyle = m.col; ctx.fillText(m.text, m.x, m.y); }
   ctx.globalAlpha = 1;
-  // приціл
-  ctx.strokeStyle = COL.gold; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(g.mx, g.my, 9, 0, 7); ctx.moveTo(g.mx - 14, g.my); ctx.lineTo(g.mx - 5, g.my); ctx.moveTo(g.mx + 5, g.my); ctx.lineTo(g.mx + 14, g.my);
-  ctx.moveTo(g.mx, g.my - 14); ctx.lineTo(g.mx, g.my - 5); ctx.moveTo(g.mx, g.my + 5); ctx.lineTo(g.mx, g.my + 14); ctx.stroke();
+  ctx.restore();
+  // віньєтка
+  const vg = ctx.createRadialGradient(CW / 2, CH / 2, CH * .35, CW / 2, CH / 2, CW * .7); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.55)");
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, CW, CH);
+  // приціл: розкид залежить від руху
+  const moving = g.keys.KeyW || g.keys.KeyA || g.keys.KeyS || g.keys.KeyD, sp = moving ? 13 : 7;
+  ctx.strokeStyle = COL.gold; ctx.lineWidth = 1.6; ctx.shadowColor = "rgba(201,162,77,.8)"; ctx.shadowBlur = 6;
+  ctx.beginPath();
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(g.mx + dx * sp, g.my + dy * sp); ctx.lineTo(g.mx + dx * (sp + 8), g.my + dy * (sp + 8)); }
+  ctx.stroke(); ctx.fillStyle = COL.gold; ctx.fillRect(g.mx - 1, g.my - 1, 2, 2); ctx.shadowBlur = 0;
   hud(g, ctx);
-  if (g.fx.some((f) => f.k === "hurt")) { ctx.fillStyle = "rgba(180,20,20,.25)"; ctx.fillRect(0, 0, CW, CH); }
+  if (g.fx.some((f) => f.k === "hurt")) { const hg = ctx.createRadialGradient(CW / 2, CH / 2, CH * .3, CW / 2, CH / 2, CW * .65); hg.addColorStop(0, "rgba(180,20,20,0)"); hg.addColorStop(1, "rgba(180,20,20,.55)"); ctx.fillStyle = hg; ctx.fillRect(0, 0, CW, CH); }
   if (p.blind > 0) { ctx.fillStyle = `rgba(255,255,250,${Math.min(1, p.blind)})`; ctx.fillRect(0, 0, CW, CH); }
 }
-function drawPerson(ctx, e, g) {
-  const col = e.k === "me" ? COL.gold : e.k === "foe" ? COL.foe : e.k === "civ" ? COL.civ : COL.host;
-  ctx.save(); ctx.translate(e.x, e.y);
-  if (e.st === "down") { ctx.globalAlpha = .45; ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(0, 0, 13, 7, e.a, 0, 7); ctx.fill(); ctx.restore(); return; }
-  ctx.rotate(e.a);
-  if (e.k === "me" || (e.k === "foe" && !["surr", "cuffed"].includes(e.st))) { ctx.fillStyle = "#1a1d22"; ctx.fillRect(4, -2.5, 17, 5); }   // зброя
-  ctx.fillStyle = col; ctx.strokeStyle = "rgba(0,0,0,.7)"; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(0, 0, e.st === "cower" ? 8 : 10, 0, 7); ctx.fill(); ctx.stroke();
-  if (e.k === "me") { ctx.fillStyle = "#1a1d22"; ctx.font = "bold 9px sans-serif"; ctx.textAlign = "center"; ctx.rotate(-e.a); ctx.fillText("А", 0, 3); }
-  ctx.restore();
-  ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center";
-  if (e.st === "surr") { ctx.fillStyle = "#e9d9a8"; ctx.fillText("✋ E", e.x, e.y - 15); }
-  if (e.st === "cuffed") { ctx.fillStyle = "#9aa7b8"; ctx.fillText("⛓", e.x, e.y - 14); }
-  if (e.st === "alert" && e.k === "foe") { ctx.fillStyle = COL.foe; ctx.fillText("!", e.x, e.y - 14); }
-  if (e.stun > 0) { ctx.fillStyle = "#fff"; ctx.fillText("✦", e.x, e.y - 14); }
-  if (e.k === "host") { ctx.fillStyle = e.st === "safe" ? COL.host : "#e9d9a8"; ctx.fillText(e.st === "safe" ? "✔" : "E", e.x, e.y - 14); }
+
+function panel(ctx, x, y, w, h) {
+  ctx.fillStyle = "rgba(8,11,16,.78)"; ctx.strokeStyle = "rgba(201,162,77,.35)"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 6); ctx.fill(); ctx.stroke();
 }
 function hud(g, ctx) {
   const p = g.p, foes = g.ents.filter((e) => e.k === "foe"), hosts = g.ents.filter((e) => e.k === "host");
-  ctx.fillStyle = "rgba(6,8,12,.78)"; ctx.fillRect(0, 0, CW, 30);
-  ctx.font = "bold 13px 'Inter', sans-serif"; ctx.textAlign = "left";
-  ctx.fillStyle = COL.gold; ctx.fillText(`ЦСО «А» · ${g.L.name}`, 12, 20);
-  ctx.textAlign = "right"; ctx.fillStyle = "#e9e4d6";
   const left = foes.filter((e) => !["down", "cuffed"].includes(e.st)).length, safe = hosts.filter((e) => e.st === "safe").length;
-  ctx.fillText(`Ціль: ${left}   Заручники: ${safe}/${hosts.length}   ⏱ ${g.t.toFixed(1)} с`, CW - 12, 20);
-  // нижня панель
-  ctx.fillStyle = "rgba(6,8,12,.78)"; ctx.fillRect(0, CH - 34, CW, 34);
-  ctx.fillStyle = "#3a1414"; ctx.fillRect(12, CH - 22, 160, 10); ctx.fillStyle = p.hp > 40 ? "#5fb37a" : "#d4605a"; ctx.fillRect(12, CH - 22, 1.6 * Math.max(0, p.hp), 10);
-  ctx.textAlign = "left"; ctx.fillStyle = "#e9e4d6"; ctx.font = "bold 13px 'Inter', sans-serif";
-  ctx.fillText(p.reload > 0 ? "Перезаряджаю…" : `Набої ${p.mag}/${p.ammo}`, 186, CH - 12);
-  ctx.fillText(`Світлошумові ${p.flash}`, 330, CH - 12);
-  ctx.fillStyle = "#8a93a3"; ctx.font = "12px 'Inter', sans-serif";
-  ctx.fillText("E двері · кайданки · заручник    F «Руки вгору!»    G світлошумова    R перезарядка    Esc пауза", 470, CH - 12);
+  ctx.textAlign = "left";
+  // операція й час
+  panel(ctx, 10, 10, 300, 40);
+  ctx.fillStyle = COL.gold; ctx.font = "bold 10px 'Inter', sans-serif"; ctx.fillText("ЦСО «А» · ОПЕРАЦІЯ", 22, 25);
+  ctx.fillStyle = "#e9e4d6"; ctx.font = "bold 14px 'Inter', sans-serif"; ctx.fillText(g.L.name, 22, 42);
+  ctx.textAlign = "right"; ctx.fillStyle = "#e9e4d6"; ctx.font = "bold 15px 'JetBrains Mono', monospace"; ctx.fillText(`${Math.floor(g.t / 60)}:${String(Math.floor(g.t % 60)).padStart(2, "0")}`, 298, 42);
+  // цілі
+  panel(ctx, CW - 230, 10, 220, 40); ctx.textAlign = "left"; ctx.font = "bold 13px 'Inter', sans-serif";
+  ctx.fillStyle = COL.foe; ctx.fillText(`● Озброєні: ${left}`, CW - 218, 35);
+  ctx.fillStyle = COL.host; ctx.fillText(`● Заручники: ${safe}/${hosts.length}`, CW - 112, 35);
+  // здоров'я, набої, гранати
+  panel(ctx, 10, CH - 58, 360, 48);
+  ctx.fillStyle = COL.gold; ctx.font = "bold 10px 'Inter', sans-serif"; ctx.fillText("АЛЬФА-1", 22, CH - 42);
+  for (let i = 0; i < 10; i++) { ctx.fillStyle = p.hp > i * 10 ? (p.hp > 40 ? "#5fb37a" : "#d4605a") : "rgba(255,255,255,.08)"; ctx.fillRect(22 + i * 13, CH - 34, 11, 12); }
+  for (let i = 0; i < 30; i++) { ctx.fillStyle = i < p.mag ? "#e9d9a8" : "rgba(255,255,255,.08)"; ctx.fillRect(170 + i * 4, CH - 34, 2.5, 12); }
+  ctx.fillStyle = "#e9e4d6"; ctx.font = "bold 12px 'JetBrains Mono', monospace"; ctx.fillText(p.reload > 0 ? "RELOAD" : `/${p.ammo}`, 170, CH - 41);
+  for (let i = 0; i < p.flash; i++) { ctx.fillStyle = "#cfd6df"; ctx.beginPath(); ctx.arc(306 + i * 16, CH - 28, 5, 0, 7); ctx.fill(); ctx.fillStyle = COL.gold; ctx.fillRect(305 + i * 16, CH - 37, 2, 4); }
+  // міні-карта розвіданого
+  const mw = 160, mh = 100, mx = CW - mw - 10, my = CH - mh - 10;
+  panel(ctx, mx - 4, my - 4, mw + 8, mh + 8);
+  ctx.save(); ctx.globalAlpha = .9; ctx.drawImage(g.bg, mx, my, mw, mh); ctx.globalCompositeOperation = "destination-in"; ctx.restore();
+  ctx.save(); ctx.globalAlpha = .82; ctx.fillStyle = "#05070b";
+  const mm = g.mmask || (g.mmask = mk(mw, mh)), m2 = mm.getContext("2d");
+  m2.globalCompositeOperation = "source-over"; m2.fillStyle = "#05070b"; m2.fillRect(0, 0, mw, mh);
+  m2.globalCompositeOperation = "destination-out"; m2.drawImage(g.mem, 0, 0, mw, mh);
+  ctx.globalAlpha = 1; ctx.drawImage(mm, mx, my); ctx.restore();
+  ctx.fillStyle = COL.gold; ctx.beginPath(); ctx.arc(mx + p.x / CW * mw, my + p.y / CH * mh, 3, 0, 7); ctx.fill();
+  for (const e of g.ents) if (e.k === "host" && e.st === "safe") { ctx.fillStyle = COL.host; ctx.fillRect(mx + e.x / CW * mw - 1.5, my + e.y / CH * mh - 1.5, 3, 3); }
 }
 
 // ---------------------------------------------------------------- підсумок
