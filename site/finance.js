@@ -9,7 +9,7 @@ const $$ = (n) => "$" + Number(n || 0).toLocaleString("uk-UA").replace(/\s/g, " 
 const day = (t) => new Date(t || Date.now()).toLocaleDateString("uk-UA");
 const CHIP = { draft: "mute", wait: "wait", approved: "ok", posted: "info", funded: "ok", denied: "bad", rejected: "bad" };
 // посада автора так, як її пишуть у темі Мінфіну
-const post = (p) => p ? `${p.rankName}${/відділу/.test(p.rankName) ? " ДЕБ СБУ" : " Служби безпеки штату NG"}` : "[Посада]";
+const post = (p) => !p ? "[Посада]" : /відділу/.test(p.rankName) ? `${p.rankName} ДЕБ СБУ` : /СБУ/.test(p.rankName) ? p.rankName : `${p.rankName} Служби безпеки штату NG`;
 
 function petitionBlank(d, author) {
   const x = d.data || {}, total = (x.items || []).reduce((s, i) => s + (+i.sum || 0), 0), a = author || d.authorUser, ok = d.approverUser;
