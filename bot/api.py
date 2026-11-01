@@ -519,12 +519,10 @@ async def insp_move(request):
 _structure_cache: list = [0.0, None]
 
 
-@routes.get("/api/structure")
-async def structure(request):
-    """Штатна структура: увесь чинний склад (без балів) — для схеми ієрархії відділів. Кеш 5 хв: ролі тягнемо з Discord."""
-    await auth(request)
-    if _structure_cache[1] is not None and time.time() - _structure_cache[0] < 300:
-        return web.json_response(_structure_cache[1])
+async def build_structure() -> list:
+    """Увесь чинний склад з ролями прес-служби й відділів (ролі тягнемо з Discord, тому результат кешується)."""
+    if not core.guild():
+        raise Fail("Бот ще не підключився до Discord. Спробуйте за хвилину.", 503)
     rows = await db.all("SELECT * FROM users WHERE status!='dismissed' ORDER BY rank DESC, sid")
 
     async def roles(r):
@@ -538,7 +536,31 @@ async def structure(request):
         rs = rs or set()
         out.append({**public_user(r), "press": PRESS_ROLE in rs, "depts": [d for d in OPS_DEPTS if DEPTS[d]["role"] in rs]})
     _structure_cache[:] = [time.time(), out]
-    return web.json_response(out)
+    return out
+
+
+async def structure_loop():
+    """Фонове оновлення штатної структури кожні 4 хв — сторінка відкривається миттєво."""
+    await asyncio.sleep(20)
+    while True:
+        try:
+            await build_structure()
+        except Fail:
+            pass  # бот ще не на зв'язку з Discord
+        except Exception:
+            log.exception("Оновлення штатної структури")
+        await asyncio.sleep(240)
+
+
+@routes.get("/api/structure")
+async def structure(request):
+    """Штатна структура для схеми ієрархії відділів."""
+    await auth(request)
+    if _structure_cache[1] is None:
+        await build_structure()
+    elif time.time() - _structure_cache[0] > 300:
+        asyncio.create_task(build_structure())  # віддаємо збережене, оновлюємо у фоні
+    return web.json_response(_structure_cache[1])
 
 
 @routes.get("/api/audit")
@@ -696,4 +718,5 @@ async def start() -> web.AppRunner:
     await runner.setup()
     await web.TCPSite(runner, config.API_HOST, config.API_PORT).start()
     log.info("API слухає %s:%s", config.API_HOST, config.API_PORT)
+    asyncio.create_task(structure_loop())
     return runner
