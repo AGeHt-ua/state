@@ -67,7 +67,7 @@ async function view() {
   </div>
 
   <div class="card dp-staff"><header><h3>Контроль особового складу</h3><span class="sp muted small">сортування за балами тижня</span></header>
-    <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>Співробітник</th><th>Звання</th><th>Бали тижня</th><th class="r">Минулий</th><th class="r">Звітів</th><th>Остання активність</th><th>Статус</th></tr></thead><tbody>
+    <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>Співробітник</th><th>Звання</th><th>Бали тижня</th><th class="r">Минулий</th><th class="r">Звітів</th><th>Догани</th><th>Остання активність</th><th>Статус</th></tr></thead><tbody>
     ${o.people.map((p, i) => `<tr class="${p.inactive ? "inact" : ""}">
       <td class="mono muted">${i + 1}</td>
       <td><b>${esc(p.name)}</b><div class="mono small muted">${p.sid}</div></td>
@@ -75,8 +75,9 @@ async function view() {
       <td><div class="dp-bar"><i style="width:${(p.pts / maxPts) * 100}%"></i></div><b class="num">${p.pts}</b> ${delta(p.pts, p.ptsPrev)}</td>
       <td class="r num muted">${p.ptsPrev}</td>
       <td class="r num">${p.acts}${p.wait ? ` <span class="muted small">(${p.wait} на перев.)</span>` : ""}</td>
+      <td>${p.reps ? `<span class="chip bad">${p.reps} акт.</span>` : '<span class="muted">—</span>'}</td>
       <td class="${p.inactive ? "bad" : ""}">${ago(p.last)}</td>
-      <td>${p.status === "vacation" ? '<span class="chip info">Відпустка</span>' : p.inactive ? '<span class="chip bad">Неактивний</span>' : '<span class="chip ok">На службі</span>'}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">У відділі нікого немає.</td></tr>'}
+      <td>${p.status === "vacation" ? '<span class="chip info">Відпустка</span>' : p.inactive ? '<span class="chip bad">Неактивний</span>' : '<span class="chip ok">На службі</span>'}</td></tr>`).join("") || '<tr><td colspan="9" class="muted">У відділі нікого немає.</td></tr>'}
     </tbody></table></div></div>
 
   <div class="dp-queue">

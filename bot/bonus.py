@@ -61,13 +61,16 @@ async def calc_rows(ws: int, c: dict) -> list[dict]:
     by = {}
     for a in acts:
         by[a["by_sid"]] = by.get(a["by_sid"], 0) + pts.get(a["type"], 0) * (a["qty"] or 1)
+    # П. 1.2 Регламенту стягнень: активна догана протягом тижня блокує премію
+    blocked = {r["sid"] for r in await db.all("SELECT sid FROM discipline WHERE status IN ('active','lifted') AND kind IN ('reprimand','severe') "
+                                              "AND issued<? AND expires>?", ws + 7 * DAY, ws)}
     rows = []
     for p in staff:
         pt = by.get(p["sid"], 0)
         cap = c["caps"][tier(p["rank"])]
-        auto = min(cap, pt * c["rate"]) if pt >= c["min_pts"] else 0
+        auto = min(cap, pt * c["rate"]) if pt >= c["min_pts"] and p["sid"] not in blocked else 0
         rows.append({"sid": p["sid"], "name": p["name"], "rank": p["rank"], "dept": p["dept"], "tier": tier(p["rank"]),
-                     "pts": pt, "auto": auto, "amount": auto, "note": ""})
+                     "pts": pt, "auto": auto, "amount": auto, "note": "активна догана (п. 1.2)" if p["sid"] in blocked and pt else ""})
     total = sum(r["amount"] for r in rows)
     if total > c["limit"] > 0:  # пропорційне зменшення до ліміту організації, округлення вниз до $100
         k = c["limit"] / total
@@ -128,6 +131,8 @@ async def update(u: dict, bid: int, b: dict) -> dict:
             raise Fail("Нараховувати премію самому собі заборонено (ст. 22 Трудового кодексу). Ваш рядок змінює інший керівник.", 403)
         amt = max(0, int(float(ch.get("amount", r["amount"]) or 0)))
         cap = c["caps"][r["tier"]]
+        if amt and "догана" in (r.get("note") or "") and r["auto"] == 0 and not ch.get("force"):
+            raise Fail(f"{r['name']}: активна догана блокує премію (п. 1.2 Регламенту стягнень).")
         if amt > cap:
             raise Fail(f"{r['name']}: сума ${amt:,} перевищує ліміт для категорії «{TIERS[r['tier']]}» (${cap:,}).".replace(",", " "))
         r["amount"] = amt

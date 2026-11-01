@@ -9,6 +9,7 @@ import candidates
 import bonus
 import cases
 import depts
+import discipline
 import config
 import core
 from core import ACTS, RAP_TYPES, Fail
@@ -150,10 +151,12 @@ async def me(request):
             "raps": len([r for r in await db.all("SELECT * FROM raps WHERE status='wait'") if core.can_approve_rap(u, r)]),
             "hr": await hr_pending(u),
             "cases": await cases.pending(u),
+            "disc": await disc_pending(u),
         },
         "hr": hr_rights(u),
         "cases": cases.rights(u),
         "control": depts.control_depts(u),
+        "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
         "bonus": {"manage": bonus.can_manage(u), "finalize": bonus.can_finalize(u)},
     })
 
@@ -427,6 +430,73 @@ async def bonus_status(request):
     u = await auth(request)
     s = await bonus.move(u, int(request.match_info["id"]), (await body(request)).get("to"))
     return web.json_response({**s, "report": bonus.report_text(s)})
+
+
+# ---------------------------------------------------------------- дисципліна
+async def disc_pending(u: dict) -> int:
+    n = 0
+    if u["rank"] == 15:
+        rows = await db.all("SELECT appeal FROM discipline WHERE status='active' AND appeal IS NOT NULL")
+        n += len([r for r in rows if not json.loads(r["appeal"]).get("decision")])
+    if u["rank"] >= 14:
+        n += (await db.one("SELECT COUNT(*) AS n FROM inspections WHERE status='sent'"))["n"]
+    return n
+
+
+@routes.get("/api/discipline")
+async def disc_list(request):
+    u = await auth(request)
+    return web.json_response(await discipline.listing(u))
+
+
+@routes.post("/api/discipline")
+async def disc_issue(request):
+    u = await auth(request)
+    o = await discipline.issue(u, await body(request))
+    return web.json_response({"id": o["id"]}, status=201)
+
+
+@routes.post("/api/discipline/{id}/appeal")
+async def disc_appeal(request):
+    u = await auth(request)
+    await discipline.appeal(u, int(request.match_info["id"]), (await body(request)).get("text"))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/discipline/{id}/decide")
+async def disc_decide(request):
+    u = await auth(request)
+    b = await body(request)
+    await discipline.decide(u, int(request.match_info["id"]), b.get("action"), str(b.get("note") or ""))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/discipline/{id}/delete")
+async def disc_delete(request):
+    u = await auth(request)
+    await discipline.delete(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/inspections")
+async def insp_create(request):
+    u = await auth(request)
+    i = await discipline.insp_save(u, await body(request))
+    return web.json_response({"id": i["id"]}, status=201)
+
+
+@routes.post("/api/inspections/{id}")
+async def insp_update(request):
+    u = await auth(request)
+    i = await discipline.insp_save(u, await body(request), int(request.match_info["id"]))
+    return web.json_response({"id": i["id"]})
+
+
+@routes.post("/api/inspections/{id}/move")
+async def insp_move(request):
+    u = await auth(request)
+    await discipline.insp_move(u, int(request.match_info["id"]), (await body(request)).get("to"))
+    return web.json_response({"ok": True})
 
 
 @routes.get("/api/structure")

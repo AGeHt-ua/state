@@ -1,0 +1,40 @@
+/* Дисципліна: панель доган, накази про стягнення, бланк наказу. */
+.ns-panel{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);border:1px solid var(--line2);margin-bottom:18px;animation:rise .45s both}
+.ns-lights{display:grid;justify-items:center;gap:8px;padding:20px;background:radial-gradient(circle at 50% 0,rgba(212,96,90,.12),transparent 70%),var(--panel)}
+.ns-dots{display:flex;gap:16px;margin:6px 0}
+.ns-dots i{width:34px;height:34px;border-radius:50%;border:2px solid var(--line2);background:#141a24;box-shadow:inset 0 2px 6px rgba(0,0,0,.6)}
+.ns-dots i.on{border-color:#ff8a80;background:radial-gradient(circle at 40% 35%,#ff9d94,#d4605a 55%,#7a221d);box-shadow:0 0 18px rgba(212,96,90,.7);animation:pulse 2s infinite}
+.ns-lights b{font:26px var(--display)}
+.ns-lights small{font-size:11.5px;color:var(--dim);text-align:center}
+.ns-info{display:grid;border-left:1px dashed var(--line2)}
+.ns-info div{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line)}
+.ns-info div:last-child{border-bottom:0}
+.ns-info span{font:10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.ns-info b{font:15px var(--display)}
+.ns-info b.bad{color:var(--bad)}.ns-info b.ok{color:var(--ok)}
+.ns-clean{border-color:rgba(95,179,122,.4);color:var(--ok)}
+
+.ns-list{display:grid;gap:14px}
+.ns{--sv:var(--warn);position:relative;overflow:hidden;background:#efe9da;color:#231c12;border-left:6px solid var(--sv);box-shadow:0 10px 26px rgba(0,0,0,.4);animation:rise .4s both}
+.ns.sev-low{--sv:#8a8070}.ns.sev-mid{--sv:#c98a2a}.ns.sev-high{--sv:#b8402f}.ns.sev-crit{--sv:#7d1410}
+.ns:not(.on){opacity:.82}
+.ns header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid rgba(35,28,18,.2)}
+.ns header b{display:block;font:700 15px var(--mono);letter-spacing:.06em}
+.ns header span:not(.chip){font:12px "PT Serif",Georgia,serif;color:#5a5143}
+.ns-body{padding:12px 18px 6px;font:15px/1.6 "PT Serif",Georgia,serif;max-width:78%}
+.ns-body p{margin:0 0 8px}
+.ns-kind{font-weight:700;color:var(--sv);text-transform:uppercase;letter-spacing:.04em;font-size:14px}
+.ns-meta{display:flex;flex-wrap:wrap;gap:6px 18px;font:12px var(--mono);color:#5a5143}
+.ns-meta .act{color:#b8402f;font-weight:600}
+.ns-appeal{margin:10px 0 4px;padding:8px 12px;border:1px dashed rgba(35,28,18,.4);font-size:13.5px}
+.ns-appeal p{margin:4px 0;font-style:italic}
+.ns-appeal.cancel{border-color:#2f6b3f}.ns-appeal.uphold{border-color:#8e1d17}
+.ns-stamp{position:absolute;right:22px;top:58px;max-width:22%;text-align:center;font:700 13px var(--mono);letter-spacing:.1em;line-height:1.3;color:var(--sv);
+  border:3px double var(--sv);padding:6px 10px;rotate:-10deg;opacity:.85}
+.ns footer{display:flex;flex-wrap:wrap;gap:6px;padding:8px 18px 12px}
+.ns footer:empty{display:none}
+.ns footer .btn{background:#2a2f38;color:#f3eee2;border-color:#2a2f38}
+.ns footer .btn.ok{background:#2f6b3f;border-color:#2f6b3f}
+.ns footer .btn.bad{background:#7d1410;border-color:#7d1410}
+.ns-blank p{margin-bottom:14px}
+@media (max-width:760px){.ns-panel{grid-template-columns:1fr}.ns-info{border-left:0;border-top:1px dashed var(--line2)}.ns-body{max-width:none}.ns-stamp{position:static;display:inline-block;margin:0 18px 8px;max-width:none}}

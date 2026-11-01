@@ -279,6 +279,10 @@ async def promo_check(u: dict) -> dict | None:
         have = (now_ms() - (u["since"] or now_ms())) / DAY
         items.append({"ok": have >= days, "t": f"Вислуга на поточному званні: {have:.1f} з {days} календарних діб",
                       "pct": min(1, have / days) if days else 1})
+    blocked = await db.one("SELECT id FROM discipline WHERE sid=? AND status='active' AND kind IN ('reprimand','severe') AND expires>? ORDER BY expires DESC",
+                           u["sid"], now_ms())
+    if blocked:
+        items.append({"ok": False, "t": f"Активна догана НС-{blocked['id']:04d}: підвищення заблоковано (п. 1.2 Регламенту стягнень)"})
     pending = await db.one("SELECT id FROM raps WHERE by_sid=? AND type='promo' AND status='wait'", u["sid"])
     if pending:
         items.append({"ok": False, "t": f"Рапорт №{pending['id']} уже на розгляді"})

@@ -123,6 +123,28 @@ CREATE TABLE IF NOT EXISTS bonuses (
   history    TEXT,
   created_by INTEGER, created INTEGER, updated INTEGER
 );
+CREATE TABLE IF NOT EXISTS discipline (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  sid        INTEGER NOT NULL,             -- на кого накладено
+  dept       TEXT,
+  kind       TEXT NOT NULL,                -- remark | reprimand | severe | fine | demote | dismiss | blacklist
+  violation  TEXT,                         -- код порушення з каталогу
+  reason     TEXT,
+  fine       INTEGER DEFAULT 0,
+  status     TEXT DEFAULT 'active',        -- active | lifted | cancelled | deleted
+  issued_by  INTEGER, issued INTEGER, expires INTEGER,
+  appeal     TEXT,                         -- скарга й рішення (JSON)
+  history    TEXT,
+  inspection INTEGER
+);
+CREATE TABLE IF NOT EXISTS inspections (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  sid        INTEGER NOT NULL,             -- щодо кого перевірка
+  title      TEXT, materials TEXT, conclusion TEXT, recommend TEXT, files TEXT,
+  status     TEXT DEFAULT 'open',          -- open | sent | closed | deleted
+  author     INTEGER, created INTEGER, updated INTEGER, order_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS disc_sid ON discipline(sid);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);
 CREATE INDEX IF NOT EXISTS acts_status ON acts(status);
 CREATE INDEX IF NOT EXISTS raps_status ON raps(status);

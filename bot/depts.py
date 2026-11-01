@@ -31,6 +31,8 @@ async def overview(u: dict, d: str) -> dict:
     pts = lambda a: c.get(a["type"], 0) * (a["qty"] or 1)
     last = {r["by_sid"]: r["t"] for r in await db.all("SELECT by_sid, MAX(t) AS t FROM acts WHERE dept=? AND status!='deleted' GROUP BY by_sid", d)}
 
+    reps = {r["sid"]: r["n"] for r in await db.all("SELECT sid, COUNT(*) AS n FROM discipline WHERE status='active' AND kind IN ('reprimand','severe') "
+                                                  "AND expires>? GROUP BY sid", now)}
     people = []
     for p in staff:
         mine = [a for a in acts if a["by_sid"] == p["sid"]]
@@ -41,7 +43,7 @@ async def overview(u: dict, d: str) -> dict:
             "pts": sum(pts(a) for a in week if a["status"] == "ok"),
             "ptsPrev": sum(pts(a) for a in mine if a["t"] < ws and a["status"] == "ok"),
             "acts": len(week), "wait": len([a for a in week if a["status"] == "wait"]),
-            "last": lt, "inactive": p["status"] == "active" and (not lt or now - lt > INACTIVE_DAYS * DAY),
+            "reps": reps.get(p["sid"], 0), "last": lt, "inactive": p["status"] == "active" and (not lt or now - lt > INACTIVE_DAYS * DAY),
         })
 
     week = [a for a in acts if a["t"] >= ws]

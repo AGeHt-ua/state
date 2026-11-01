@@ -107,6 +107,7 @@ function logout(silent) {
 
 /* ---------------- оболонка ---------------- */
 const IC = {
+  disc: '<path d="M12 3v18M7 21h10M5 7h14M5 7l-2.5 6a3 3 0 0 0 5 0zM19 7l-2.5 6a3 3 0 0 0 5 0z"/>',
   bonus: '<circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.2c-.5-.9-1.6-1.4-2.8-1.4-1.6 0-2.8.8-2.8 2 0 2.8 5.6 1.4 5.6 4.2 0 1.2-1.2 2.1-2.8 2.1-1.3 0-2.4-.6-2.9-1.5M12 6.3v1.5M12 16.9v1.4"/>',
   dept: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12.5l2.3 2.3 4.7-5"/>',
   cases: '<path d="M3 7a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M8 13h8M8 16h5"/>',
@@ -125,19 +126,20 @@ const NAV = [
   ["rap", "Рапорти", () => true],
   ["staff", "Особовий склад", () => true],
   ["bonus", "Премії", () => true],
+  ["disc", "Дисципліна", () => true],
   ["dept", "Розділ відділу", () => !!(ME.control && ME.control.length)],
   ["cases", "Кейс-файли", () => !!(ME.cases && ME.cases.view)],
   ["hr", "Кадри", () => !!(ME.hr && (ME.hr.vvb || ME.hr.vkpp))],
   ["audit", "Кадровий аудит", (u) => u.rank >= 12 || !!(ME.hr && ME.hr.vkpp)],
 ];
-const SOON = ["Дисципліна"];
+const SOON = [];
 // Генеральний прокурор (не співробітник СБУ) бачить лише кейс-файли
 const navOk = (n) => n[2](ME.me) && (ME.me.dept !== "prosecutor" || n[0] === "cases");
-const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Розділ відділу", bonus: "Премії" };
+const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Розділ відділу", bonus: "Премії", disc: "Дисципліна" };
 
 function viewShell(inner) {
   const p = ME.pending || {};
-  const badge = { act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases };
+  const badge = { act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases, disc: p.disc || (ME.disc && ME.disc.active) || 0 };
   const c = META.depts[ME.me.dept].color;
   return `<div class="shell" style="--dept:${c}">
   <aside class="side">
@@ -146,7 +148,7 @@ function viewShell(inner) {
       <div class="meta"><span>${esc(META.depts[ME.me.dept].s)}</span><span>№${ME.me.sid}</span></div></div>
     <nav class="nav">
       ${NAV.filter(navOk).map(([k, l]) => `<button data-a="nav" data-v="${k}" class="${UI.view === k ? "on" : ""}">${ico(k)}<span>${l}</span>${badge[k] ? `<span class="cnt">${badge[k]}</span>` : ""}</button>`).join("")}
-      <div class="sec">У розробці</div>
+      ${SOON.length && ME.me.dept !== "prosecutor" ? '<div class="sec">У розробці</div>' : ""}
       ${ME.me.dept === "prosecutor" ? "" : SOON.map((l) => `<button class="soon" disabled>${ico("soon")}<span>${l}</span></button>`).join("")}
     </nav>
     <div class="side-foot"><button data-a="logout">Вийти із системи</button></div>
