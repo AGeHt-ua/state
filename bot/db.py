@@ -114,6 +114,15 @@ CREATE TABLE IF NOT EXISTS cases (
   history  TEXT,                         -- рух документа й візи (JSON)
   created  INTEGER, updated INTEGER, approved INTEGER
 );
+CREATE TABLE IF NOT EXISTS bonuses (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  week       INTEGER UNIQUE,               -- початок тижня (мс)
+  status     TEXT DEFAULT 'draft',         -- draft | sent | approved | paid
+  rows       TEXT,                         -- рядки відомості (JSON)
+  cfg        TEXT,                         -- ліміти на момент формування (JSON)
+  history    TEXT,
+  created_by INTEGER, created INTEGER, updated INTEGER
+);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);
 CREATE INDEX IF NOT EXISTS acts_status ON acts(status);
 CREATE INDEX IF NOT EXISTS raps_status ON raps(status);

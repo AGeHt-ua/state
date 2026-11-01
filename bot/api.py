@@ -6,6 +6,7 @@ import time
 from aiohttp import web
 
 import candidates
+import bonus
 import cases
 import depts
 import config
@@ -153,6 +154,7 @@ async def me(request):
         "hr": hr_rights(u),
         "cases": cases.rights(u),
         "control": depts.control_depts(u),
+        "bonus": {"manage": bonus.can_manage(u), "finalize": bonus.can_finalize(u)},
     })
 
 
@@ -313,6 +315,63 @@ async def dept_overview(request):
         raise Fail("Розділ відділу доступний начальникам відділів, Заступнику Голови та Голові СБУ.", 403)
     d = request.query.get("d") or (u["dept"] if u["dept"] in allowed else allowed[0])
     return web.json_response({"allowed": allowed, **await depts.overview(u, d)})
+
+
+# ---------------------------------------------------------------- премії
+@routes.get("/api/bonus")
+async def bonus_home(request):
+    u = await auth(request)
+    out = {"mine": await bonus.mine(u)}
+    if bonus.can_manage(u):
+        rows = await db.all("SELECT * FROM bonuses ORDER BY week DESC LIMIT 20")
+        out["list"] = [{k: s[k] for k in ("id", "week", "status", "updated")} | {"label": bonus.week_label(s["week"]),
+                        "total": sum(r["amount"] for r in json.loads(s["rows"] or "[]")),
+                        "count": len([r for r in json.loads(s["rows"] or "[]") if r["amount"] > 0])} for s in rows]
+        out["cfg"] = await bonus.cfg()
+    return web.json_response(out)
+
+
+@routes.get("/api/bonus/{id}")
+async def bonus_get(request):
+    u = await auth(request)
+    if not bonus.can_manage(u):
+        raise Fail("Відомості премій доступні Голові СБУ та Заступнику.", 403)
+    s = await bonus.get(int(request.match_info["id"]))
+    return web.json_response({**s, "report": bonus.report_text(s)})
+
+
+@routes.post("/api/bonus")
+async def bonus_create(request):
+    u = await auth(request)
+    s = await bonus.create(u, int((await body(request)).get("offset") or 0))
+    return web.json_response({**s, "report": bonus.report_text(s)}, status=201)
+
+
+@routes.post("/api/bonus/cfg")
+async def bonus_cfg(request):
+    u = await auth(request)
+    return web.json_response(await bonus.save_cfg(u, await body(request)))
+
+
+@routes.post("/api/bonus/{id}")
+async def bonus_update(request):
+    u = await auth(request)
+    s = await bonus.update(u, int(request.match_info["id"]), await body(request))
+    return web.json_response({**s, "report": bonus.report_text(s)})
+
+
+@routes.post("/api/bonus/{id}/recalc")
+async def bonus_recalc(request):
+    u = await auth(request)
+    s = await bonus.recalc(u, int(request.match_info["id"]))
+    return web.json_response({**s, "report": bonus.report_text(s)})
+
+
+@routes.post("/api/bonus/{id}/status")
+async def bonus_status(request):
+    u = await auth(request)
+    s = await bonus.move(u, int(request.match_info["id"]), (await body(request)).get("to"))
+    return web.json_response({**s, "report": bonus.report_text(s)})
 
 
 @routes.get("/api/structure")

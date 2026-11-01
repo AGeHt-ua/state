@@ -1,0 +1,45 @@
+/* Премії: розрахунок співробітника, розрахункові листи, відомість на бланку. */
+.bn-est{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:0;border:1px solid var(--line2);margin-bottom:22px;overflow:hidden;animation:rise .45s both}
+.bn-est-main{padding:22px 26px;background:radial-gradient(circle at 0 0,rgba(95,179,122,.16),transparent 60%),linear-gradient(160deg,#18222e,#0f151d)}
+.bn-sum{font:52px var(--display);color:var(--ok);letter-spacing:.02em;margin:6px 0 4px;text-shadow:0 0 26px rgba(95,179,122,.3)}
+.bn-est-side{display:grid;align-content:center;gap:6px;padding:22px 26px;border-left:1px dashed var(--line2);background:var(--panel)}
+.bn-est-side span{font:10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.bn-est-side b{font:22px var(--display)}
+.bn-est-side small{color:var(--dim);font-size:12px}
+.bn-h{font:15px var(--display);letter-spacing:.04em;margin:0 0 12px}
+.bn-slips{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.bn-slip{position:relative;overflow:hidden;display:grid;gap:6px;padding:16px 18px 14px;background:#efe9da;color:#231c12;box-shadow:0 10px 24px rgba(0,0,0,.4);
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 8px),95% 100%,90% calc(100% - 8px),85% 100%,80% calc(100% - 8px),75% 100%,70% calc(100% - 8px),65% 100%,60% calc(100% - 8px),55% 100%,50% calc(100% - 8px),45% 100%,40% calc(100% - 8px),35% 100%,30% calc(100% - 8px),25% 100%,20% calc(100% - 8px),15% 100%,10% calc(100% - 8px),5% 100%,0 calc(100% - 8px));animation:rise .4s both}
+.bn-slip-t{font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#5a5143;border-bottom:1px dashed rgba(35,28,18,.35);padding-bottom:6px}
+.bn-slip-s{font:700 28px "PT Serif",Georgia,serif}
+.bn-slip-m{display:flex;justify-content:space-between;align-items:center;font:12px var(--mono)}
+.bn-slip .muted{color:#6b6253}
+.bn-paid{position:absolute;right:12px;bottom:40px;font:700 13px var(--mono);letter-spacing:.14em;color:rgba(30,90,50,.85);border:3px double rgba(30,90,50,.75);padding:2px 8px;rotate:-14deg}
+
+.bn-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.bn-total{font:20px var(--display);color:var(--gold2)}
+.doc.st-info{--sc:var(--info)}
+
+.bn-doc{width:min(1000px,100%)}
+.bn-gauge{margin:14px 0;display:grid;gap:6px}
+.bn-gauge div{display:flex;justify-content:space-between;font:12px var(--mono);color:#5a5143}
+.bn-gauge div b{color:#231c12}
+.bn-gauge i{display:block;height:10px;border:1px solid rgba(35,28,18,.4);background:rgba(255,255,255,.4)}
+.bn-gauge i b{display:block;height:100%;background:linear-gradient(90deg,#2f6b3f,#5f9a52)}
+.bn-gauge.over i b{background:#8e1d17}
+.bn-t{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:10px}
+.bn-t th{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;text-align:left;color:#5a5143;border-bottom:2px solid #231c12;padding:6px}
+.bn-t td{padding:6px;border-bottom:1px solid rgba(35,28,18,.18);vertical-align:middle}
+.bn-t td .small{font-size:11px;color:#6b6253}
+.bn-t tr.zero td{color:#8a8070}
+.bn-t .bn-dept td{background:rgba(35,28,18,.08);font:700 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:8px 6px}
+.bn-t .bn-dept span{float:right}
+.bn-t tfoot td{border-top:3px double #231c12;border-bottom:0;font:700 14px var(--mono);padding-top:10px}
+.bn-t tfoot b{font-size:18px}
+.bn-in{width:110px;padding:4px 6px;border:1px solid rgba(35,28,18,.4);background:rgba(255,255,255,.6);font:600 13px var(--mono);color:#231c12}
+.bn-in.note{width:100%;min-width:120px;font:13px var(--body)}
+.bn-in:focus{outline:2px solid #1e4f8c;outline-offset:0}
+.bn-signs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:24px}
+
+@media (max-width:860px){.bn-est{grid-template-columns:1fr}.bn-est-side{border-left:0;border-top:1px dashed var(--line2)}.bn-signs{grid-template-columns:1fr}
+  .bn-t{display:block;overflow-x:auto}}
