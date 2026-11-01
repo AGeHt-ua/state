@@ -158,3 +158,8 @@
 .kf-files{display:flex;gap:6px;flex-wrap:wrap}
 .kf-file{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 8px;border:1px solid var(--line2);font:12px var(--mono)}
 .kf-file button{border:0;background:none;color:var(--bad);cursor:pointer;font-size:12px;padding:0 4px}
+.tr-visas{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.tr-visas span{font:500 11.5px var(--mono);padding:2px 8px;border:1px solid var(--line2);color:var(--dim)}
+.tr-visas .ok{color:var(--ok);border-color:rgba(95,179,122,.4)}
+.tr-visas .bad{color:var(--bad);border-color:rgba(212,96,90,.5)}
+.tr-visas .cur{color:var(--gold2);border-color:var(--gold)}

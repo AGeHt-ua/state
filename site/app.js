@@ -287,7 +287,12 @@ function rapDesc(r) {
   const d = r.data || {};
   if (r.type === "promo") return `→ <b>${esc(META.ranks[d.to - 1] ? META.ranks[d.to - 1].n : d.to)}</b>`;
   if (r.type === "vac") return `${d.days} діб${d.from ? " з " + esc(d.from) : ""}${d.reason ? " · " + esc(d.reason) : ""}`;
-  if (r.type === "transfer") return `${deptTag(r.dept)} → ${deptTag(d.to)}${d.reason ? " · " + esc(d.reason) : ""}`;
+  if (r.type === "transfer") {
+    const st = d.stage || "from", vis = Object.fromEntries((d.visas || []).map((v) => [v.stage, v]));
+    const steps = [["from", "нач. " + (META.depts[r.dept] || {}).s], ["to", "нач. " + (META.depts[d.to] || {}).s], ["chief", "Голова"]];
+    return `${deptTag(r.dept)} → ${deptTag(d.to)}${d.reason ? " · " + esc(d.reason) : ""}
+      <div class="tr-visas">${steps.map(([k, l]) => `<span class="${vis[k] ? (vis[k].ok === false ? "bad" : "ok") : r.status === "wait" && st === k ? "cur" : ""}">${vis[k] ? (vis[k].ok === false ? "✖" : "✔") : "○"} ${esc(l)}${vis[k] ? ` · ${esc(vis[k].name)}` : ""}</span>`).join("")}</div>`;
+  }
   return esc(d.reason || "");
 }
 
@@ -329,7 +334,7 @@ function rapForm() {
     const opts = META.opsDepts.filter((k) => k !== ME.me.dept);
     body = `<div class="form-grid"><label class="f"><span>До відділу</span><select class="i" id="r-to">${opts.map((k) => `<option value="${k}">${esc(META.depts[k].n)}</option>`).join("")}</select></label>
       <label class="f wide"><span>Обґрунтування</span><input class="i" id="r-reason"></label></div>
-      <p class="note">Погоджує ВКПП або керівництво СБУ. Бот замінить роль відділу в Discord.</p>`;
+      <p class="note">Погодження: начальник вашого відділу → начальник відділу, куди переводитесь → Голова СБУ або заступник. Після останньої візи бот замінить роль відділу в Discord.</p>`;
   }
   return `<div class="rap-types">${Object.entries(META.rapTypes).map(([k, n]) => `<button type="button" class="${k === t ? "on" : ""}" data-a="raptype" data-v="${k}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="${RAP_ICONS[k] || RAP_ICONS.promo}"/></svg><span>${esc(n)}</span></button>`).join("")}</div>

@@ -233,9 +233,26 @@ def can_approve_act(actor: dict, a: dict) -> bool:
     return actor["rank"] >= 9 and (actor["dept"] == a["dept"] or actor["dept"] == "lead")
 
 
+# Рапорт на переведення: начальник відділу, звідки → начальник відділу, куди → Голова СБУ або заступник
+TRANSFER_STAGES = ("from", "to", "chief")
+
+
+def head_of(u: dict, dept: str | None) -> bool:
+    return bool(dept) and u["rank"] == 12 and (u["dept"] == dept or has_dept_role(u, dept))
+
+
+def transfer_stage(r: dict) -> str:
+    return json.loads(r["data"] or "{}").get("stage", "from")
+
+
 def can_approve_rap(actor: dict, r: dict) -> bool:
     if r["by_sid"] == actor["sid"] or r["status"] != "wait":
         return False
+    if r["type"] == "transfer":
+        st = transfer_stage(r)
+        if actor["rank"] >= 14:  # Голова й заступник можуть поставити візу й за відсутності начальника відділу
+            return True
+        return (st == "from" and head_of(actor, r["dept"])) or (st == "to" and head_of(actor, json.loads(r["data"] or "{}").get("to")))
     # Усі кадрові рапорти розглядає ВКПП або керівництво (Начальник управління, Заступник Голови, Голова)
     return actor["rank"] >= 13 or has_dept_role(actor, "vkpp")
 
@@ -421,6 +438,29 @@ def rap_text(r: dict, data: dict) -> str:
     return data.get("reason", "")
 
 
+def transfer_label(r: dict, st: str) -> str:
+    data = json.loads(r["data"] or "{}")
+    return {"from": f"начальник {DEPTS.get(r['dept'], DEPTS['lead'])['s']}", "to": f"начальник {DEPTS.get(data.get('to'), DEPTS['lead'])['s']}",
+            "chief": "Голова СБУ або заступник"}[st]
+
+
+def transfer_visas(r: dict) -> list[str]:
+    data = json.loads(r["data"] or "{}")
+    cur = data.get("stage", "from")
+    visas = {v["stage"]: v for v in data.get("visas", [])}
+    out = [style.c("ВІЗИ ПОГОДЖЕННЯ", "gold", True)]
+    for st in TRANSFER_STAGES:
+        label = transfer_label(r, st).upper()[:16]
+        v = visas.get(st)
+        if v:
+            out.append(style.kv(label, f"{'ПОГОДЖЕНО' if v.get('ok', True) else 'ВІДМОВЛЕНО'} · {v['name']}", "green" if v.get("ok", True) else "red"))
+        elif r["status"] == "wait" and st == cur:
+            out.append(style.kv(label, "очікує візи", "gold", True))
+        else:
+            out.append(style.kv(label, "—", "gray"))
+    return out + [style.rule()]
+
+
 async def rap_embed(r: dict) -> discord.Embed:
     author = await user(r["by_sid"]) or {"name": "—", "sid": r["by_sid"], "rank": 1}
     data = json.loads(r["data"] or "{}")
@@ -441,6 +481,7 @@ async def rap_embed(r: dict) -> discord.Embed:
         "",
         style.c(f"{style.when(r['t'])}", "gray") + " " * 14 + style.c(f"/{author['name']}/", "white"),
         style.rule(),
+        *(transfer_visas(r) if r["type"] == "transfer" else []),
         *await resolution(r["status"], r["reviewer"], r["reviewed"]),
     ]
     return style.document(f"РАПОРТ · {RAP_TYPES[r['type']].replace('Рапорт ', '')}", color if r["status"] != "wait" else 0xC9A05A,
@@ -680,6 +721,20 @@ async def decide_rap(actor: dict, rap_id: int, decision: str) -> dict:
     if not can_approve_rap(actor, r):
         raise Fail("Ви не можете розглядати цей рапорт.", 403)
     ok = decision == "ok"
+    if r["type"] == "transfer":
+        data = json.loads(r["data"] or "{}")
+        st = data.get("stage", "from")
+        data.setdefault("visas", []).append({"stage": st, "sid": actor["sid"], "name": actor["name"], "rank": actor["rank"],
+                                             "t": now_ms(), "ok": ok})
+        if ok and st != "chief":
+            data["stage"] = TRANSFER_STAGES[TRANSFER_STAGES.index(st) + 1]
+            await db.run("UPDATE raps SET data=? WHERE id=?", json.dumps(data, ensure_ascii=False), rap_id)
+            r = await db.one("SELECT * FROM raps WHERE id=?", rap_id)
+            await refresh_card("rap", r)
+            await post_log(r["ch_id"], r["msg_id"], style.doc_no("РАП", rap_id), "Рапорт на переведення · віза",
+                           who(await user(r["by_sid"])), "ok", who(actor), now_ms(), f"далі: {transfer_label(r, data['stage'])}")
+            return r
+        await db.run("UPDATE raps SET data=? WHERE id=?", json.dumps(data, ensure_ascii=False), rap_id)
     await db.run("UPDATE raps SET status=?, reviewer=?, reviewed=? WHERE id=?", "ok" if ok else "rej", actor["sid"], now_ms(), rap_id)
     if ok:
         await apply_rap(actor, r)
