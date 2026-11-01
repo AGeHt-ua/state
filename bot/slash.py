@@ -410,8 +410,7 @@ def _btn(label: str, emoji: str, style_: discord.ButtonStyle, cid: str, fn) -> d
 
 
 def _card(colour: int, title: str, text: str, accessory: discord.ui.Item) -> discord.ui.Container:
-    return discord.ui.Container(discord.ui.Section(discord.ui.TextDisplay(f"### {title}
-{text}"), accessory=accessory), accent_colour=colour)
+    return discord.ui.Container(discord.ui.Section(discord.ui.TextDisplay(f"### {title}\n{text}"), accessory=accessory), accent_colour=colour)
 
 
 class AccessPanel(discord.ui.LayoutView):
@@ -423,58 +422,42 @@ class AccessPanel(discord.ui.LayoutView):
         n = lambda k: f"`{st.get(k, '—')}`"
         self.add_item(discord.ui.Container(
             discord.ui.MediaGallery(discord.MediaGalleryItem(site + "/site/access-panel.png")),
-            discord.ui.TextDisplay("## 🦉 Служба безпеки штату NG · ЄІС «Сова»
-"
+            discord.ui.TextDisplay("## 🦉 Служба безпеки штату NG · ЄІС «Сова»\n"
                                    "-# Службовий кабінет особового складу: звіти, рапорти, кейс-файли, бали й премії."),
             discord.ui.Separator(),
-            discord.ui.TextDisplay("### 📊 Жива статистика
-"
-                                   f"👥 **Особовий склад СБУ:** {n('staff')}
-"
-                                   f"🟢 **У кабінеті за добу:** {n('today')}
-"
-                                   f"🌴 **У відпустці:** {n('vac')}
-"
-                                   f"📋 **Підтверджених звітів за тиждень:** {n('acts')}
-"
+            discord.ui.TextDisplay("### 📊 Жива статистика\n"
+                                   f"👥 **Особовий склад СБУ:** {n('staff')}\n"
+                                   f"🟢 **У кабінеті за добу:** {n('today')}\n"
+                                   f"🌴 **У відпустці:** {n('vac')}\n"
+                                   f"📋 **Підтверджених звітів за тиждень:** {n('acts')}\n"
                                    f"📨 **Заявок на допуск у черзі:** {n('wait')} · **анкет кандидатів:** {n('cand')}"),
             discord.ui.Separator(),
-            discord.ui.TextDisplay("### 🛡️ Панель керування
-Оберіть потрібну дію нижче. Відповіді бота бачите **лише ви**.
-"
+            discord.ui.TextDisplay("### 🛡️ Панель керування\nОберіть потрібну дію нижче. Відповіді бота бачите **лише ви**.\n"
                                    "-# СБУ штату NG · Честь. Закон. Безпека."),
             discord.ui.ActionRow(discord.ui.Button(label="Кабінет «Сова»", emoji="🌐", url=site + "/site/"),
                                  discord.ui.Button(label="Анкета кандидата", emoji="📝", url=site + "/site/anketa.html")),
             accent_colour=GOLD))
         self.add_item(_card(GREEN, "🦉 Отримати допуск",
-                            "Вкажіть **номер жетона** (Static ID) та **ім'я персонажа** — заявку розгляне **ВКПП**, код доступу прийде в особисті.
-"
+                            "Вкажіть **номер жетона** (Static ID) та **ім'я персонажа** — заявку розгляне **ВКПП**, код доступу прийде в особисті.\n"
                             "-# Доступ: учасники сервера · новобранцям після підтвердження видається «Стажер»",
                             _btn("Подати", "🦉", discord.ButtonStyle.success, "sova:register", act_register)))
         self.add_item(_card(BLUE, "🔄 Перевірити допуск",
-                            "Статус заявки й **нагадування ВКПП**, повторна видача ролей, стан входу на сайт, заявка на зарахування.
-"
+                            "Статус заявки й **нагадування ВКПП**, повторна видача ролей, стан входу на сайт, заявка на зарахування.\n"
                             "-# Відповідь відкривається приватно",
                             _btn("Перевірити", "🔄", discord.ButtonStyle.primary, "sova:check", act_check)))
         self.add_item(_card(GREY, "🔑 Відновити код доступу",
-                            "Новий код, якщо загубили старий або він не дійшов в особисті. Попередні входи завершаться.
-"
+                            "Новий код, якщо загубили старий або він не дійшов в особисті. Попередні входи завершаться.\n"
                             "-# Код — службова таємниця, нікому його не передавайте",
                             _btn("Відновити", "🔑", discord.ButtonStyle.secondary, "sova:resetpw", do_reset)))
         self.add_item(_card(GREY, "✏️ Змінити дані",
-                            "Нове ім'я персонажа (IC). Нікнейм бот оновить сам, зміна фіксується в кадровому аудиті.
-"
+                            "Нове ім'я персонажа (IC). Нікнейм бот оновить сам, зміна фіксується в кадровому аудиті.\n"
                             "-# Доступ: співробітники з оформленим допуском",
                             _btn("Змінити", "✏️", discord.ButtonStyle.secondary, "sova:rename", act_rename)))
         self.add_item(discord.ui.Container(discord.ui.TextDisplay(
-            "### ⚠️ Важливо
-"
-            "• Відкрийте **особисті повідомлення** від учасників сервера — інакше код не надійде.
-"
-            "• Звання й підрозділ підтягуються з ролей автоматично, **нікнейм бот поставить сам**.
-"
-            "• Допуск діє, доки ви у складі СБУ: при звільненні чи виході із сервера обліковий запис видаляється.
-"
+            "### ⚠️ Важливо\n"
+            "• Відкрийте **особисті повідомлення** від учасників сервера — інакше код не надійде.\n"
+            "• Звання й підрозділ підтягуються з ролей автоматично, **нікнейм бот поставить сам**.\n"
+            "• Допуск діє, доки ви у складі СБУ: при звільненні чи виході із сервера обліковий запис видаляється.\n"
             "-# Код доступу є службовою таємницею · Положення про захист службової інформації СБУ"), accent_colour=RED))
 
 
