@@ -229,6 +229,14 @@ async def staff(request):
     return web.json_response(out)
 
 
+@routes.get("/api/structure")
+async def structure(request):
+    """Штатна структура: увесь чинний склад (без балів) — для схеми ієрархії відділів."""
+    await auth(request)
+    rows = await db.all("SELECT * FROM users WHERE status!='dismissed' ORDER BY rank DESC, sid")
+    return web.json_response([public_user(r) for r in rows])
+
+
 @routes.get("/api/audit")
 async def audit(request):
     u = await auth(request)

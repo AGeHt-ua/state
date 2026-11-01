@@ -120,12 +120,12 @@ const NAV = [
   ["home", "Головна", () => true],
   ["act", "Моя активність", () => true],
   ["rap", "Рапорти", () => true],
-  ["staff", "Особовий склад", (u) => u.rank >= 8],
+  ["staff", "Особовий склад", () => true],
   ["hr", "Кадри", () => !!(ME.hr && (ME.hr.vvb || ME.hr.vkpp))],
   ["audit", "Кадровий аудит", (u) => u.rank >= 12 || !!(ME.hr && ME.hr.vkpp)],
 ];
 const SOON = ["Кейс-файли", "Запити між відділами", "Розділ відділу", "Дисципліна", "Премії"];
-const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски" };
+const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски" };
 
 function viewShell(inner) {
   const p = ME.pending || {};
@@ -155,53 +155,86 @@ const loading = '<div class="empty"><span class="spin"></span> Завантаж�
 const stChip = (s) => s === "ok" ? '<span class="chip ok">Підтверджено</span>' : s === "wait" ? '<span class="chip wait">На розгляді</span>' : '<span class="chip bad">Відхилено</span>';
 
 /* ---------------- головна ---------------- */
+const deptColor = (k) => (META.depts[k] || {}).color || "#e2c07f";
+const ring = (val, max, label) => {
+  const p = Math.max(0, Math.min(1, max ? val / max : 0)), r = 46, c = 2 * Math.PI * r;
+  return `<div class="ring"><svg viewBox="0 0 110 110" aria-hidden="true"><circle cx="55" cy="55" r="${r}" class="bg"/><circle cx="55" cy="55" r="${r}" class="fg" style="stroke-dasharray:${c};stroke-dashoffset:${c * (1 - p)}"/></svg>
+    <div><b class="num">${val}</b><span>${label}</span></div></div>`;
+};
+
 async function vHome() {
   const acts = await call("/api/acts");
   const pc = ME.promo;
   const pend = ME.pending || {};
+  const me = ME.me, d = META.depts[me.dept];
+  const wait = acts.filter((a) => a.status === "wait").length, okN = acts.filter((a) => a.status === "ok").length;
+  const goal = Math.max(ME.pointsPrev, 20);
+  const todo = [
+    pend.acts && ["act", "review", "Звіти на перевірку", pend.acts],
+    pend.raps && ["rap", "review", "Рапорти на розгляд", pend.raps],
+    pend.hr && ["hr", "cand", "Кадрові справи", pend.hr],
+  ].filter(Boolean);
   return `
-  <div class="tiles">
-    <div class="tile accent"><span class="k">Бали за цей тиждень</span><span class="v num">${ME.points}</span><span class="s">Минулий тиждень: ${ME.pointsPrev}</span></div>
-    <div class="tile"><span class="k">Звітів на перевірці</span><span class="v num">${acts.filter((a) => a.status === "wait").length}</span><span class="s">Очікують керівника</span></div>
-    <div class="tile"><span class="k">Підтверджено всього</span><span class="v num">${acts.filter((a) => a.status === "ok").length}</span><span class="s">За весь час</span></div>
-    <div class="tile"><span class="k">На званні з</span><span class="v num" style="font-size:20px">${fmtDT(ME.me.since)}</span><span class="s">${esc(ME.me.rankName)}</span></div>
-  </div>
-  ${pend.acts || pend.raps ? `<div class="card"><header><h3>Потребує вашого рішення</h3></header><div class="acts">
-    ${pend.acts ? `<button class="btn" data-a="go" data-v="act" data-tab="review">Звіти на перевірку: <b class="num">${pend.acts}</b></button>` : ""}
-    ${pend.raps ? `<button class="btn" data-a="go" data-v="rap" data-tab="review">Рапорти на розгляд: <b class="num">${pend.raps}</b></button>` : ""}
-  </div></div>` : ""}
-  <div class="grid2">
-    <div class="card"><header><h3>Службовий профіль</h3></header>
-      <dl class="kv">
-        <dt>Звання</dt><dd>${esc(ME.me.rankName)} <span class="muted">(${ME.me.rank} з 15)</span></dd>
-        <dt>Підрозділ</dt><dd>${deptTag(ME.me.dept)} ${esc(ME.me.deptName)}</dd>
-        <dt>Жетон</dt><dd class="mono">№${ME.me.sid}</dd>
-      </dl>
-      <div class="do-line"><code>/do На спорядженні закріплений номерний жетон СБУ ${esc(META.depts[ME.me.dept].s)} №${ME.me.sid}.</code></div>
+  <section class="hero" style="--dc:${deptColor(me.dept)}">
+    <div class="idcard">
+      <div class="idcard-top"><img src="sbu-logo.webp" alt="" width="54" height="54"><div><b>СЛУЖБА БЕЗПЕКИ ШТАТУ NG</b><span>Службове посвідчення</span></div></div>
+      <div class="idcard-body">
+        <div class="idcard-name">${esc(me.name)}</div>
+        <dl><dt>Звання</dt><dd>${esc(me.rankName)}</dd><dt>Підрозділ</dt><dd>${esc(d.n)}</dd><dt>Жетон</dt><dd class="mono">${me.sid}</dd><dt>На званні з</dt><dd>${fmtDT(me.since)}</dd></dl>
+      </div>
+      <div class="idcard-foot"><span class="mono">SBU-NG · ${String(me.sid).padStart(8, "0")}</span><span class="idcard-rank">${me.rank}<small>/15</small></span></div>
     </div>
-    <div class="card"><header><h3>До наступного звання</h3>${pc ? `<span class="sp chip ${pc.eligible ? "ok" : "wait"}">${pc.eligible ? "Можна подати рапорт" : "Умови не виконано"}</span>` : ""}</header>
-      ${pc ? `<div><span class="eyebrow">${esc(ME.me.rankName)} → ${esc(pc.name)}</span></div>
+    <div class="hero-stats">
+      ${ring(ME.points, goal, "балів за тиждень")}
+      <div class="mini"><span>Минулий тиждень</span><b class="num">${ME.pointsPrev}</b></div>
+      <div class="mini"><span>Звітів на перевірці</span><b class="num">${wait}</b></div>
+      <div class="mini"><span>Підтверджено за весь час</span><b class="num">${okN}</b></div>
+    </div>
+  </section>
+  ${todo.length ? `<section class="todo"><div class="eyebrow">Потребує вашого рішення</div><div class="todo-row">
+    ${todo.map(([v, t, l, n]) => `<button class="todo-item" data-a="go" data-v="${v}" data-tab="${t}">${ico(v)}<span>${l}</span><b class="num">${n}</b></button>`).join("")}</div></section>` : ""}
+  <div class="grid2">
+    <div class="card"><header><h3>Наступне звання</h3>${pc ? `<span class="sp chip ${pc.eligible ? "ok" : "wait"}">${pc.eligible ? "Можна подати рапорт" : "Умови ще не виконано"}</span>` : ""}</header>
+      ${pc ? `<div class="promo"><span class="from">${esc(me.rankName)}</span><i></i><span class="to">${esc(pc.name)}</span></div>
         ${pc.items[0] && pc.items[0].pct !== undefined ? `<div class="bar ${pc.items[0].ok ? "ok" : ""}"><i style="width:${Math.round(pc.items[0].pct * 100)}%"></i></div>` : ""}
         <ul class="checklist">${pc.items.map((i) => `<li class="${i.ok ? "" : i.soft ? "soft" : "no"}">${esc(i.t)}</li>`).join("")}</ul>
         <div><button class="btn ${pc.eligible ? "gold" : ""}" data-a="go" data-v="rap" data-tab="new" ${pc.eligible ? "" : "disabled"}>Подати рапорт на підвищення</button></div>`
       : '<p class="muted">Найвище звання у відомстві.</p>'}
     </div>
+    <div class="card"><header><h3>Швидкі дії</h3></header>
+      <div class="quick">
+        <button data-a="go" data-v="act" data-tab="new">${ico("act")}<b>Звіт про дію</b><span>арешт, патруль, операція</span></button>
+        <button data-a="go" data-v="rap" data-tab="new">${ico("rap")}<b>Рапорт</b><span>підвищення, відпустка, переведення</span></button>
+        <button data-a="go" data-v="staff" data-tab="tree">${ico("staff")}<b>Штатна структура</b><span>хто є хто у відділах</span></button>
+      </div>
+      <div class="do-line"><code>/do На спорядженні закріплений номерний жетон СБУ ${esc(d.s)} №${me.sid}.</code></div>
+    </div>
   </div>
   <div class="card"><header><h3>Останні звіти</h3><button class="sp btn sm" data-a="go" data-v="act" data-tab="new">+ Новий звіт</button></header>
-    ${acts.length ? actTable(acts.slice(0, 8), false) : '<div class="empty">Звітів ще немає. Додайте перший після зміни.</div>'}
+    ${acts.length ? actFeed(acts.slice(0, 6), false) : '<div class="empty">Звітів ще немає. Додайте перший після зміни.</div>'}
   </div>`;
 }
 
 /* ---------------- звіти ---------------- */
-function actTable(list, review) {
-  return `<div class="tbl-wrap"><table class="t"><thead><tr>${review ? "<th>Співробітник</th>" : ""}<th>Дія</th><th>Коли</th><th>Статті</th><th>Доказ</th><th class="r">Статус</th></tr></thead><tbody>
-  ${list.map((a) => `<tr>${review ? `<td>${who(a.by)}<div>${deptTag(a.dept)}</div></td>` : ""}
-    <td>${esc(META.acts[a.type] ? META.acts[a.type].n : a.type)}${a.qty > 1 ? ` ×${a.qty}` : ""}${a.subj ? `<div class="muted small">${esc(a.subj)}</div>` : ""}${a.note ? `<div class="muted small">${esc(a.note)}</div>` : ""}</td>
-    <td class="num muted">${fmtDT(a.t)}</td>
-    <td>${a.arts.length ? `<div class="art-list">${a.arts.map((n) => `<span class="art">${esc(n)}</span>`).join("")}</div>` : '<span class="muted">—</span>'}</td>
-    <td><div class="files">${a.evidence ? `<a href="${esc(a.evidence)}" target="_blank" rel="noopener">відкат</a>` : ""}${a.files.map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}" style="padding:2px 8px">файл ${i + 1}</button>`).join("")}</div></td>
-    <td class="r">${review ? `<div class="acts" style="justify-content:flex-end"><button class="btn sm ok" data-a="actd" data-id="${a.id}" data-d="ok">Підтвердити</button><button class="btn sm bad" data-a="actd" data-id="${a.id}" data-d="rej">Відхилити</button></div>` : stChip(a.status) + (a.reviewer ? `<div class="muted small">${esc(a.reviewer.name)}</div>` : "")}</td></tr>`).join("")}
-  </tbody></table></div>`;
+const stLabel = { ok: "Підтверджено", wait: "На перевірці", rej: "Відхилено" };
+function actFeed(list, review) {
+  return `<div class="docs">${list.map((a) => {
+    const meta = META.acts[a.type] || { n: a.type, p: 0 };
+    return `<article class="doc st-${a.status}">
+      <div class="doc-no"><b>${docNo("ЗВТ", a.id)}</b><span>${fmtDT(a.t)}</span></div>
+      <div class="doc-main">
+        ${review ? `<div class="doc-who">${who(a.by)} ${deptTag(a.dept)}</div>` : ""}
+        <div class="doc-title">${esc(meta.n)}${a.qty > 1 ? ` <span class="muted">×${a.qty}</span>` : ""} <span class="pts">+${meta.p * (a.qty || 1)} б.</span></div>
+        ${a.subj ? `<div class="doc-line"><span>Фігурант</span>${esc(a.subj)}</div>` : ""}
+        ${a.arts.length ? `<div class="art-list">${a.arts.map((n) => `<span class="art">ст. ${esc(n)}</span>`).join("")}</div>` : ""}
+        ${a.note ? `<div class="doc-note">${esc(a.note)}</div>` : ""}
+        <div class="files">${a.evidence ? `<a class="btn sm" href="${esc(a.evidence)}" target="_blank" rel="noopener">▶ Відкат</a>` : ""}${a.files.map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}">📎 Файл ${i + 1}</button>`).join("")}</div>
+      </div>
+      <div class="doc-side">${review
+        ? `<button class="btn sm ok" data-a="actd" data-id="${a.id}" data-d="ok">Підтвердити</button><button class="btn sm bad" data-a="actd" data-id="${a.id}" data-d="rej">Відхилити</button>`
+        : `<span class="doc-stamp">${stLabel[a.status]}</span>${a.reviewer ? `<span class="muted small">${esc(a.reviewer.name)}</span>` : ""}`}</div>
+    </article>`;
+  }).join("")}</div>`;
 }
 
 async function vAct() {
@@ -210,7 +243,8 @@ async function vAct() {
   const head = tabsBar("act", [["mine", "Мої звіти"], ["new", "Новий звіт"], ...(canRev ? [["review", "На перевірку", ME.pending.acts || 0]] : [])], "mine");
   if (t === "new") {
     const allowed = ME.allowedActs.map((k) => [k, META.acts[k]]);
-    return head + `<div class="card"><header><h3>Звіт про виконану дію</h3><span class="sp">${deptTag(ME.me.dept)}</span></header>
+    return head + `<div class="card paper"><header class="paper-head"><div><div class="eyebrow">Служба безпеки штату NG · ${esc(META.depts[ME.me.dept].s)}</div><h3>СЛУЖБОВИЙ ЗВІТ</h3></div>
+        <div class="paper-no">ЗВТ-<span class="mono">нов.</span></div></header>
       ${ME.me.rank === 1 ? '<p class="note warn">Стажер не проводить затримань самостійно (Положення про стажування, р. IV). Доступні патруль з наставником і навчання.</p>' : ""}
       <form data-f="act" class="form-grid">
         <label class="f"><span>Тип дії</span><select class="i" id="a-type">${allowed.map(([k, a]) => `<option value="${k}">${esc(a.n)} · ${a.p} б.</option>`).join("")}</select></label>
@@ -220,13 +254,13 @@ async function vAct() {
         <label class="f"><span>Фігурант</span><input class="i" id="a-subj" placeholder="ім'я або «невстановлена особа»"></label>
         <label class="f"><span>Доказ: посилання на відкат</span><input class="i" id="a-ev" placeholder="https://..."></label>
         <label class="f wide"><span>Скріни (до 5 файлів, зберігаються в Discord)</span><input class="i" id="a-files" type="file" accept="image/*,video/mp4,application/pdf" multiple></label>
-        <label class="f wide"><span>Коментар</span><textarea class="i" id="a-note" placeholder="Що сталося, хто був у наряді"></textarea></label>
-        <div class="wide"><button class="btn gold" type="submit" id="a-btn">Надіслати на перевірку</button>
-          <span class="muted small" style="margin-left:8px">Звіт з'явиться в каналі вашого відділу в Discord. Бали — після підтвердження.</span></div>
+        <label class="f wide"><span>Обставини</span><textarea class="i" id="a-note" placeholder="Що сталося, хто був у наряді"></textarea></label>
+        <div class="wide paper-sign"><span class="muted small">Звіт піде на перевірку керівнику; запис з'явиться в журналі відділу в Discord. Бали — після підтвердження.</span>
+          <button class="btn gold" type="submit" id="a-btn">Надіслати на перевірку</button></div>
       </form></div>`;
   }
   const list = await call("/api/acts" + (t === "review" ? "?scope=review" : ""));
-  return head + `<div class="card">${list.length ? actTable(list, t === "review") : `<div class="empty">${t === "review" ? "Немає звітів, що очікують перевірки." : "Звітів ще немає."}</div>`}</div>`;
+  return head + (list.length ? actFeed(list, t === "review") : `<div class="empty">${t === "review" ? "Немає звітів, що очікують перевірки." : "Звітів ще немає."}</div>`);
 }
 
 async function uploadFiles(input) {
@@ -256,20 +290,24 @@ async function vRap() {
   if (t === "new") return head + rapForm();
   const list = await call("/api/raps" + (t === "review" ? "?scope=review" : ""));
   if (!list.length) return head + `<div class="empty">${t === "review" ? "Немає рапортів на розгляд." : "Ви ще не подавали рапортів."}</div>`;
-  return head + `<div class="card"><div class="tbl-wrap"><table class="t"><thead><tr>${t === "review" ? "<th>Співробітник</th>" : ""}<th>Рапорт</th><th>Зміст</th><th>Подано</th><th class="r">Рішення</th></tr></thead><tbody>
-    ${list.map((r) => `<tr>${t === "review" ? `<td>${who(r.by)}<div>${deptTag(r.dept)}</div></td>` : ""}<td>${esc(META.rapTypes[r.type])}</td><td>${rapDesc(r)}</td><td class="muted num">${fmtDT(r.t)}</td>
-      <td class="r">${t === "review" ? `<div class="acts" style="justify-content:flex-end"><button class="btn sm ok" data-a="rapd" data-id="${r.id}" data-d="ok">Погодити</button><button class="btn sm bad" data-a="rapd" data-id="${r.id}" data-d="rej">Відмовити</button></div>`
-        : (r.status === "ok" ? '<span class="chip ok">Погоджено</span>' : r.status === "rej" ? '<span class="chip bad">Відмовлено</span>' : '<span class="chip wait">На розгляді</span>') + (r.reviewer ? `<div class="muted small">${esc(r.reviewer.name)}</div>` : "")}</td></tr>`).join("")}
-  </tbody></table></div></div>`;
+  return head + `<div class="docs">${list.map((r) => `<article class="doc st-${r.status}">
+      <div class="doc-no"><b>${docNo("РАП", r.id)}</b><span>${fmtDT(r.t)}</span></div>
+      <div class="doc-main">${t === "review" ? `<div class="doc-who">${who(r.by)} ${deptTag(r.dept)}</div>` : ""}
+        <div class="doc-title">${esc(META.rapTypes[r.type])}</div><div class="doc-line">${rapDesc(r)}</div></div>
+      <div class="doc-side">${t === "review"
+        ? `<button class="btn sm ok" data-a="rapd" data-id="${r.id}" data-d="ok">Погодити</button><button class="btn sm bad" data-a="rapd" data-id="${r.id}" data-d="rej">Відмовити</button>`
+        : `<span class="doc-stamp">${{ ok: "Погоджено", rej: "Відмовлено", wait: "На розгляді" }[r.status]}</span>${r.reviewer ? `<span class="muted small">${esc(r.reviewer.name)}</span>` : ""}`}</div>
+    </article>`).join("")}</div>`;
 }
 
+const RAP_ICONS = { promo: "M12 4l6 6h-4v10h-4V10H6z", vac: "M4 20h16M7 20V9l5-5 5 5v11M10 14h4", dismiss: "M6 6l12 12M18 6L6 18", transfer: "M4 8h13l-3-3M20 16H7l3 3" };
 function rapForm() {
   const t = UI.rapType;
   let body = "", ok = true;
   if (t === "promo") {
     const pc = ME.promo;
     ok = !!(pc && pc.eligible);
-    body = pc ? `<div><span class="eyebrow">${esc(ME.me.rankName)} → ${esc(pc.name)}</span></div><ul class="checklist">${pc.items.map((i) => `<li class="${i.ok ? "" : i.soft ? "soft" : "no"}">${esc(i.t)}</li>`).join("")}</ul>
+    body = pc ? `<div class="promo"><span class="from">${esc(ME.me.rankName)}</span><i></i><span class="to">${esc(pc.name)}</span></div><ul class="checklist">${pc.items.map((i) => `<li class="${i.ok ? "" : i.soft ? "soft" : "no"}">${esc(i.t)}</li>`).join("")}</ul>
       <p class="muted small" style="margin:0">До рапорту автоматично додаються бали за цей і минулий тиждень. Після погодження бот змінить роль звання в Discord.</p>` : '<p class="muted">Найвище звання.</p>';
   } else if (t === "vac") {
     body = `<div class="form-grid"><label class="f"><span>З дати</span><input class="i" type="date" id="r-from" value="${new Date().toISOString().slice(0, 10)}"></label>
@@ -277,35 +315,99 @@ function rapForm() {
       <label class="f wide"><span>Причина</span><input class="i" id="r-reason"></label></div>
       <p class="note">На час відпустки здати посвідчення, табельну зброю та спецзасоби.</p>`;
   } else if (t === "dismiss") {
-    body = `<label class="f"><span>Мотивований рапорт на ім'я Голови СБУ</span><textarea class="i" id="r-reason" placeholder="Прошу звільнити мене за власним бажанням..."></textarea></label>
+    body = `<label class="f"><span>Мотивування</span><textarea class="i" id="r-reason" placeholder="за власним бажанням у зв'язку з..."></textarea></label>
       <p class="note warn">Після звільнення бот зніме ролі СБУ. Здайте жетон, посвідчення, зброю та спорядження (п. 5.3 Регламенту).</p>`;
   } else if (t === "transfer") {
     const opts = META.opsDepts.filter((k) => k !== ME.me.dept);
     body = `<div class="form-grid"><label class="f"><span>До відділу</span><select class="i" id="r-to">${opts.map((k) => `<option value="${k}">${esc(META.depts[k].n)}</option>`).join("")}</select></label>
       <label class="f wide"><span>Обґрунтування</span><input class="i" id="r-reason"></label></div>
-      <p class="note">Погоджує керівництво СБУ. Бот замінить роль відділу в Discord.</p>`;
+      <p class="note">Погоджує ВКПП або керівництво СБУ. Бот замінить роль відділу в Discord.</p>`;
   }
-  return `<div class="card"><header><h3>Новий рапорт</h3></header><form data-f="rap" style="display:grid;gap:14px">
-    <label class="f" style="max-width:420px"><span>Тип рапорту</span><select class="i" id="r-type" data-change="raptype">${Object.entries(META.rapTypes).map(([k, n]) => `<option value="${k}" ${k === t ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></label>
-    ${body}<div><button class="btn gold" type="submit" id="r-btn" ${ok ? "" : "disabled"}>Подати рапорт</button></div></form></div>`;
+  return `<div class="rap-types">${Object.entries(META.rapTypes).map(([k, n]) => `<button type="button" class="${k === t ? "on" : ""}" data-a="raptype" data-v="${k}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="${RAP_ICONS[k] || RAP_ICONS.promo}"/></svg><span>${esc(n)}</span></button>`).join("")}</div>
+  <div class="grid2 rap-wrap">
+    <div class="card"><header><h3>${esc(META.rapTypes[t])}</h3></header><form data-f="rap" style="display:grid;gap:14px">${body}
+      <div><button class="btn gold" type="submit" id="r-btn" ${ok ? "" : "disabled"}>Подати рапорт</button></div></form></div>
+    <div class="blank" id="rap-prev">${rapPreview()}</div>
+  </div>`;
 }
 
-/* ---------------- склад і аудит ---------------- */
+const RAP_ASK = { promo: "присвоїти мені чергове спеціальне звання", vac: "надати мені відпустку", dismiss: "звільнити мене зі служби в Службі безпеки штату NG", transfer: "перевести мене до іншого підрозділу" };
+function rapPreview() {
+  const t = UI.rapType, v = (id) => ($(id) ? $(id).value.trim() : "");
+  let ask = RAP_ASK[t] || "";
+  if (t === "promo" && ME.promo) ask += ` «${ME.promo.name}»`;
+  if (t === "vac") ask += ` тривалістю ${v("#r-days") || "3"} діб з ${v("#r-from") || new Date().toISOString().slice(0, 10)}`;
+  if (t === "transfer" && $("#r-to")) ask += ` — ${META.depts[$("#r-to").value].n}`;
+  const why = v("#r-reason");
+  return `<div class="blank-to">Голові Служби безпеки штату NG<br>від ${esc(ME.me.rankName.toLowerCase())}<br>${esc(META.depts[ME.me.dept].n)}<br><b>${esc(ME.me.name)}</b>, жетон №${ME.me.sid}</div>
+    <div class="blank-title">Р А П О Р Т</div>
+    <p>Прошу ${esc(ask)}${why ? `, ${esc(why)}` : ""}.</p>
+    <div class="blank-sign"><span>${new Date().toLocaleDateString("uk-UA")}</span><span>${esc(ME.me.name)}</span></div>
+    <div class="blank-stamp">ЄІС «СОВА»</div>`;
+}
+
+/* ---------------- особовий склад і штатна структура ---------------- */
+const TIERS = [["Керівництво відділу", 11, 12], ["Керівники груп, секторів та інструктори", 8, 10], ["Оперативний склад", 3, 7], ["Молодший склад", 1, 2]];
+const RSHORT = ["Стажер", "Мол. агент", "Агент", "Ст. агент", "Мол. опер", "Опер", "Ст. опер", "Інструктор", "Кер. групи", "Кер. сектору", "Заст. нач. відділу", "Нач. відділу", "Нач. управління", "Заст. Голови", "Голова СБУ"];
+const person = (p) => `<div class="pp ${p.sid === ME.me.sid ? "me" : ""} ${p.status === "vacation" ? "vac" : ""}" title="${esc(p.rankName)}"><b>${esc(p.name)}</b><span>${RSHORT[p.rank - 1]} · ${p.sid}</span></div>`;
+
 async function vStaff() {
-  const list = await call("/api/staff");
-  return `${ME.me.dept !== "lead" ? `<p class="note">Особовий склад вашого відділу: ${esc(ME.me.deptName)}.</p>` : ""}
-  <div class="card"><div class="tbl-wrap"><table class="t"><thead><tr><th>№</th><th>Співробітник</th><th>Звання</th><th>Відділ</th><th>На званні з</th><th class="r">Бали тиж.</th><th>Статус</th></tr></thead><tbody>
-  ${list.map((p) => `<tr><td class="mono">${p.sid}</td><td>${esc(p.name)}</td><td>${esc(p.rankName)}</td><td>${deptTag(p.dept)}</td><td class="num muted">${fmtDT(p.since)}</td><td class="r num mono">${p.points}</td>
-    <td>${p.status === "vacation" ? '<span class="chip info">Відпустка</span>' : '<span class="chip ok">На службі</span>'}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">Нікого немає.</td></tr>'}
-  </tbody></table></div></div>`;
+  const canList = ME.me.rank >= 8;
+  const t = tab("staff", "tree");
+  const head = tabsBar("staff", [["tree", "Штатна структура"], ...(canList ? [["list", "Особовий склад"]] : [])], "tree");
+  if (t === "list" && canList) {
+    const list = await call("/api/staff");
+    return head + `${ME.me.dept !== "lead" ? `<p class="note">Особовий склад вашого відділу: ${esc(ME.me.deptName)}.</p>` : ""}
+    <div class="card"><div class="tbl-wrap"><table class="t"><thead><tr><th>Жетон</th><th>Співробітник</th><th>Звання</th><th>Відділ</th><th>На званні з</th><th class="r">Бали тиж.</th><th>Статус</th></tr></thead><tbody>
+    ${list.map((p) => `<tr><td class="mono">${p.sid}</td><td><b>${esc(p.name)}</b></td><td><span class="rk-dot" style="--n:${p.rank}"></span>${esc(p.rankName)}</td><td>${deptTag(p.dept)}</td><td class="num muted">${fmtDT(p.since)}</td>
+      <td class="r"><span class="pts-bar"><i style="width:${Math.min(100, p.points * 4)}%"></i></span><span class="num mono">${p.points}</span></td>
+      <td>${p.status === "vacation" ? '<span class="chip info">Відпустка</span>' : '<span class="chip ok">На службі</span>'}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">Нікого немає.</td></tr>'}
+    </tbody></table></div></div>`;
+  }
+  const all = await call("/api/structure");
+  const top = (r) => all.filter((p) => p.rank === r);
+  const slot = (r, label) => {
+    const ps = top(r);
+    return `<div class="org-node ${ps.length ? "" : "empty"}"><div class="org-pos">${label}</div>${ps.length ? ps.map(person).join("") : '<div class="pp vacant"><b>Вакантно</b></div>'}</div>`;
+  };
+  const deptCard = (k) => {
+    const d = META.depts[k], ps = all.filter((p) => p.dept === k && p.rank < 13);
+    return `<section class="org-dept" style="--dc:${d.color}">
+      <header><span class="org-abbr">${esc(d.s)}</span><div><b>${esc(d.n)}</b><span>${ps.length} ос.</span></div></header>
+      ${TIERS.map(([label, lo, hi]) => {
+        const g = ps.filter((p) => p.rank >= lo && p.rank <= hi);
+        if (!g.length && hi < 11) return "";
+        return `<div class="org-tier"><div class="org-tier-t">${label}</div>${g.length ? g.map(person).join("") : '<div class="pp vacant"><b>Вакантно</b><span>начальник відділу</span></div>'}</div>`;
+      }).join("")}
+    </section>`;
+  };
+  const depts = Object.keys(META.depts).filter((k) => k !== "lead");
+  return head + `<div class="org">
+    <div class="org-top">
+      ${slot(15, "Голова Служби безпеки")}
+      <div class="org-row">${slot(14, "Заступники Голови")}${slot(13, "Начальники управлінь")}</div>
+    </div>
+    <div class="org-depts">${depts.map(deptCard).join("")}</div>
+    <p class="muted small org-legend"><span class="pp me"><b>Ви</b></span> <span class="pp vac"><b>Відпустка</b></span> Склад оновлюється автоматично з ролей Discord.</p>
+  </div>`;
 }
 
+/* ---------------- кадровий аудит ---------------- */
+const AUD_KIND = (a) => /Підвищ/.test(a) ? "up" : /Пониж|Звільн|Відмов|анульов/i.test(a) ? "down" : /допуск|Прийнят|зарахув/i.test(a) ? "in" : /Переведен|Відпуст/.test(a) ? "move" : "misc";
 async function vAudit() {
   const list = await call("/api/audit");
-  return `<div class="card"><header><h3>Журнал кадрового аудиту</h3><span class="sp muted small">Дублюється в канал «кадровий-аудит» у Discord</span></header>
-  <div class="tbl-wrap"><table class="t"><thead><tr><th>Коли</th><th>Хто</th><th>Дія</th><th>Співробітник</th><th>Деталі</th></tr></thead><tbody>
-  ${list.map((a) => `<tr><td class="num muted">${fmtDT(a.t)}</td><td>${a.actorUser ? esc(a.actorUser.name) : '<span class="tag">бот</span>'}</td><td>${esc(a.action)}</td><td>${a.targetUser ? esc(a.targetUser.name) : "№" + a.target}</td><td>${esc(a.details)}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">Записів ще немає.</td></tr>'}
-  </tbody></table></div></div>`;
+  const f = UI.auditF || "all";
+  const kinds = [["all", "Усі"], ["in", "Прийом і допуск"], ["up", "Підвищення"], ["move", "Переведення й відпустки"], ["down", "Звільнення й відмови"], ["misc", "Інше"]];
+  const q = (UI.auditQ || "").trim().toLowerCase();
+  const shown = list.filter((a) => (f === "all" || AUD_KIND(a.action) === f) && (!q || (a.action + " " + a.details + " " + (a.targetUser ? a.targetUser.name : "") + " " + a.target).toLowerCase().includes(q)));
+  return `<div class="aud-bar"><div class="aud-f">${kinds.map(([k, l]) => `<button class="${k === f ? "on" : ""}" data-a="auditf" data-v="${k}">${l}</button>`).join("")}</div>
+    <input class="i aud-q" id="aud-q" placeholder="Пошук: ім'я, жетон, дія…" value="${esc(UI.auditQ || "")}"></div>
+  <div class="aud">${shown.map((a) => `<div class="aud-it k-${AUD_KIND(a.action)}" data-q="${esc((a.action + " " + a.details + " " + (a.targetUser ? a.targetUser.name : "") + " " + a.target + " " + (a.actorUser ? a.actorUser.name : "")).toLowerCase())}">
+      <i></i><div class="aud-when"><b>${new Date(a.t).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })}</b><span>${new Date(a.t).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span></div>
+      <div class="aud-body"><div class="aud-act">${esc(a.action)} <span class="mono muted small">${docNo("АУД", a.id)}</span></div>
+        <div class="aud-who"><b>${a.targetUser ? esc(a.targetUser.name) : a.target ? "№" + a.target : "—"}</b>${a.details ? ` · ${esc(a.details)}` : ""}</div>
+        <div class="muted small">Ухвалив: ${a.actorUser ? esc(a.actorUser.name) : "система «Сова»"}</div></div></div>`).join("") || '<div class="empty">Записів немає.</div>'}</div>`;
 }
 
 /* ---------------- кадри: анкети кандидатів (ВВБ → ВКПП) і заявки на допуск ---------------- */
@@ -453,6 +555,8 @@ async function refreshMe() {
 const A = {
   nav: (b) => { UI.view = b.dataset.v; render(); scrollTo(0, 0); },
   go: (b) => { UI.view = b.dataset.v; if (b.dataset.tab) UI.tabs[b.dataset.v] = b.dataset.tab; render(); scrollTo(0, 0); },
+  raptype: (b) => { UI.rapType = b.dataset.v; render(); },
+  auditf: (b) => { UI.auditF = b.dataset.v; render(); },
   tab: (b) => { UI.tabs[b.dataset.k] = b.dataset.v; render(); },
   logout: () => logout(false),
   file: async (b) => {
@@ -517,7 +621,16 @@ const F = {
 
 document.addEventListener("click", (e) => { const b = e.target.closest("[data-a]"); if (!b || b.disabled) return; const f = A[b.dataset.a]; if (f) { e.preventDefault(); f(b); } });
 document.addEventListener("submit", (e) => { const f = e.target.closest("[data-f]"); if (!f) return; e.preventDefault(); const h = F[f.dataset.f]; if (h) h(f); });
-document.addEventListener("change", (e) => { if (e.target.dataset.change === "raptype") { UI.rapType = e.target.value; render(); } });
+document.addEventListener("input", (e) => {
+  if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview();
+  if (e.target.id === "aud-q") {
+    UI.auditQ = e.target.value;
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll(".aud-it").forEach((el) => { el.hidden = !!q && !el.dataset.q.includes(q); });
+  }
+});
+document.addEventListener("change", (e) => {
+  if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview(); if (e.target.dataset.change === "raptype") { UI.rapType = e.target.value; render(); } });
 
 if (TOKEN) boot(); else render();
 })();
