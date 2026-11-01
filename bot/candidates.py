@@ -19,6 +19,7 @@ STAGE = {  # статус: (напис, колір ANSI, колір embed)
     "vkpp": ("ПОГОДЖЕНО ВВБ · ОЧІКУЄ ВКПП", "cyan", 0x6F9FD6),
     "ok": ("ПОГОДЖЕНО ВКПП · ЗАПРОСИТИ НА СЕРВЕР", "green", 0x5FB37A),
     "rej": ("ВІДМОВЛЕНО", "red", 0xD4605A),
+    "deleted": ("ВИДАЛЕНО", "gray", 0x3A4250),
 }
 
 
@@ -303,6 +304,23 @@ async def decide(cid: int, reviewer: discord.Member, decision: str, note: str = 
                 f"Коли він натисне «Отримати допуск» зі Static ID №{c['sid']}, бот видасть і роль «Стажер».")
     await db.audit(0, "Відмова кандидату", c["sid"], f"{'ВВБ' if stage == 'vvb' else 'ВКПП'} · {reviewer.display_name}" + (f" · {note}" if note else ""))
     return "Кандидату відмовлено."
+
+
+async def delete(u: dict, cid: int):
+    """Видалення анкети (спам, дубль тощо) — ВВБ, ВКПП або керівництво СБУ."""
+    c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
+    if not c or c["status"] == "deleted":
+        raise Fail("Анкету не знайдено.", 404)
+    await db.run("UPDATE candidates SET status='deleted', note=? WHERE id=?", f"видалив {u['name']}", cid)
+    c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
+    await _refresh(c, None)
+    ch_key, msg_key = ("vkpp_ch", "vkpp_msg") if c["vkpp_ch"] else ("vvb_ch", "vvb_msg")
+    await core.post_log(c[ch_key], c[msg_key], style.doc_no("АНК", cid), "Анкета кандидата", f"{c['name']} · №{c['sid']}", "deleted", u["name"], now_ms())
+    if c["photo"]:
+        try:
+            await core.delete_file(u, c["photo"], force=True)
+        except Fail:
+            pass
 
 
 def _notice(c: dict, text: str) -> discord.Embed:

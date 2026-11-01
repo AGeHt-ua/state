@@ -240,7 +240,7 @@ function actFeed(list, review) {
       </div>
       <div class="doc-side">${review
         ? `<button class="btn sm ok" data-a="actd" data-id="${a.id}" data-d="ok">Підтвердити</button><button class="btn sm bad" data-a="actd" data-id="${a.id}" data-d="rej">Відхилити</button>`
-        : `<span class="doc-stamp">${stLabel[a.status]}</span>${a.reviewer ? `<span class="muted small">${esc(a.reviewer.name)}</span>` : ""}${a.status === "wait" ? `<button class="btn sm" data-a="wd" data-k="acts" data-id="${a.id}">↩ Відкликати</button>` : ""}`}</div>
+        : `<span class="doc-stamp">${stLabel[a.status]}</span>${a.reviewer ? `<span class="muted small">${esc(a.reviewer.name)}</span>` : ""}${a.status === "wait" ? `<button class="btn sm" data-a="wd" data-k="acts" data-id="${a.id}">↩ Відкликати</button>` : ""}${["wait", "rej", "cancel"].includes(a.status) ? `<button class="btn sm bad" data-a="del" data-url="/api/acts/${a.id}/delete" data-q="Видалити документ? Його буде прибрано з кабінету, у журналі Discord лишиться запис.">🗑 Видалити</button>` : ""}`}</div>
     </article>`;
   }).join("")}</div>`;
 }
@@ -304,7 +304,7 @@ async function vRap() {
         <div class="doc-title">${esc(META.rapTypes[r.type])}</div><div class="doc-line">${rapDesc(r)}</div></div>
       <div class="doc-side">${t === "review"
         ? `<button class="btn sm ok" data-a="rapd" data-id="${r.id}" data-d="ok">Погодити</button><button class="btn sm bad" data-a="rapd" data-id="${r.id}" data-d="rej">Відмовити</button>`
-        : `<span class="doc-stamp">${{ ok: "Погоджено", rej: "Відмовлено", wait: "На розгляді", cancel: "Відкликано" }[r.status]}</span>${r.reviewer ? `<span class="muted small">${esc(r.reviewer.name)}</span>` : ""}${r.status === "wait" ? `<button class="btn sm" data-a="wd" data-k="raps" data-id="${r.id}">↩ Відкликати</button>` : ""}`}</div>
+        : `<span class="doc-stamp">${{ ok: "Погоджено", rej: "Відмовлено", wait: "На розгляді", cancel: "Відкликано" }[r.status]}</span>${r.reviewer ? `<span class="muted small">${esc(r.reviewer.name)}</span>` : ""}${r.status === "wait" ? `<button class="btn sm" data-a="wd" data-k="raps" data-id="${r.id}">↩ Відкликати</button>` : ""}${["wait", "rej", "cancel"].includes(r.status) ? `<button class="btn sm bad" data-a="del" data-url="/api/raps/${r.id}/delete" data-q="Видалити документ? Його буде прибрано з кабінету, у журналі Discord лишиться запис.">🗑 Видалити</button>` : ""}`}</div>
     </article>`).join("")}</div>`;
 }
 
@@ -498,6 +498,7 @@ function candCard(c, r) {
   </div>
   ${c.note ? `<div class="dz-note"><b>Причина відмови:</b> ${esc(c.note)}</div>` : ""}
   ${candRoute(c)}
+  ${r.vvb || r.vkpp ? `<div class="dz-del"><button class="btn sm bad" data-a="del" data-url="/api/hr/cand/${c.id}/delete" data-q="Видалити анкету ${docNo("АНК", c.id)} (спам, дубль)? Фото кандидата теж буде видалено.">🗑 Видалити анкету</button></div>` : ""}
   ${mine ? `<footer class="dz-act"><span class="muted small">${c.status === "vvb" ? "Висновок Відділу внутрішньої безпеки" : "Рішення Відділу кадрів та підготовки персоналу"}</span>
     <div class="acts"><button class="btn ok" data-a="cand" data-id="${c.id}" data-d="ok">${c.status === "vvb" ? "Погодити й передати до ВКПП" : "Погодити зарахування"}</button>
     <button class="btn bad" data-a="cand" data-id="${c.id}" data-d="rej">Відмовити</button></div></footer>` : ""}
@@ -515,7 +516,7 @@ async function vHr() {
     if (!d.access.length) return head + note + '<div class="empty">Немає заявок на допуск.</div>';
     return head + note + `<div class="card"><div class="tbl-wrap"><table class="t"><thead><tr><th>Заявка</th><th>Ім'я</th><th>Static ID</th><th>Подано</th><th class="r">Рішення</th></tr></thead><tbody>
       ${d.access.map((a) => `<tr><td class="mono">${docNo("ЗД", a.id)}</td><td>${esc(a.name)}</td><td class="num">№${a.sid}</td><td class="muted num">${fmtDT(a.t)}</td>
-        <td class="r"><div class="acts" style="justify-content:flex-end"><button class="btn sm ok" data-a="accd" data-id="${a.id}" data-d="ok">Надати допуск</button><button class="btn sm bad" data-a="accd" data-id="${a.id}" data-d="rej">Відмовити</button></div></td></tr>`).join("")}
+        <td class="r"><div class="acts" style="justify-content:flex-end"><button class="btn sm ok" data-a="accd" data-id="${a.id}" data-d="ok">Надати допуск</button><button class="btn sm bad" data-a="accd" data-id="${a.id}" data-d="rej">Відмовити</button><button class="btn sm" data-a="del" data-url="/api/hr/access/${a.id}/delete" data-q="Видалити заявку на допуск (спам, дубль)?" title="Видалити">🗑</button></div></td></tr>`).join("")}
       </tbody></table></div></div>`;
   }
   if (t === "done") {
@@ -588,6 +589,12 @@ const A = {
     if (b.dataset.d === "rej" && !confirm("Відмовити в допуску?")) return;
     b.disabled = true;
     try { const r = await call(`/api/hr/access/${b.dataset.id}`, { json: { decision: b.dataset.d } }); toast(r.text); await refreshMe(); render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
+  del: async (b) => {
+    if (!confirm(b.dataset.q || "Видалити?")) return;
+    b.disabled = true;
+    try { await call(b.dataset.url, { json: {} }); toast("Видалено"); await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
   wd: async (b) => {

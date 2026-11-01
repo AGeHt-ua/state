@@ -139,6 +139,13 @@ async def update(u: dict, bid: int, b: dict) -> dict:
     return await get(bid)
 
 
+async def delete(u: dict, bid: int):
+    s = await get(bid)
+    if not can_manage(u) or s["status"] != "draft":
+        raise Fail("Видалити можна лише відомість, що формується. Подану спершу поверніть на доопрацювання.", 403)
+    await db.run("DELETE FROM bonuses WHERE id=?", bid)  # чернетка ще нікуди не подавалась
+
+
 FLOW = {"sent": ("draft", can_manage, "Подано куратору на схвалення"), "draft": ("sent", can_manage, "Повернуто на доопрацювання"),
         "approved": ("sent", can_finalize, "Схвалено куратором"), "paid": ("approved", can_finalize, "Премії виплачено")}
 

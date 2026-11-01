@@ -22,6 +22,7 @@ STATUS = {
     "ok": ("ПОГОДЖЕНО", "green", 0x5FB37A),
     "rej": ("ВІДМОВЛЕНО", "red", 0xD4605A),
     "cancel": ("ВІДКЛИКАНО", "gray", 0x5F6A7A),
+    "deleted": ("ВИДАЛЕНО", "gray", 0x3A4250),
 }
 
 

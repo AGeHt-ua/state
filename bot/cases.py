@@ -16,9 +16,9 @@ log = logging.getLogger("sova.cases")
 
 CASE_DEPTS = ("orv", "deb", "atc", "alpha")
 STAGES = ("draft", "head", "chief", "prosecutor", "approved", "rejected")
-STAGE_NAME = {"draft": "Чернетка виконавця", "head": "Погодження начальника відділу", "chief": "Погодження Голови СБУ",
+STAGE_NAME = {"deleted": "Видалено", "draft": "Чернетка виконавця", "head": "Погодження начальника відділу", "chief": "Погодження Голови СБУ",
               "prosecutor": "Розгляд Генерального прокурора", "approved": "Затверджено", "rejected": "Відмовлено"}
-REACH = {"draft": 0, "head": 1, "chief": 2, "prosecutor": 3, "approved": 4, "rejected": 0}
+REACH = {"deleted": 0, "draft": 0, "head": 1, "chief": 2, "prosecutor": 3, "approved": 4, "rejected": 0}
 GRIF = {"dsk": "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ", "secret": "ТАЄМНО", "top": "ЦІЛКОМ ТАЄМНО"}
 REQUESTS = {"search": "Ордер на обшук", "arrest": "Ордер на арешт (затримання)", "op": "Санкція на проведення спецоперації",
             "surv": "Санкція на негласне стеження та прослуховування", "suspect": "Повідомлення про підозру", "other": "Інше клопотання"}
@@ -102,6 +102,7 @@ async def get(cid: int) -> dict:
 def out(c: dict, u: dict) -> dict:
     return {**c, "canEdit": c["author"] == u["sid"] and c["status"] == "draft", "canDecide": can_decide(u, c),
             "canWithdraw": c["author"] == u["sid"] and c["status"] in ("head", "chief", "prosecutor"),
+            "canDelete": (c["author"] == u["sid"] and c["status"] == "draft") or is_chief(u),
             "stageName": STAGE_NAME[c["status"]]}
 
 
@@ -179,6 +180,19 @@ async def withdraw(u: dict, cid: int) -> dict:
     return c
 
 
+async def delete(u: dict, cid: int):
+    """Видалення справи: виконавець — свою чернетку (з погодження спершу відкликати); Голова й заступник — будь-яку."""
+    c = await get(cid)
+    if c["status"] == "deleted":
+        raise Fail("Справу вже видалено.", 404)
+    if not ((c["author"] == u["sid"] and c["status"] == "draft") or is_chief(u)):
+        raise Fail("Видалити можна власну чернетку. Якщо справа на погодженні — спершу відкличте її.", 403)
+    h = await _hist(c, u, "delete")
+    await db.run("UPDATE cases SET status='deleted', history=?, updated=? WHERE id=?", json.dumps(h, ensure_ascii=False), now_ms(), cid)
+    c = await get(cid)
+    await journal(c, u, "Справу видалено")
+
+
 async def decide(u: dict, cid: int, decision: str, note: str = "") -> dict:
     c = await get(cid)
     if not can_decide(u, c):
@@ -221,7 +235,7 @@ async def journal(c: dict, u: dict, label: str):
 
 
 async def visible(u: dict) -> list[dict]:
-    rows = await db.all("SELECT * FROM cases ORDER BY updated DESC LIMIT 300")
+    rows = await db.all("SELECT * FROM cases WHERE status!='deleted' ORDER BY updated DESC LIMIT 300")
     res = []
     for c in rows:
         c["data"] = json.loads(c["data"] or "{}")

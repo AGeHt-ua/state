@@ -154,3 +154,7 @@
 .doc-side .btn{margin-top:2px}
 .dz-docs span.warn{color:var(--warn);border-color:rgba(217,162,61,.5);background:var(--warn-soft)}
 .dz-docs span.warn::before{content:"◐ "}
+.dz-del{display:flex;justify-content:flex-end;padding:0 22px 12px}
+.kf-files{display:flex;gap:6px;flex-wrap:wrap}
+.kf-file{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 8px;border:1px solid var(--line2);font:12px var(--mono)}
+.kf-file button{border:0;background:none;color:var(--bad);cursor:pointer;font-size:12px;padding:0 4px}

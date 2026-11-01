@@ -27,9 +27,9 @@ async def overview(u: dict, d: str) -> dict:
     c = await core.coef()
     ws, pws, now = core.week_start(0), core.week_start(1), now_ms()
     staff = await db.all("SELECT * FROM users WHERE dept=? AND status!='dismissed' ORDER BY rank DESC, sid", d)
-    acts = await db.all("SELECT * FROM acts WHERE dept=? AND t>=?", d, pws)
+    acts = await db.all("SELECT * FROM acts WHERE dept=? AND t>=? AND status!='deleted'", d, pws)
     pts = lambda a: c.get(a["type"], 0) * (a["qty"] or 1)
-    last = {r["by_sid"]: r["t"] for r in await db.all("SELECT by_sid, MAX(t) AS t FROM acts WHERE dept=? GROUP BY by_sid", d)}
+    last = {r["by_sid"]: r["t"] for r in await db.all("SELECT by_sid, MAX(t) AS t FROM acts WHERE dept=? AND status!='deleted' GROUP BY by_sid", d)}
 
     people = []
     for p in staff:
@@ -53,7 +53,7 @@ async def overview(u: dict, d: str) -> dict:
     types = Counter(a["type"] for a in week)
     pending_acts = await db.all("SELECT id, by_sid, type, t FROM acts WHERE dept=? AND status='wait' ORDER BY t", d)
     pending_raps = await db.all("SELECT id, by_sid, type, t FROM raps WHERE dept=? AND status='wait' ORDER BY t", d)
-    cases = await db.all("SELECT id, status, data, updated FROM cases WHERE dept=? AND status NOT IN ('approved','rejected') ORDER BY updated DESC", d) \
+    cases = await db.all("SELECT id, status, data, updated FROM cases WHERE dept=? AND status NOT IN ('approved','rejected','deleted') ORDER BY updated DESC", d) \
         if d in ("orv", "deb", "atc", "alpha") else []
     names = {p["sid"]: p["name"] for p in staff}
     head = next((p for p in staff if p["rank"] == 12), None)

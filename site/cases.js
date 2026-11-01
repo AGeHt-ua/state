@@ -106,7 +106,8 @@ async function vCase(id) {
     ${c.canEdit ? `<button class="btn" data-a="kfedit">Редагувати</button><button class="btn gold" data-a="kfsubmit">Подати на погодження</button>` : ""}
     ${c.canWithdraw ? '<button class="btn" data-a="kfwd">↩ Відкликати з погодження</button>' : ""}
     ${c.canDecide ? `<button class="btn ok" data-a="kfdec" data-d="ok">${pros ? "Затвердити" : "Погодити"}</button><button class="btn" data-a="kfdec" data-d="return">Повернути на доопрацювання</button><button class="btn bad" data-a="kfdec" data-d="rej">Відмовити</button>` : ""}
-    ${c.status === "approved" ? '<button class="btn gold" data-a="kfpdf">⬇ Завантажити PDF</button>' : ""}</div>`;
+    ${c.status === "approved" ? '<button class="btn gold" data-a="kfpdf">⬇ Завантажити PDF</button>' : ""}
+    ${c.canDelete && c.status !== "deleted" ? '<button class="btn bad" data-a="kfdelete">🗑 Видалити справу</button>' : ""}</div>`;
   return bar + `<div class="kd-wrap">${docHtml(c, false)}</div>` + history(c);
 }
 
@@ -136,7 +137,7 @@ function editor(c) {
       <div id="kf-evidence">${(d.evidence || []).map((e) => `<div class="kf-row kf-ev" data-files="${esc((e.files || []).join(","))}">
         <input class="i wide" data-f="desc" placeholder="Опис доказу" value="${esc(e.desc)}"><input class="i" data-f="url" placeholder="Посилання на відкат / матеріал" value="${esc(e.url)}">
         <input class="i" data-f="file" type="file" accept="image/*,video/mp4,application/pdf" multiple>
-        <span class="muted small">${(e.files || []).length ? `додатків: ${e.files.length}` : ""}</span>
+        <span class="kf-files">${(e.files || []).map((f, i) => `<span class="kf-file">📎 ${i + 1}<button type="button" data-a="kffiledel" data-id="${esc(f)}" title="Видалити файл">✕</button></span>`).join("")}</span>
         <button type="button" class="btn sm bad" data-a="kfdel" title="Прибрати">✕</button></div>`).join("")}</div></div>
     <div class="form-grid">
       <label class="f wide"><span>V. Проведені оперативно-розшукові заходи</span><textarea class="i" id="kf-measures" maxlength="4000">${esc(d.measures)}</textarea></label>
@@ -228,6 +229,22 @@ Object.assign(S.actions, {
     b.disabled = true;
     try { await call(`/api/cases/${UIc.id}/submit`, { json: {} }); toast("Кейс-файл подано на погодження"); await S.refreshMe(); S.render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
+  kfdelete: async (b) => {
+    if (!confirm("Видалити кейс-файл? Його буде прибрано з реєстру, у журналі руху лишиться запис.")) return;
+    b.disabled = true;
+    try { await call(`/api/cases/${UIc.id}/delete`, { json: {} }); toast("Кейс-файл видалено"); UIc.id = null; await S.refreshMe(); S.render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
+  kffiledel: async (b) => {
+    if (!confirm("Видалити цей файл зі сховища?")) return;
+    try {
+      await call(`/api/files/${encodeURIComponent(b.dataset.id)}/delete`, { json: {} });
+      const row = b.closest(".kf-ev");
+      row.dataset.files = (row.dataset.files || "").split(",").filter((x) => x && x !== b.dataset.id).join(",");
+      b.closest(".kf-file").remove();
+      toast("Файл видалено. Збережіть чернетку.");
+    } catch (e) { toast(e.message, 1); }
   },
   kfwd: async (b) => {
     if (!confirm("Відкликати справу з погодження? Вона повернеться у вашу чернетку.")) return;

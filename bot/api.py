@@ -171,7 +171,7 @@ async def acts_list(request):
     if request.query.get("scope") == "review":
         rows = [a for a in await db.all("SELECT * FROM acts WHERE status='wait' ORDER BY t") if core.can_approve_act(u, a)]
     else:
-        rows = await db.all("SELECT * FROM acts WHERE by_sid=? ORDER BY t DESC LIMIT 200", u["sid"])
+        rows = await db.all("SELECT * FROM acts WHERE by_sid=? AND status!='deleted' ORDER BY t DESC LIMIT 200", u["sid"])
     people = await people_map([r["by_sid"] for r in rows] + [r["reviewer"] for r in rows])
     return web.json_response([act_out(r, people) for r in rows])
 
@@ -202,7 +202,7 @@ async def raps_list(request):
     if request.query.get("scope") == "review":
         rows = [r for r in await db.all("SELECT * FROM raps WHERE status='wait' ORDER BY t") if core.can_approve_rap(u, r)]
     else:
-        rows = await db.all("SELECT * FROM raps WHERE by_sid=? ORDER BY t DESC LIMIT 100", u["sid"])
+        rows = await db.all("SELECT * FROM raps WHERE by_sid=? AND status!='deleted' ORDER BY t DESC LIMIT 100", u["sid"])
     people = await people_map([r["by_sid"] for r in rows] + [r["reviewer"] for r in rows])
     return web.json_response([rap_out(r, people) for r in rows])
 
@@ -297,6 +297,61 @@ async def raps_withdraw(request):
     u = await auth(request)
     row = await core.withdraw(u, "rap", int(request.match_info["id"]))
     return web.json_response(rap_out(row, await people_map([row["by_sid"]])))
+
+
+# ---------------------------------------------------------------- видалення (усе, що створюється, можна видалити)
+@routes.post("/api/acts/{id}/delete")
+async def acts_delete(request):
+    u = await auth(request)
+    await core.delete_doc(u, "act", int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/raps/{id}/delete")
+async def raps_delete(request):
+    u = await auth(request)
+    await core.delete_doc(u, "rap", int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/cases/{id}/delete")
+async def cases_delete(request):
+    u = await auth(request)
+    await cases.delete(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/bonus/{id}/delete")
+async def bonus_delete(request):
+    u = await auth(request)
+    await bonus.delete(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/hr/cand/{id}/delete")
+async def hr_cand_delete(request):
+    u = await auth(request)
+    r = hr_rights(u)
+    if not (r["vvb"] or r["vkpp"]):
+        raise Fail("Видаляти анкети може ВВБ, ВКПП або керівництво.", 403)
+    await candidates.delete(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/hr/access/{id}/delete")
+async def hr_access_delete(request):
+    u = await auth(request)
+    if not hr_rights(u)["vkpp"]:
+        raise Fail("Видаляти заявки на допуск може ВКПП або керівництво.", 403)
+    await core.delete_access(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/files/{id}/delete")
+async def files_delete(request):
+    u = await auth(request)
+    await core.delete_file(u, request.match_info["id"])
+    return web.json_response({"ok": True})
 
 
 @routes.post("/api/cases/{id}/decision")
@@ -469,7 +524,7 @@ async def hr_list(request):
     cand = await db.all(f"SELECT * FROM candidates WHERE status IN ({','.join('?' * len(stages))}) ORDER BY t", *stages)
     done = await db.all("SELECT * FROM candidates WHERE status IN ('ok','rej') ORDER BY COALESCE(vkpp_t, vvb_t) DESC LIMIT 30")
     acc = await db.all("SELECT * FROM access_requests WHERE status='wait' ORDER BY t") if r["vkpp"] else []
-    acc_done = await db.all("SELECT * FROM access_requests WHERE status!='wait' ORDER BY reviewed DESC LIMIT 30") if r["vkpp"] else []
+    acc_done = await db.all("SELECT * FROM access_requests WHERE status NOT IN ('wait','deleted') ORDER BY reviewed DESC LIMIT 30") if r["vkpp"] else []
     nm = await names([c["vvb_by"] for c in cand + done] + [c["vkpp_by"] for c in cand + done] + [a["reviewer"] for a in acc_done])
     for c in cand + done:
         c["vvbName"], c["vkppName"] = nm.get(c["vvb_by"]), nm.get(c["vkpp_by"])

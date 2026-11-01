@@ -53,7 +53,7 @@ function docView(s) {
   const groups = Object.keys(D).map((k) => [k, s.rows.filter((x) => x.dept === k)]).filter(([, rows]) => rows.length);
   let n = 0;
   const bar = `<div class="kd-bar"><button class="btn" data-a="bnback">← До відомостей</button><span class="sp"></span>
-    ${edit ? '<button class="btn" data-a="bnrecalc">↻ Перерахувати з балів</button><button class="btn" data-a="bnsave">Зберегти зміни</button><button class="btn gold" data-a="bnmove" data-to="sent">Подати куратору</button>' : ""}
+    ${edit ? '<button class="btn" data-a="bnrecalc">↻ Перерахувати з балів</button><button class="btn" data-a="bnsave">Зберегти зміни</button><button class="btn gold" data-a="bnmove" data-to="sent">Подати куратору</button><button class="btn bad" data-a="bndelete">🗑 Видалити</button>' : ""}
     ${s.status === "sent" ? '<button class="btn" data-a="bnmove" data-to="draft">Повернути на доопрацювання</button>' + (r.finalize ? '<button class="btn ok" data-a="bnmove" data-to="approved">Схвалено куратором</button>' : "") : ""}
     ${s.status === "approved" && r.finalize ? '<button class="btn gold" data-a="bnmove" data-to="paid">Позначити виплаченим</button>' : ""}
     <button class="btn" data-a="bncopy">⧉ Звіт для куратора</button></div>`;
@@ -101,6 +101,10 @@ Object.assign(S.actions, {
   bnopen: (b) => { st.id = +b.dataset.id; S.render(); scrollTo(0, 0); },
   bnback: () => { st.id = null; st.tab = "list"; S.render(); },
   bnnew: (b) => busy(b, async () => { const s = await call("/api/bonus", { json: { offset: +b.dataset.o } }); st.id = s.id; S.render(); }),
+  bndelete: (b) => busy(b, async () => {
+    if (!confirm("Видалити відомість, що формується? Її можна буде сформувати заново.")) return;
+    await call(`/api/bonus/${st.id}/delete`, { json: {} }); toast("Відомість видалено"); st.id = null; st.tab = "list"; S.render();
+  }),
   bnrecalc: (b) => busy(b, async () => { if (!confirm("Перерахувати всі суми з балів? Ручні зміни буде скинуто.")) return; await call(`/api/bonus/${st.id}/recalc`, { json: {} }); toast("Перераховано"); S.render(); }),
   bnsave: (b) => busy(b, async () => { await save(); toast("Зміни збережено"); S.render(); }),
   bnmove: (b) => busy(b, async () => {

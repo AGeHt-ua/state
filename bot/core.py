@@ -351,6 +351,9 @@ async def resolution(status: str, reviewer_sid: int | None, reviewed: int | None
         return [style.kv("РЕЗОЛЮЦІЯ", "очікує розгляду", "gold", True)]
     if status == "cancel":
         return [style.kv("РЕЗОЛЮЦІЯ", "ВІДКЛИКАНО ВИКОНАВЦЕМ", "gray", True), style.kv("", style.when(reviewed), "gray")]
+    if status == "deleted":
+        rev = await user(reviewer_sid) if reviewer_sid else None
+        return [style.kv("РЕЗОЛЮЦІЯ", "ДОКУМЕНТ ВИДАЛЕНО", "gray", True)] + ([style.kv("", rev["name"], "white")] if rev else []) + [style.kv("", style.when(reviewed), "gray")]
     rev = await user(reviewer_sid) if reviewer_sid else None
     word, color = (ok_word, "green") if status == "ok" else ("ВІДМОВЛЕНО", "red")
     lines = [style.kv("РЕЗОЛЮЦІЯ", word, color, True)]
@@ -533,6 +536,45 @@ async def refresh_card(kind: str, row: dict):
         what = ACTS[row["type"]][0] if kind == "act" else RAP_TYPES.get(row["type"], "Рапорт")
         await post_log(row["ch_id"], row["msg_id"], style.doc_no("ЗВТ" if kind == "act" else "РАП", row["id"]), what,
                        who(author), row["status"], who(author if row["status"] == "cancel" else reviewer), row.get("reviewed"))
+
+
+async def delete_doc(u: dict, kind: str, rid: int) -> dict:
+    """Видалення звіту чи рапорту: автор — свій нерозглянутий/відхилений/відкликаний; Голова й заступник — будь-який (анулювання)."""
+    table = "acts" if kind == "act" else "raps"
+    row = await db.one(f"SELECT * FROM {table} WHERE id=?", rid)
+    if not row or row["status"] == "deleted":
+        raise Fail("Документ не знайдено.", 404)
+    own = row["by_sid"] == u["sid"] and row["status"] in ("wait", "rej", "cancel")
+    if not (own or u["rank"] >= 14):
+        raise Fail("Видалити можна власний документ до погодження (або після відмови). Погоджені анулює лише керівництво СБУ.", 403)
+    await db.run(f"UPDATE {table} SET status='deleted', reviewer=?, reviewed=? WHERE id=?", u["sid"], now_ms(), rid)
+    if kind == "act":
+        for fid in json.loads(row["files"] or "[]"):
+            try:
+                await delete_file(u, fid, force=True)
+            except Fail:
+                pass
+    if row["status"] == "ok":
+        await db.audit(u["sid"], "Анульовано документ", row["by_sid"], f"{'ЗВТ' if kind == 'act' else 'РАП'}-{rid:04d}")
+    row = await db.one(f"SELECT * FROM {table} WHERE id=?", rid)
+    await refresh_card(kind, row)
+    return row
+
+
+async def delete_file(u: dict, fid: str, force: bool = False):
+    """Видаляє файл зі сховища (повідомлення в каналі файлів) і з бази. Власник або Голова/заступник."""
+    row = await db.one("SELECT * FROM files WHERE id=?", fid)
+    if not row:
+        raise Fail("Файл не знайдено.", 404)
+    if not force and row["uploader"] != u["sid"] and u["rank"] < 14:
+        raise Fail("Видалити можна лише власний файл.", 403)
+    try:
+        ch = bot.get_channel(int(row["ch_id"])) or await bot.fetch_channel(int(row["ch_id"]))
+        await (await ch.fetch_message(int(row["msg_id"]))).delete()
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        pass
+    await db.run("DELETE FROM files WHERE id=?", fid)
+    _url_cache.pop(fid, None)
 
 
 async def withdraw(u: dict, kind: str, rid: int) -> dict:
@@ -780,7 +822,8 @@ def access_embed(req: dict, member: discord.Member | None) -> discord.Embed:
     if req["status"] == "wait":
         lines.append(style.kv("РЕЗОЛЮЦІЯ", "очікує рішення ВКПП", "gold", True))
     else:
-        lines.append(style.kv("РЕЗОЛЮЦІЯ", "ДОПУСК НАДАНО" if req["status"] == "ok" else "ВІДМОВЛЕНО", "green" if req["status"] == "ok" else "red", True))
+        lines.append(style.kv("РЕЗОЛЮЦІЯ", {"ok": "ДОПУСК НАДАНО", "deleted": "ЗАЯВКУ ВИДАЛЕНО"}.get(req["status"], "ВІДМОВЛЕНО"),
+                              {"ok": "green", "deleted": "gray"}.get(req["status"], "red"), True))
         if req.get("reviewer_name"):
             lines.append(style.kv("", req["reviewer_name"], "white"))
         lines.append(style.kv("", style.when(req["reviewed"]), "gray"))
@@ -865,6 +908,25 @@ async def decide_access(req_id: int, reviewer: discord.Member, decision: str) ->
         except discord.Forbidden:
             pass
     return "Заявку відхилено." + (f" Причина: {note}" if note else "")
+
+
+async def delete_access(u: dict, req_id: int):
+    """Видалення заявки на допуск (спам, дубль) — ВКПП або керівництво."""
+    req = await db.one("SELECT * FROM access_requests WHERE id=?", req_id)
+    if not req or req["status"] == "deleted":
+        raise Fail("Заявку не знайдено.", 404)
+    await db.run("UPDATE access_requests SET status='deleted', reviewed=? WHERE id=?", now_ms(), req_id)
+    req = await db.one("SELECT * FROM access_requests WHERE id=?", req_id)
+    req["reviewer_name"] = u["name"]
+    if req["ch_id"] and req["msg_id"]:
+        try:
+            ch = bot.get_channel(int(req["ch_id"])) or await bot.fetch_channel(int(req["ch_id"]))
+            msg = await ch.fetch_message(int(req["msg_id"]))
+            await msg.edit(embed=access_embed(req, await member_of(req["discord_id"])), view=None)
+        except (discord.NotFound, discord.Forbidden):
+            pass
+        await post_log(req["ch_id"], req["msg_id"], style.doc_no("ЗД", req_id), "Заявка на допуск до ЄІС",
+                       f"{req['name']} · №{req['sid']}", "deleted", u["name"], req["reviewed"])
 
 
 async def register(member: discord.Member, sid: int, name: str, reviewer: discord.Member | None = None,
