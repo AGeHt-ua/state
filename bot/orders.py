@@ -129,6 +129,7 @@ async def apply_roles(sid: int, extra: str | None, reason: str, drop_extra: str 
     except discord.Forbidden:
         log.warning("Немає прав змінити ролі %s", m)
     core._roles_cache.pop(str(p["discord_id"]), None)
+    core.roles_changed()
 
 
 async def get(oid: int) -> dict:

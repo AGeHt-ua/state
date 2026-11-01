@@ -177,7 +177,25 @@ const ring = (val, max, label) => {
     <div><b class="num">${val}</b><span>${label}</span></div></div>`;
 };
 
+// Звірка посвідчення з ролями Discord: свіжі ролі → звання й відділ на сайті, службовий нікнейм
+async function verifyCard(btn) {
+  const box = document.getElementById("idver");
+  if (!box) return;
+  if (btn) btn.disabled = true;
+  try {
+    const v = await call("/api/me/verify");
+    if (v.changed) { toast("Звання або підрозділ оновлено з Discord"); await refreshMe(); return render(); }
+    const bad = v.items.filter((i) => !i.ok && !i.soft).length;
+    box.className = `idcard-ver ${v.ok ? "ok" : "bad"}`;
+    box.innerHTML = `<span class="iv-st">${v.ok ? "✔ ЗВІРЕНО З DISCORD" : `✖ РОЗБІЖНОСТІ: ${bad}`}</span><span class="iv-t">${new Date(v.t).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span>
+      <button class="iv-btn" data-a="verify" title="Звірити ще раз">⟳</button>
+      ${v.items.length ? `<ul>${v.items.map((i) => `<li class="${i.ok ? "ok" : i.soft ? "soft" : "no"}">${esc(i.t)}</li>`).join("")}</ul>` : ""}${v.why ? `<p>${esc(v.why)}</p>` : ""}`;
+  } catch (e) { box.innerHTML = `<span class="iv-st">Звірка недоступна: ${esc(e.message)}</span>`; }
+  if (btn) btn.disabled = false;
+}
+
 async function vHome() {
+  setTimeout(() => verifyCard(), 60);
   const acts = await call("/api/acts");
   const pc = ME.promo;
   const pend = ME.pending || {};
@@ -198,6 +216,7 @@ async function vHome() {
         <dl><dt>Звання</dt><dd>${esc(me.rankName)}</dd><dt>Підрозділ</dt><dd>${esc(d.n)}</dd><dt>Жетон</dt><dd class="mono">${me.sid}</dd><dt>На званні з</dt><dd>${fmtDT(me.since)}</dd></dl>
       </div>
       <div class="idcard-foot"><span class="mono">SBU-NG · ${String(me.sid).padStart(8, "0")}</span><span class="idcard-rank">${me.rank}<small>/15</small></span></div>
+      <div class="idcard-ver" id="idver"><span class="iv-st">⟳ Звіряю з Discord…</span></div>
     </div>
     <div class="hero-stats">
       ${ring(ME.points, goal, "балів за тиждень")}
@@ -694,6 +713,7 @@ const A = {
     catch (e) { toast(e.message, 1); }
   },
   // універсальна кнопка PDF: data-sel — селектор бланка на сторінці, data-name — назва файлу
+  verify: (b) => verifyCard(b),
   pdfel: (b) => window.SOVA.pdfBtn(b, b.dataset.sel, b.dataset.name),
   actopen: (b) => { UI.actId = +b.dataset.id; UI.view = "act"; render(); scrollTo(0, 0); },
   actback: () => { UI.actId = null; render(); },

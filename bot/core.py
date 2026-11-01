@@ -222,6 +222,16 @@ async def set_nick(u: dict, member: discord.Member | None = None) -> bool:
         return False
 
 
+# після будь-якої зміни ролей ботом — одразу оновити штатну структуру й картки (підписується api.py)
+ROLES_CHANGED: list = []
+
+
+def roles_changed():
+    import asyncio
+    for cb in ROLES_CHANGED:
+        asyncio.get_running_loop().create_task(cb())
+
+
 async def sync_roles(u: dict, reason: str):
     """Приводить ролі в Discord до картки (після підвищення, переведення, звільнення)."""
     m = await member_of(u["discord_id"]) if u.get("discord_id") else None
@@ -244,6 +254,7 @@ async def sync_roles(u: dict, reason: str):
     except discord.Forbidden:
         log.warning("Немає прав змінити ролі %s — роль бота має бути вище ролей СБУ", m)
     _roles_cache.pop(str(u["discord_id"]), None)
+    roles_changed()
 
 
 # ---------------------------------------------------------------- права
@@ -1110,6 +1121,7 @@ async def register(member: discord.Member, sid: int, name: str, reviewer: discor
         except discord.Forbidden:
             log.warning("Не можу видати ролі %s — роль бота має бути вище цих ролей", member)
     _roles_cache.pop(str(member.id), None)
+    roles_changed()
     a = resolve({r.id for r in member.roles} | {r.id for r in give})
     rank, dept = (a["rank"], a["dept"]) if a["ok"] else (1, "academy")
     pw = new_password()

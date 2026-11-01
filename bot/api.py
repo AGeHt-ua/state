@@ -20,7 +20,7 @@ import core
 import overrides as ov
 from core import ACTS, RAP_TYPES, Fail
 from db import db, now_ms
-from roles import DEPTS, OPS_DEPTS, PRESS_ROLE, RANKS, rank_name
+from roles import DEPTS, OPS_DEPTS, PRESS_ROLE, RANK_ROLES, RANKS, SBU_ROLE, nickname, rank_name
 
 log = logging.getLogger("sova.api")
 routes = web.RouteTableDef()
@@ -179,6 +179,34 @@ async def me(request):
         "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
         "bonus": {"manage": bonus.can_manage(u) or bool(u.get("curator")), "finalize": bonus.can_finalize(u)},
     })
+
+
+@routes.get("/api/me/verify")
+async def me_verify(request):
+    """Звірка службового посвідчення з Discord: свіжі ролі, звання, відділ, нікнейм (нікнейм за потреби виправляється)."""
+    u = await auth(request)
+    if u.get("curator") or u["dept"] == "prosecutor":
+        return web.json_response({"ok": True, "items": [], "t": now_ms(), "changed": False})
+    before = (u["rank"], u["dept"])
+    m = await core.member_of(u["discord_id"], fresh=True) if u["discord_id"] else None
+    roles = {r.id for r in m.roles} if m else set()
+    core._roles_cache[str(u["discord_id"])] = (time.time(), roles if m else None)
+    a = await core.apply_roles(u, roles) if m else {"ok": False}
+    nick_ok = bool(m) and m.nick == nickname(u["rank"], u["name"], u["sid"])
+    if m and not nick_ok:
+        nick_ok = await core.set_nick(u, m)
+    rank_roles = [i + 1 for i, rid in enumerate(RANK_ROLES) if rid in roles]
+    depts_in = [DEPTS[d]["s"] for d in OPS_DEPTS if DEPTS[d]["role"] in roles] + (["Прес-служба"] if PRESS_ROLE in roles else [])
+    items = [
+        {"t": "Учасник Discord-сервера СБУ", "ok": bool(m)},
+        {"t": "Основна роль СБУ", "ok": SBU_ROLE in roles},
+        {"t": f"Роль звання: {rank_name(max(rank_roles))}" if rank_roles else "Роль звання відсутня", "ok": bool(rank_roles) and max(rank_roles) == u["rank"]},
+        {"t": f"Роль підрозділу: {', '.join(depts_in)}" if depts_in else ("Підрозділ: Академія / Керівництво" if u["dept"] in ("academy", "lead") else "Роль підрозділу відсутня"),
+         "ok": bool(depts_in) or u["dept"] in ("academy", "lead")},
+        {"t": "Службовий нікнейм" + (f": {m.nick or m.display_name}" if m else ""), "ok": nick_ok, "soft": True},
+    ]
+    return web.json_response({"ok": all(i["ok"] for i in items if not i.get("soft")), "items": items, "t": now_ms(),
+                              "changed": (u["rank"], u["dept"]) != before, "why": None if a.get("ok") else a.get("why")})
 
 
 # ---------------------------------------------------------------- звіти
@@ -809,7 +837,7 @@ async def _build_structure() -> list:
 
 
 async def structure_loop():
-    """Фонове оновлення штатної структури кожні 4 хв — сторінка відкривається миттєво."""
+    """Фонове оновлення штатної структури кожні 2 хв (і одразу після змін ролей ботом) — сторінка відкривається миттєво."""
     await asyncio.sleep(20)
     while True:
         try:
@@ -818,7 +846,7 @@ async def structure_loop():
             pass  # бот ще не на зв'язку з Discord
         except Exception:
             log.exception("Оновлення штатної структури")
-        await asyncio.sleep(240)
+        await asyncio.sleep(120)
 
 
 @routes.get("/api/structure")
@@ -827,7 +855,7 @@ async def structure(request):
     await auth(request)
     if _structure_cache[1] is None:
         await build_structure()
-    elif time.time() - _structure_cache[0] > 300:
+    elif time.time() - _structure_cache[0] > 150:
         asyncio.create_task(build_structure())  # віддаємо збережене, оновлюємо у фоні
     return web.json_response(_structure_cache[1])
 
@@ -988,6 +1016,7 @@ async def start() -> web.AppRunner:
     await web.TCPSite(runner, config.API_HOST, config.API_PORT).start()
     log.info("API слухає %s:%s", config.API_HOST, config.API_PORT)
     await ov.load(db)
+    core.ROLES_CHANGED.append(build_structure)
     asyncio.create_task(structure_loop())
     asyncio.create_task(kb.ensure_seeded())
     return runner
