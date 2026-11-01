@@ -49,7 +49,7 @@ mark{background:rgba(226,192,127,.35);color:inherit;padding:0 2px}
 .kb-diff .add{color:#7fd39a;background:rgba(95,179,122,.1);display:block}
 .kb-diff .del{color:#f0a19b;background:rgba(212,96,90,.1);display:block;text-decoration:line-through}
 .kb-diff .hunk{color:var(--info)}
-.lib-arch{display:grid;gap:4px}
+.lib-arch{display:grid;gap:4px}.lib-arch [hidden]{display:none!important}
 .lib-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 18px;margin-bottom:10px;border:1px solid var(--line2);background:linear-gradient(90deg,rgba(201,162,77,.08),transparent 60%)}
 .lib-top>div b{font:20px var(--display)}.lib-q{flex:1;min-width:200px;max-width:420px;margin-left:auto}
 .lib-pills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
