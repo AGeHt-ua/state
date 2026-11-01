@@ -43,7 +43,7 @@ async function lawView() {
           <button class="btn sm" data-a="kbtheme" title="Папір / темна тема">${st.dark ? "☀" : "☾"}</button>
           <button class="btn sm" data-a="kbfold" data-v="1" title="Розгорнути всі розділи">⇲ Усі</button><button class="btn sm" data-a="kbfold" data-v="0" title="Згорнути всі розділи">⇱ Згорнути</button>
           <button class="btn sm" data-a="kbwide" title="Режим читання">${st.wide ? "◫ Зміст" : "▭ Читання"}</button>
-          <button class="btn sm ${st.extract ? "gold" : ""}" data-a="kbext">${st.extract ? "✕ Витяг" : "✂ Витяг"}</button>
+          <button class="btn sm" data-a="kbprint" title="Весь документ у PDF (через друк)">⬇ PDF</button><button class="btn sm ${st.extract ? "gold" : ""}" data-a="kbext">${st.extract ? "✕ Витяг" : "✂ Витяг"}</button>
           ${st.extract ? `<button class="btn sm gold" data-a="kbextmake" ${st.sel.size ? "" : "disabled"}>Сформувати (${st.sel.size})</button>` : ""}
         </div>
       </div>
@@ -240,7 +240,7 @@ async function libView() {
     }
     const body = esc(it.body || "").split(/\n{2,}/).map((p) => p.startsWith("# ") ? `<h3>${p.slice(2)}</h3>` : `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
     return `<div class="kd-bar"><button class="btn" data-a="libback">← До бібліотеки</button><span class="sp"></span>
-      ${can ? `<button class="btn" data-a="libedit">Редагувати</button><button class="btn bad" data-a="libdel">🗑 Видалити</button>` : ""}</div>
+      <button class="btn" data-a="pdfel" data-sel=".lib-doc" data-name="${esc(it.title)}">⬇ PDF</button>${can ? `<button class="btn" data-a="libedit">Редагувати</button><button class="btn bad" data-a="libdel">🗑 Видалити</button>` : ""}</div>
       <div class="kd-wrap"><article class="kd lib-doc"><header class="kd-head"><img src="sbu-logo.webp" alt="" width="64" height="64"><div><div class="kd-agency">Бібліотека СБУ</div><div class="kd-dept">${esc((S.cache.libcats || {})[it.cat] || "")}</div></div>
         <div class="kd-no"><span>оновлено</span><b>${fmtDT(it.updated)}</b></div></header><h2 class="kb-title">${esc(it.title)}</h2>
         <div class="law-body">${body}</div>${it.files.length ? `<div class="files">${it.files.map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}">📎 Додаток ${i + 1}</button>`).join("")}</div>` : ""}</article></div>`;
@@ -389,6 +389,24 @@ Object.assign(S.actions, {
   }),
   libopen: (b) => { st.lib = +b.dataset.id; R(); scrollTo(0, 0); },
   lawcat: (b) => { st.lawCat = b.dataset.v || null; R(); },
+  // повний текст закону — через вікно друку (довгі кодекси не вміщаються в одне полотно html2pdf)
+  kbprint: () => {
+    const art = document.querySelector(".kb-paper2");
+    if (!art) return;
+    const c = art.cloneNode(true);
+    c.querySelectorAll("details").forEach((d) => { d.open = true; });
+    c.querySelectorAll("mark").forEach((m) => m.replaceWith(m.textContent));
+    c.querySelectorAll("img").forEach((i) => { i.src = new URL(i.getAttribute("src"), location.href).href; });
+    const w = window.open("", "_blank");
+    if (!w) return toast("Дозвольте спливаючі вікна для сайту, щоб зберегти PDF", 1);
+    const css = [...document.querySelectorAll('link[rel="stylesheet"]')].map((l) => `<link rel="stylesheet" href="${l.href}">`).join("");
+    w.document.write(`<!doctype html><html lang="uk"><head><meta charset="utf-8"><title>${esc(S.cache.kbdoc.title)}</title>${css}
+      <style>body{background:#fff!important;margin:0;padding:0}.kb-paper2{box-shadow:none!important;margin:0 auto!important;max-width:none!important;width:auto!important}
+      details>summary{list-style:none}details>summary::-webkit-details-marker{display:none}@page{size:A4;margin:14mm}</style></head>
+      <body style="--fs:15px">${c.outerHTML}<script>window.onload=()=>setTimeout(()=>{print();},400)</script></body></html>`);
+    w.document.close();
+    toast("У вікні друку оберіть «Зберегти як PDF»");
+  },
   libcat: (b) => { st.libCat = b.dataset.v || null; R(); },
   libback: () => { st.lib = null; st.libEdit = null; R(); },
   libfs: () => { const f = document.getElementById("lib-frame"); if (f && f.requestFullscreen) f.requestFullscreen(); },

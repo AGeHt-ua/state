@@ -544,10 +544,10 @@ function candCard(c, r) {
   const fit = checks.every((k) => k[1]);
   const stamp = c.status === "rej" ? ["bad", "ВІДМОВЛЕНО"] : c.status === "ok" ? ["ok", "ПОГОДЖЕНО"] : fit ? ["ok", "ВІДПОВІДАЄ ВИМОГАМ"] : ["bad", "НЕ ВІДПОВІДАЄ ВИМОГАМ"];
   const legal = [x.record && "Судимості", x.wanted && "У розшуку"].filter(Boolean);
-  return `<article class="card dz">
+  return `<article class="card dz" id="cand-${c.id}">
   <header class="dz-head">
     <div><div class="dz-eyebrow">Служба безпеки штату NG · ВВБ / ВКПП</div><h3>ОСОБОВА СПРАВА КАНДИДАТА</h3></div>
-    <div class="dz-no"><span>справа</span><b>${docNo("АНК", c.id)}</b>${candChip(c)}</div>
+    <div class="dz-no"><span>справа</span><b>${docNo("АНК", c.id)}</b>${candChip(c)}<button class="btn sm" data-a="pdfel" data-sel="#cand-${c.id}" data-name="${docNo("АНК", c.id)}_${esc(c.name)}">⬇ PDF</button></div>
   </header>
   <div class="dz-grif">ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ</div>
   <div class="dz-top">
