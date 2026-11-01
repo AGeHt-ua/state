@@ -998,10 +998,10 @@ def rejection_embed(name: str, note: str = "") -> discord.Embed:
 # ---------------------------------------------------------------- самостійна реєстрація
 async def request_access(member: discord.Member, sid: int, name: str) -> int:
     """Людина подає заявку кнопкою «Отримати допуск»; заявка йде на підтвердження в канал заявок."""
-    own = await db.one("SELECT sid FROM users WHERE discord_id=? AND status!='removed'", str(member.id))
+    own = await db.one("SELECT sid FROM users WHERE discord_id=? AND status NOT IN ('removed','dismissed')", str(member.id))
     if own:
         raise Fail(f"Допуск уже оформлено на жетон №{own['sid']}. Загубили код доступу — натисніть «Відновити код доступу».")
-    if await db.one("SELECT sid FROM users WHERE sid=? AND status!='removed'", sid):
+    if await db.one("SELECT sid FROM users WHERE sid=? AND status NOT IN ('removed','dismissed') AND (discord_id IS NULL OR discord_id!=?)", sid, str(member.id)):
         raise Fail("На цей номер жетона вже оформлено допуск іншій особі. Якщо це ваш номер — зверніться до керівництва.")
     if await db.one("SELECT id FROM access_requests WHERE status='wait' AND (discord_id=? OR sid=?)", str(member.id), sid):
         raise Fail("Заявку вже подано й вона очікує підтвердження. Код доступу надійде в особисті повідомлення.")
@@ -1015,6 +1015,50 @@ async def request_access(member: discord.Member, sid: int, name: str) -> int:
     else:
         log.warning("Канал заявок на допуск не знайдено — заявку №%s збережено без картки", rid)
     return rid
+
+
+_nudged: dict[int, float] = {}  # заявка → коли востаннє нагадували ВКПП
+
+
+async def access_status(member: discord.Member) -> dict:
+    """Кнопка «Перевірити допуск»: що з обліковим записом і заявкою; за потреби — повторно видає ролі або нагадує ВКПП."""
+    u = await db.one("SELECT * FROM users WHERE discord_id=? AND status NOT IN ('removed','dismissed')", str(member.id))
+    if u:
+        roles = {r.id for r in member.roles}
+        cand = await approved_candidate(u["sid"])
+        want = set(config.JOIN_ROLES) | ({RANK_ROLES[0]} if cand and not roles & set(RANK_ROLES) else set())
+        if u["dept"] in ("prosecutor", "curator"):
+            want = set()
+        give = [r for r in (member.guild.get_role(rid) for rid in want - roles) if r]
+        failed = False
+        if give:
+            try:
+                await member.add_roles(*give, reason="Сова: повторна видача ролей допуску")
+            except discord.Forbidden:
+                failed = True
+                log.warning("Не можу видати ролі %s — роль бота має бути вище цих ролей", member)
+        _roles_cache.pop(str(member.id), None)
+        roles_changed()
+        a = await access(u, fresh=True)
+        await set_nick(u, member)
+        return {"state": "account", "user": u, "access": a, "given": [r.name for r in give] if not failed else [], "failed": failed}
+    req = await db.one("SELECT * FROM access_requests WHERE discord_id=? ORDER BY id DESC LIMIT 1", str(member.id))
+    if req and req["status"] == "wait":
+        waited = (now_ms() - req["t"]) / 60000
+        nudged = False
+        if waited >= 15 and time.time() - _nudged.get(req["id"], 0) > 1800:  # нагадування ВКПП — не частіше раз на 30 хв
+            ch = await channel("access")
+            if ch:
+                link = f"https://discord.com/channels/{ch.guild.id}/{req['ch_id']}/{req['msg_id']}" if req["msg_id"] else ""
+                m = mention("access")
+                await ch.send(content=(m.get("content", "") + f" ⏰ Заявка {style.doc_no('ЗД', req['id'])} ({req['name']}, №{req['sid']}) чекає рішення "
+                                       f"{int(waited)} хв. {link}").strip(), allowed_mentions=m.get("allowed_mentions"))
+                _nudged[req["id"]] = time.time()
+                nudged = True
+        return {"state": "wait", "req": req, "waited": int(waited), "nudged": nudged}
+    if req and req["status"] == "rej":
+        return {"state": "rej", "req": req}
+    return {"state": "none"}
 
 
 async def approved_candidate(sid: int) -> int | None:
@@ -1159,10 +1203,13 @@ async def delete_access(u: dict, req_id: int):
 async def register(member: discord.Member, sid: int, name: str, reviewer: discord.Member | None = None,
                    extra_roles: tuple[int, ...] = ()) -> tuple[dict, str]:
     """Створює допуск (після підтвердження заявки або командою Голови): ролі, нікнейм, код доступу."""
-    if await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id)):
+    old = await db.one("SELECT sid, status FROM users WHERE discord_id=?", str(member.id))
+    if old and old["status"] not in ("dismissed", "removed"):
         raise Fail("Цій людині допуск уже оформлено.")
-    if await db.one("SELECT sid FROM users WHERE sid=? AND status!='removed'", sid):
+    if await db.one("SELECT sid FROM users WHERE sid=? AND status NOT IN ('removed','dismissed')", sid):
         raise Fail("На цей номер жетона вже оформлено допуск іншій особі.")
+    if old and old["sid"] != sid:  # звільнений повертається з іншим жетоном — стара картка лишається в архіві
+        await db.run("UPDATE users SET discord_id=NULL WHERE sid=?", old["sid"])
     give = [r for r in (member.guild.get_role(rid) for rid in (*config.JOIN_ROLES, *extra_roles)) if r and r not in member.roles]
     if resolve({r.id for r in member.roles}).get("dept") in ("prosecutor", "curator"):
         give = []  # Генеральному прокурору й куратору ролі СБУ не видаються
@@ -1177,7 +1224,7 @@ async def register(member: discord.Member, sid: int, name: str, reviewer: discor
     rank, dept = (a["rank"], a["dept"]) if a["ok"] else (1, "academy")
     pw = new_password()
     t = now_ms()
-    if await db.one("SELECT sid FROM users WHERE sid=? AND status='removed'", sid):  # повернувся на сервер — той самий жетон, нова картка
+    if await db.one("SELECT sid FROM users WHERE sid=? AND status IN ('removed','dismissed')", sid):  # повернувся — той самий жетон, оновлена картка
         await db.run("UPDATE users SET name=?, discord_id=?, pw_hash=?, pw_set=?, rank=?, dept=?, since=?, status='active', blocked=0, callsign=NULL WHERE sid=?",
                      name[:60], str(member.id), hash_password(pw), t, rank, dept, t, sid)
     else:

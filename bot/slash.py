@@ -219,6 +219,41 @@ class RegisterModal(discord.ui.Modal, title="Оформлення допуску
             await interaction.response.send_message(str(e), ephemeral=True, view=ResetView())
 
 
+def status_embed(s: dict) -> discord.Embed:
+    """Відповідь кнопки «Перевірити допуск»."""
+    if s["state"] == "account":
+        u, a = s["user"], s["access"]
+        lines = [style.kv("СПІВРОБІТНИК", u["name"], "white", True), style.kv("НОМЕР ЖЕТОНА", f"№{u['sid']}", "cyan", True),
+                 style.kv("ЗВАННЯ", rank_name(u["rank"]) if a.get("ok") else "—", "white"),
+                 style.kv("ПІДРОЗДІЛ", DEPTS.get(u["dept"], {}).get("s", "—") if a.get("ok") else "—", "white"), style.rule(),
+                 style.kv("ВХІД НА САЙТ", "ВІДКРИТО" if a.get("ok") else "ЗАКРИТО", "green" if a.get("ok") else "red", True)]
+        if not a.get("ok"):
+            lines += style.wrap(a.get("why", ""))
+        if s["given"]:
+            lines += [style.kv("ВИДАНО РОЛІ", ", ".join(s["given"])[:40], "green", True)]
+        if s["failed"]:
+            lines += [style.c("Бот не зміг видати ролі: його роль нижча.", "red"), style.c("Повідомте керівництво сервера.", "gray")]
+        if not a.get("ok") and not s["given"]:
+            lines += [style.c("Звання й підрозділ видає ВКПП —", "gray"), style.c("після зарахування вхід відкриється сам.", "gray")]
+        lines += [style.c("Загубили код — «Відновити код доступу».", "gray")]
+        return style.document("ДОПУСК ДО ЄІС «СОВА» · ПЕРЕВІРКА", 0x5FB37A if a.get("ok") else 0xD9A23D, desc=style.block(*lines))
+    if s["state"] == "wait":
+        r = s["req"]
+        lines = [style.kv("ЗАЯВКА", style.doc_no("ЗД", r["id"]), "white", True), style.kv("ЗАЯВНИК", r["name"], "white"),
+                 style.kv("НОМЕР ЖЕТОНА", f"№{r['sid']}", "cyan"), style.kv("ЧЕКАЄ", f"{s['waited']} хв", "gold", True), style.rule(),
+                 style.c("Заявка на розгляді у ВКПП.", "white")]
+        lines += [style.c("✔ Нагадування ВКПП надіслано.", "green")] if s["nudged"] else [
+            style.c("Нагадати ВКПП можна через 15 хв після", "gray"), style.c("подання, не частіше ніж раз на 30 хв.", "gray")]
+        lines += [style.c("Код надійде в особисті — відкрийте їх.", "gray")]
+        return style.document("ЗАЯВКА НА ДОПУСК · СТАТУС", 0xD9A23D, desc=style.block(*lines))
+    if s["state"] == "rej":
+        return style.document("ЗАЯВКУ НА ДОПУСК ВІДХИЛЕНО", 0xD4605A, desc=style.block(
+            style.kv("ЗАЯВКА", style.doc_no("ЗД", s["req"]["id"]), "white", True), style.rule(),
+            style.c("Перевірте номер жетона та ім'я і подайте", "gray"), style.c("заявку знову кнопкою «Отримати допуск».", "gray")))
+    return style.document("ДОПУСК НЕ ОФОРМЛЕНО", 0x9AA7B8, desc=style.block(
+        style.c("Заявок від вас немає.", "white"), style.c("Натисніть «Отримати допуск» і вкажіть", "gray"), style.c("номер жетона та ім'я персонажа.", "gray")))
+
+
 class ResetView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
@@ -239,9 +274,22 @@ class RegisterView(discord.ui.View):
         member = await guild_member(interaction)
         if not member:
             return await interaction.response.send_message("Спершу приєднайтеся до сервера «Служба Безпеки NG».", ephemeral=True)
-        if await db.one("SELECT sid FROM users WHERE discord_id=?", str(member.id)):
-            return await interaction.response.send_message("Допуск уже оформлено. Загубили код доступу?", ephemeral=True, view=ResetView())
+        if await db.one("SELECT sid FROM users WHERE discord_id=? AND status NOT IN ('removed','dismissed')", str(member.id)):
+            return await interaction.response.send_message("Допуск уже оформлено. Не бачите ролей чи загубили код — натисніть «Перевірити допуск».",
+                                                           ephemeral=True, view=ResetView())
         await interaction.response.send_modal(RegisterModal(member))
+
+    @discord.ui.button(label="Перевірити допуск", style=discord.ButtonStyle.primary, emoji="🔄", custom_id="sova:check")
+    async def check(self, interaction: discord.Interaction, button: discord.ui.Button):
+        member = await guild_member(interaction)
+        if not member:
+            return await interaction.response.send_message("Спершу приєднайтеся до сервера «Служба Безпеки NG».", ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            s = await core.access_status(member)
+        except Fail as e:
+            return await interaction.followup.send(str(e), ephemeral=True)
+        await interaction.followup.send(embed=status_embed(s), ephemeral=True, **({"view": ResetView()} if s["state"] == "account" else {}))
 
     @discord.ui.button(label="Відновити код доступу", style=discord.ButtonStyle.secondary, emoji="🔑", custom_id="sova:resetpw")
     async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -292,7 +340,8 @@ def welcome_embed(member: discord.abc.User | None = None) -> discord.Embed:
         "• Звання й підрозділ підтягуються з ваших ролей автоматично, нікнейм бот поставить сам.\n"
         "• Допуск діє, доки ви у складі СБУ: при звільненні чи виході із сервера його анулюють."))
     e.add_field(name="🔑  Вже маєте допуск?", inline=False, value=(
-        "**«Відновити код доступу»** — новий код, якщо загубили старий.\n"
+        "**«Перевірити допуск»** — статус заявки (і нагадування ВКПП, якщо довго чекаєте), повторна видача ролей, стан входу на сайт.\n"
+        "**«Відновити код доступу»** — новий код, якщо загубили старий або не отримали його в особисті.\n"
         "**«Змінити дані»** — нове ім'я персонажа (зміна фіксується в кадровому аудиті)."))
     e.set_image(url=config.SITE_URL.rstrip("/") + "/site/access-panel.png")
     e.set_footer(text="Код доступу є службовою таємницею · Положення про захист службової інформації СБУ")
