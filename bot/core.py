@@ -578,6 +578,8 @@ async def button_decision(interaction: discord.Interaction, kind: str, rid: int,
 
 async def post_card(kind: str, row: dict):
     special = f"rap:{row['type']}" if kind == "rap" else None
+    if kind == "rap" and row["type"] == "transfer":
+        special = f"rapdept:{row['dept']}"  # рапорт на переведення — лише в канали начальників відділів (звідки й куди)
     ch = (await channel(special) if special in config.CHANNELS else None) or await channel(row["dept"]) or await channel("lead")
     if not ch:
         return
