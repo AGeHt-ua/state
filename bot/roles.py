@@ -76,12 +76,17 @@ def nickname(rank: int, name: str, sid: int, dept: str | None = None, callsign: 
     tpl = (ov.nick.get("callsign_tpl") or CALLSIGN_TPL) if use_cs else (ov.nick.get("tpl") or NICK_TPL)
     d = DEPTS.get(dept or "", {}).get("s", "СБУ")
     fill = lambda n: tpl.replace("{rank}", rank_short(rank)).replace("{name}", n).replace("{sid}", str(sid)).replace("{dept}", d).replace("{callsign}", callsign or "")
-    nick = fill(name)
-    if len(nick) > 32:
-        parts = name.split()
-        if len(parts) >= 2:
-            nick = fill(f"{parts[0][0]}. {' '.join(parts[1:])}")
-    return nick[:32]
+    # скорочуємо лише ім'я — звання, позивний і Static ID лишаються цілими: «Ім'я Прізвище» → «І. Прізвище» → «Прізвище» → обрізане прізвище
+    parts = name.split()
+    variants = [name] + ([f"{parts[0][0]}. {' '.join(parts[1:])}", " ".join(parts[1:])] if len(parts) >= 2 else [])
+    for v in variants:
+        nick = fill(v)
+        if len(nick) <= 32:
+            return nick
+    last = variants[-1]
+    while last and len(fill(last)) > 32:
+        last = last[:-1]
+    return fill(last.rstrip())[:32]
 
 
 def rank_name(rank: int) -> str:
