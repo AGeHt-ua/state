@@ -347,11 +347,18 @@ def rap_out(r: dict, people: dict) -> dict:
 async def raps_list(request):
     u = await auth(request)
     if request.query.get("scope") == "review":
-        rows = [r for r in await db.all("SELECT * FROM raps WHERE status='wait' ORDER BY t") if core.can_approve_rap(u, r)]
+        # на розгляд: що можу погодити зараз + переведення / розподіл мого відділу, які чекають іншу сторону (обидва начальники бачать рапорт)
+        rows = []
+        for r in await db.all("SELECT * FROM raps WHERE status='wait' ORDER BY t"):
+            mine = r["type"] in core.STAGES and r["by_sid"] != u["sid"] and (core.lead_of(u, r["dept"]) or core.lead_of(u, json.loads(r["data"] or "{}").get("to")))
+            if core.can_approve_rap(u, r) or mine:
+                rows.append(r)
     else:
         rows = await db.all("SELECT * FROM raps WHERE by_sid=? AND status!='deleted' ORDER BY t DESC LIMIT 100", u["sid"])
     people = await people_map([r["by_sid"] for r in rows] + [r["reviewer"] for r in rows])
-    return web.json_response([rap_out(r, people) for r in rows])
+    return web.json_response([{**rap_out(r, people), "canDecide": core.can_approve_rap(u, r),
+                               "stageLabel": core.transfer_label(r, json.loads(r["data"] or "{}").get("stage", "from")) if r["type"] in core.STAGES and r["status"] == "wait" else None}
+                              for r in rows])
 
 
 @routes.post("/api/raps")

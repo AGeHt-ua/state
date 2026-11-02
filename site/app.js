@@ -394,7 +394,7 @@ async function uploadFiles(input) {
 function trVisas(r) {
   const d = r.data || {}, st = d.stage || "from", vis = Object.fromEntries((d.visas || []).map((v) => [v.stage, v]));
   const steps = r.type === "assign" ? [["from", "нач. академії"], ["to", "нач. " + (META.depts[d.to] || {}).s]]
-    : [["from", "нач. " + (META.depts[r.dept] || {}).s], ["to", "нач. " + (META.depts[d.to] || {}).s], ["chief", "Голова"]];
+    : [["from", "нач. " + (META.depts[r.dept] || {}).s], ["to", "нач. " + (META.depts[d.to] || {}).s]];
   return `<div class="tr-visas">${steps.map(([k, l]) => `<span class="${vis[k] ? (vis[k].ok === false ? "bad" : "ok") : r.status === "wait" && st === k ? "cur" : ""}">${vis[k] ? (vis[k].ok === false ? "✖" : "✔") : "○"} ${esc(l)}${vis[k] ? ` · ${esc(vis[k].name)}` : ""}</span>`).join("")}</div>`;
 }
 
@@ -442,7 +442,7 @@ async function vRapView(id) {
 
 async function vRap() {
   if (UI.rapId) return vRapView(UI.rapId);
-  const canRev = ME.me.rank >= 12 || !!(ME.hr && ME.hr.vkpp) || (ME.pending.raps || 0) > 0;
+  const canRev = ME.me.rank >= 11 || !!(ME.hr && ME.hr.vkpp) || (ME.pending.raps || 0) > 0;
   const t = tab("rap", "mine");
   const head = tabsBar("rap", [["mine", "Мої рапорти"], ["new", "Подати рапорт"], ...(canRev ? [["review", "На розгляд", ME.pending.raps || 0]] : [])], "mine");
   if (t === "new") return head + rapForm();
@@ -452,7 +452,9 @@ async function vRap() {
       <div class="doc-no"><b>${docNo("РАП", r.id)}</b><span>${fmtDT(r.t)}</span></div>
       <div class="doc-main">${t === "review" ? `<div class="doc-who">${who(r.by)} ${deptTag(r.dept)}</div>` : ""}
         <div class="doc-title">${esc(META.rapTypes[r.type])}</div><div class="doc-line">${rapDesc(r)}</div></div>
-      <div class="doc-side">${t === "review"
+      <div class="doc-side">${t === "review" && r.canDecide === false
+        ? `<span class="doc-stamp">Чекає візи</span><span class="muted small">${esc(r.stageLabel || "іншої сторони")}</span>`
+        : t === "review"
         ? `<button class="btn sm ok" data-a="rapd" data-id="${r.id}" data-d="ok">Погодити</button><button class="btn sm bad" data-a="rapd" data-id="${r.id}" data-d="rej">Відмовити</button>`
         : `<span class="doc-stamp">${{ ok: "Погоджено", rej: "Відмовлено", wait: "На розгляді", cancel: "Відкликано" }[r.status]}</span>${r.reviewer ? `<span class="muted small">${esc(r.reviewer.name)}</span>` : ""}${r.status === "wait" ? `<button class="btn sm" data-a="wd" data-k="raps" data-id="${r.id}">↩ Відкликати</button>` : ""}${["wait", "rej", "cancel"].includes(r.status) ? `<button class="btn sm bad" data-a="del" data-url="/api/raps/${r.id}/delete" data-q="Видалити документ? Його буде прибрано з кабінету, у журналі Discord лишиться запис.">🗑 Видалити</button>` : ""}`}</div>
     </article>`).join("")}</div>`;
