@@ -369,7 +369,7 @@ async def raps_get(request):
     if not r or r["status"] == "deleted":
         raise Fail("Рапорт не знайдено.", 404)
     if not (r["by_sid"] == u["sid"] or core.can_approve_rap(u, r) or u["rank"] >= 13 or core.has_dept_role(u, "vkpp")
-            or core.head_of(u, r["dept"]) or core.head_of(u, json.loads(r["data"] or "{}").get("to"))):
+            or core.lead_of(u, r["dept"]) or core.lead_of(u, json.loads(r["data"] or "{}").get("to"))):
         raise Fail("Немає доступу до цього рапорту.", 403)
     data = json.loads(r["data"] or "{}")
     out = rap_out(r, await people_map([r["by_sid"], r["reviewer"]]))

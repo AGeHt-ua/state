@@ -306,6 +306,12 @@ def head_of(u: dict, dept: str | None) -> bool:
     return bool(dept) and u["rank"] == 12 and (u["dept"] == dept or has_dept_role(u, dept))
 
 
+def lead_of(u: dict, dept: str | None) -> bool:
+    """Віза на переведення / розподіл: начальник відділу або його заступник (з роллю відділу)."""
+    dept = "vkpp" if dept == "academy" else dept
+    return bool(dept) and u["rank"] in (11, 12) and (u["dept"] == dept or has_dept_role(u, dept))
+
+
 def transfer_stage(r: dict) -> str:
     return json.loads(r["data"] or "{}").get("stage", "from")
 
@@ -317,7 +323,7 @@ def can_approve_rap(actor: dict, r: dict) -> bool:
         st = transfer_stage(r)
         if actor["rank"] >= ov.P("rap_override"):  # Голова й заступник можуть поставити візу й за відсутності начальника відділу
             return True
-        return (st == "from" and head_of(actor, r["dept"])) or (st == "to" and head_of(actor, json.loads(r["data"] or "{}").get("to")))
+        return (st == "from" and lead_of(actor, r["dept"])) or (st == "to" and lead_of(actor, json.loads(r["data"] or "{}").get("to")))
     if r["type"] == "refund":  # відшкодування з бюджету СБУ — Голова або Заступник
         return actor["rank"] >= ov.P("rap_override") and not actor.get("curator_ro")
     if r["type"] == "vac":  # відпустку погоджує начальник або заступник начальника свого відділу (Голова й заступник — за відсутності)
@@ -921,6 +927,10 @@ async def decide_rap(actor: dict, rap_id: int, decision: str) -> dict:
             await refresh_card("rap", r)
             await post_log(r["ch_id"], r["msg_id"], style.doc_no("РАП", rap_id), f"{RAP_TYPES[r['type']]} · віза",
                            who(await user(r["by_sid"])), "ok", who(actor), now_ms(), f"далі: {transfer_label(r, data['stage'])}")
+            try:
+                await notify_stage(r, data["stage"], actor)
+            except Exception:
+                log.exception("Сповіщення про чергу візи")
             return r
         await db.run("UPDATE raps SET data=? WHERE id=?", json.dumps(data, ensure_ascii=False), rap_id)
     await db.run("UPDATE raps SET status=?, reviewer=?, reviewed=? WHERE id=?", "ok" if ok else "rej", actor["sid"], now_ms(), rap_id)
@@ -929,6 +939,35 @@ async def decide_rap(actor: dict, rap_id: int, decision: str) -> dict:
     r = await db.one("SELECT * FROM raps WHERE id=?", rap_id)
     await refresh_card("rap", r)
     return r
+
+
+async def notify_stage(r: dict, stage: str, actor: dict):
+    """Рапорт перейшов на наступну візу — пінг тих, чия черга: начальник і заступник відділу (або Голова й Заступник Голови)."""
+    data = json.loads(r["data"] or "{}")
+    if stage == "chief":
+        ids = [RANK_ROLES[13], RANK_ROLES[14]]
+        ping, users_ = " ".join(f"<@&{i}>" for i in ids), []
+        d = data.get("to")
+    else:
+        d = r["dept"] if stage == "from" else data.get("to")
+        d = "vkpp" if d == "academy" else d
+        rows = await db.all("SELECT * FROM users WHERE status='active' AND rank IN (11,12) AND discord_id IS NOT NULL")
+        users_ = [u["discord_id"] for u in rows if u["dept"] == d or has_dept_role(u, d)]
+        ids, ping = [], " ".join(f"<@{x}>" for x in users_)
+    key = f"rapdept:{d}"
+    ch = await channel(key) if (key in config.CHANNELS or key in ov.channels) else None
+    ch = ch or await channel(d) or await channel("log")
+    if not ch or not ping:
+        return
+    author = await user(r["by_sid"])
+    lines = [style.kv("РАПОРТ", f"{style.doc_no('РАП', r['id'])} · {RAP_TYPES[r['type']].replace('Рапорт ', '')}", "white", True),
+             style.kv("ВІД", f"{author['name']} · №{author['sid']}" if author else "—", "white"),
+             style.kv("НАПРЯМОК", f"{DEPTS.get(r['dept'], {}).get('s', '')} → {DEPTS.get(data.get('to'), {}).get('s', '')}", "cyan"),
+             style.kv("ПОПЕРЕДНЯ ВІЗА", f"{actor['name']} ✔", "green"), style.rule(),
+             style.c("Ваша черга погодити: ЄІС «Сова» → Рапорти → На розгляд.", "gold")]
+    await ch.send(content=f"⏩ {ping} — ваша віза", embed=style.document("РАПОРТ ЧЕКАЄ ВАШОЇ ВІЗИ", 0xC9A05A, desc=style.block(*lines)),
+                  view=style.site_view(), allowed_mentions=discord.AllowedMentions(everyone=False, users=[discord.Object(int(x)) for x in users_],
+                                                                                  roles=[discord.Object(i) for i in ids]))
 
 
 async def apply_rap(actor: dict, r: dict):
