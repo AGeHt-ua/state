@@ -280,3 +280,26 @@
 .gm-wrap:fullscreen #gm-canvas{width:min(100vw,calc(100vh * 1.3545));height:auto}
 .idcard-badges{display:flex;flex-wrap:wrap;gap:5px;padding:0 18px 12px}
 .idcard-badges span{font-size:11px;padding:2px 8px;border:1px solid rgba(201,162,77,.45);color:var(--gold2);background:rgba(201,162,77,.08)}
+
+/* протоколи затримання */
+.prot-q{flex:1;min-width:200px;max-width:420px}
+.prot-wrap{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+.prot-side{position:sticky;top:12px;display:flex;flex-direction:column;gap:12px}
+.prot-hints .note{margin:6px 0;font-size:13px}
+.prot-team{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}.prot-team .x{background:none;border:0;color:inherit;cursor:pointer;padding:0 0 0 4px}
+.prot-add{display:flex;gap:8px}.prot-add select{flex:1}
+.prot-checks{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}.prot-checks>span{width:100%}.prot-checks input.i:not(.sm){flex:1;min-width:220px}
+.prot-two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.chk{display:inline-flex;gap:6px;align-items:center;cursor:pointer;font-size:14px}
+.prot-blank{width:min(780px,100%);rotate:0deg;padding:34px 40px 30px;font-size:14.5px;overflow:hidden}
+.prot-head{display:flex;justify-content:space-between;font:700 13px/1.4 var(--mono);letter-spacing:.08em}.prot-head small{font-weight:400;letter-spacing:0}
+.prot-no{border:2px solid #2a2418;padding:4px 10px;height:fit-content}
+.prot-sub{text-align:center;font-style:italic;font-size:13px;margin:-8px 0 14px}
+.prot-t{width:100%;border-collapse:collapse}.prot-t th,.prot-t td{border:1px solid rgba(42,36,24,.35);padding:6px 9px;vertical-align:top;text-align:left}
+.prot-t th{width:30%;font-weight:700;background:rgba(42,36,24,.05)}.prot-t ol{margin:0;padding-left:18px}.prot-force{margin-top:6px;font-size:13px}
+.prot-sign{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-top:22px;flex-wrap:wrap}
+.prot-stamp{position:absolute;right:34px;top:96px;rotate:-14deg;border:3px solid #9b2a22;color:#9b2a22;font:800 20px var(--mono);letter-spacing:.2em;padding:4px 12px;opacity:.75}
+.prot-stamp.ok{border-color:#2c5f9e;color:#2c5f9e}
+.prot-blank.void .prot-t{opacity:.6}
+@media (max-width:1100px){.prot-wrap{grid-template-columns:1fr}.prot-side{position:static}}
+@media (max-width:640px){.prot-blank{padding:24px 14px}.prot-t th{width:38%}}

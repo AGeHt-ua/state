@@ -11,6 +11,7 @@ import callsigns
 import games
 import promo
 import finance
+import protocols
 import candidates
 import bonus
 import cases
@@ -214,6 +215,31 @@ async def fin_save(request):
 async def fin_act(request):
     u = await auth(request)
     return web.json_response(await finance.act(u, int(request.match_info["id"]), request.match_info["action"], await body(request)))
+
+
+@routes.get("/api/protocols")
+async def prot_list(request):
+    u = await auth(request)
+    return web.json_response({"items": await protocols.listing(u), "rights": protocols.rights(u), "people": await protocols.people(),
+                              "basis": protocols.BASIS, "force": protocols.FORCE, "decision": protocols.DECISION})
+
+
+@routes.get("/api/protocols/{id}")
+async def prot_one(request):
+    u = await auth(request)
+    return web.json_response(await protocols.get(int(request.match_info["id"]), u))
+
+
+@routes.post("/api/protocols")
+async def prot_save(request):
+    u = await auth(request)
+    return web.json_response(await protocols.save(u, await body(request)))
+
+
+@routes.post("/api/protocols/{id}/{action}")
+async def prot_act(request):
+    u = await auth(request)
+    return web.json_response(await protocols.act(u, int(request.match_info["id"]), request.match_info["action"], await body(request)))
 
 
 # ---------------------------------------------------------------- тренажер «Штурм»: рейтинг (на бали підвищення й премії не впливає)

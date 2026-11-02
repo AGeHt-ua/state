@@ -350,9 +350,9 @@ function resultView(a, review) {
 
 /* ---------- сторінка ---------- */
 async function view() {
-  const tabs = [["law", "Законодавство"], ["changes", "Зміни законодавства"], ["lib", "Бібліотека"], ["exams", "Іспити", ME().pending.exams || undefined]];
+  const tabs = [["law", "Законодавство"], ["changes", "Зміни законодавства"], ["lib", "Бібліотека"], ["exams", "Іспити", ME().pending.exams || undefined], ["prot", "Протоколи затримання"]];
   const head = `<div class="tabs">${tabs.map(([v, l, n]) => `<button class="tb ${st.tab === v ? "on" : ""}" data-a="kbtab" data-v="${v}">${l}${n ? `<span class="cnt">${n}</span>` : ""}</button>`).join("")}</div>`;
-  const body = st.tab === "changes" ? await changesView() : st.tab === "lib" ? await libView() : st.tab === "exams" ? await examsView() : await lawView();
+  const body = st.tab === "prot" ? await S.protView() : st.tab === "changes" ? await changesView() : st.tab === "lib" ? await libView() : st.tab === "exams" ? await examsView() : await lawView();
   return head + body;
 }
 S.views.kb = view;
