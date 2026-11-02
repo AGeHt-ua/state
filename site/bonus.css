@@ -44,5 +44,5 @@
 @media (max-width:860px){.bn-est{grid-template-columns:1fr}.bn-est-side{border-left:0;border-top:1px dashed var(--line2)}.bn-signs{grid-template-columns:1fr}
   .bn-t{display:block;overflow-x:auto}}
 .bn-wm{position:absolute;inset:0;display:grid;place-items:center;font:700 110px var(--mono);letter-spacing:.2em;color:rgba(142,29,23,.08);rotate:-28deg;pointer-events:none;z-index:0}
-.kd.pdf.bn-doc{width:794px;padding:36px 30px 22px}
+.kd.pdf.bn-doc{width:733px;box-sizing:border-box;padding:36px 30px 22px}
 .kd.pdf .bn-t{font-size:12px}

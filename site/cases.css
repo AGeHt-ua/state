@@ -83,8 +83,8 @@
 .kd-foot{margin-top:26px;padding-top:10px;border-top:1px solid rgba(35,28,18,.3);font:10.5px var(--mono);color:#6b6253;text-align:center;letter-spacing:.04em}
 
 /* PDF: та сама верстка поза екраном, ширина A4 */
-.pdf-host{position:fixed;left:-10000px;top:0;width:794px}
-.kd.pdf{width:794px;box-shadow:none;padding:40px 44px 24px}
+.pdf-host{position:fixed;left:-10000px;top:0;width:733px}
+.kd.pdf{width:733px;box-sizing:border-box;box-shadow:none;padding:40px 44px 24px}
 .kd.pdf .kd-grif{right:-52px}
 
 /* ---------- редактор ---------- */
@@ -104,7 +104,7 @@
   .kd-meta{grid-template-columns:110px 1fr}.kd-persons,.kf-visas{grid-template-columns:1fr 1fr}.kd-title h2{font-size:26px}
   .kf-row,.kf-ev{grid-template-columns:1fr 1fr}.kf-row .wide{grid-column:1/-1}}
 /* будь-який бланк у PDF: рівно, без тіней і поворотів, на ширину A4 */
-.pdf-host>.pdf{width:794px!important;max-width:none!important;box-shadow:none!important;rotate:0deg!important;transform:none!important;margin:0!important}
+.pdf-host>.pdf{width:733px!important;box-sizing:border-box!important;min-height:0!important;max-width:none!important;box-shadow:none!important;rotate:0deg!important;transform:none!important;margin:0!important}
 .pdf-host>.pdf.dark{background:#f3eee2!important;color:#231c12!important}
 /* службові звіти: записи журналу */
 .act-row{cursor:pointer;grid-template-columns:150px minmax(0,1fr) auto;background:linear-gradient(100deg,rgba(201,162,77,.06),transparent 40%),var(--panel)}
