@@ -32,6 +32,7 @@ ACTS = {  # id: (назва, бали, відділи або "all"/"instr", по
     "arrest":    ("Процесуальне затримання", 3, "all", True),
     "warrant":   ("Затримання за ОРД-АРЕШТ", 5, "all", True),
     "patrol":    ("Патрулювання (за 30 хв)", 1, "all", False),
+    "patrol2":   ("Посилений патруль", 3, "all", False),
     "interrog":  ("Вербальний допит з протоколом", 2, ["orv", "atc", "alpha", "vvb", "lead"], False),
     "covert":    ("Негласний захід / впровадження", 6, ["orv", "atc"], False),
     "raid":      ("Рейд або спецоперація", 6, ["orv", "atc", "alpha", "deb", "lead"], False),
