@@ -33,6 +33,7 @@ ACTS = {  # id: (назва, бали, відділи або "all"/"instr", по
     "warrant":   ("Затримання за ОРД-АРЕШТ", 5, "all", True),
     "patrol":    ("Патрулювання (за 30 хв)", 1, "all", False),
     "patrol2":   ("Посилений патруль", 3, "all", False),
+    "checkpoint": ("Блокпост", 2, "all", False),
     "interrog":  ("Вербальний допит з протоколом", 2, ["orv", "atc", "alpha", "vvb", "lead"], False),
     "covert":    ("Негласний захід / впровадження", 6, ["orv", "atc"], False),
     "raid":      ("Рейд або спецоперація", 6, ["orv", "atc", "alpha", "deb", "lead"], False),
@@ -47,6 +48,26 @@ ACTS = {  # id: (назва, бали, відділи або "all"/"instr", по
     "gov":       ("Оголошення в державну хвилю", 1, ["press"], False),
     "pr":        ("Брифінг або медіаматеріал", 3, ["press"], False),
 }
+BUILTIN_ACTS = dict(ACTS)
+# Пункти звітів, додані в адмін-панелі (налаштування «acts_custom»): {key: {n, p, d, art, off}}.
+# Вони вливаються прямо в ACTS. off=True — пункт видалено, але старі звіти з ним ще є: назва лишається, нові звіти не подаються.
+ACTS_OFF: set[str] = set()
+ACT_DEPTS = ("orv", "deb", "atc", "alpha", "vvb", "vkpp", "academy", "press", "lead")
+
+
+async def load_custom_acts():
+    custom = await db.get_setting("acts_custom", {})
+    for k in [k for k in ACTS if k not in BUILTIN_ACTS]:
+        del ACTS[k]
+    ACTS_OFF.clear()
+    for k, v in custom.items():
+        if k in BUILTIN_ACTS:
+            continue
+        ACTS[k] = (v["n"], int(v["p"]), v["d"], bool(v.get("art")))
+        if v.get("off"):
+            ACTS_OFF.add(k)
+
+
 RAP_TYPES = {"promo": "Рапорт на підвищення", "vac": "Рапорт на відпустку",
              "dismiss": "Рапорт на звільнення (ПСЖ)", "transfer": "Рапорт на переведення між відділами",
              "assign": "Рапорт про розподіл до підрозділу", "refund": "Рапорт на відшкодування коштів"}
@@ -71,6 +92,8 @@ def has_role(u: dict, role_id: int) -> bool:
 
 
 def act_allowed(u: dict, act_id: str) -> bool:
+    if act_id not in ACTS or act_id in ACTS_OFF:
+        return False
     _, _, depts, _ = ACTS[act_id]
     if u["rank"] == 1:
         return act_id in ("patrol", "lecture")

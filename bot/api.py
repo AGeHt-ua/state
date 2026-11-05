@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import secrets
 import time
 
 from aiohttp import web
@@ -1173,6 +1174,7 @@ async def start() -> web.AppRunner:
     await web.TCPSite(runner, config.API_HOST, config.API_PORT).start()
     log.info("API слухає %s:%s", config.API_HOST, config.API_PORT)
     await ov.load(db)
+    await core.load_custom_acts()
     core.ROLES_CHANGED.append(build_structure)
     asyncio.create_task(finance.reminder_loop())
     asyncio.create_task(games.weekly_loop())
@@ -1269,7 +1271,62 @@ async def admin_promo(request):
     c = await core.coef()
     return web.json_response({"cfg": await promo.cfg(), "ranks": [n for n, _, _ in RANKS],
                               "exams": await db.all("SELECT id, title, status FROM exams WHERE status!='deleted' ORDER BY id"),
-                              "acts": [{"key": k, "name": v[0], "default": v[1], "value": c[k]} for k, v in ACTS.items()]})
+                              "acts": [{"key": k, "name": v[0], "default": core.BUILTIN_ACTS[k][1] if k in core.BUILTIN_ACTS else v[1], "value": c[k],
+                                        "custom": k not in core.BUILTIN_ACTS, "d": v[2], "art": v[3]}
+                                       for k, v in ACTS.items() if k not in core.ACTS_OFF],
+                              "actDepts": [{"key": k, "s": DEPTS[k]["s"]} for k in core.ACT_DEPTS]})
+
+
+@routes.post("/api/admin/acts")
+async def admin_acts_save(request):
+    """Новий пункт звітів або зміна доданого в панелі: назва, бали, хто подає, чи потрібні статті КК."""
+    u = await admin_auth(request)
+    b = await body(request)
+    name = str(b.get("name") or "").strip()[:60]
+    if len(name) < 3:
+        raise Fail("Вкажіть назву пункту (від 3 символів).")
+    try:
+        pts = max(0, min(100, int(float(b.get("points")))))
+    except (TypeError, ValueError):
+        raise Fail("Вкажіть кількість балів.")
+    d = b.get("depts")
+    depts = d if d in ("all", "instr") else [x for x in (d or []) if x in core.ACT_DEPTS]
+    if not depts:
+        raise Fail("Оберіть, хто може подавати такий звіт.")
+    custom = await db.get_setting("acts_custom", {})
+    key = str(b.get("key") or "")
+    if key:
+        if key not in custom or custom[key].get("off"):
+            raise Fail("Змінювати тут можна лише пункти, додані в панелі.", 404)
+    else:
+        key = "c" + secrets.token_hex(3)
+        if any(v[0].lower() == name.lower() for k, v in ACTS.items() if k not in core.ACTS_OFF):
+            raise Fail("Пункт з такою назвою вже є.")
+    custom[key] = {"n": name, "p": pts, "d": depts, "art": bool(b.get("art"))}
+    await db.set_setting("acts_custom", custom)
+    await core.load_custom_acts()
+    await db.audit(u["sid"], "⚙ " + ("Змінено пункт звітів" if b.get("key") else "Додано пункт звітів"), 0, f"{name} · {pts} б.")
+    return web.json_response({"ok": True, "key": key})
+
+
+@routes.post("/api/admin/acts/{key}/delete")
+async def admin_acts_delete(request):
+    """Видалення пункту, доданого в панелі. Якщо за ним уже є звіти — пункт ховається (назва в старих звітах лишається)."""
+    u = await admin_auth(request)
+    key = request.match_info["key"]
+    custom = await db.get_setting("acts_custom", {})
+    if key not in custom or custom[key].get("off"):
+        raise Fail("Видаляти можна лише пункти, додані в панелі.", 404)
+    name = custom[key]["n"]
+    used = await db.one("SELECT COUNT(*) AS n FROM acts WHERE type=?", key)
+    if used and used["n"]:
+        custom[key]["off"] = True
+    else:
+        del custom[key]
+    await db.set_setting("acts_custom", custom)
+    await core.load_custom_acts()
+    await db.audit(u["sid"], "⚙ Видалено пункт звітів", 0, name)
+    return web.json_response({"ok": True})
 
 
 @routes.post("/api/admin/promo")
@@ -1278,7 +1335,7 @@ async def admin_promo_save(request):
     b = await body(request)
     await promo.save(u, b.get("cfg") or {})
     if isinstance(b.get("acts"), dict):  # вартість звітів у балах
-        clean = {k: max(0, min(100, int(float(v)))) for k, v in b["acts"].items() if k in ACTS and str(v).strip() != ""}
+        clean = {k: max(0, min(100, int(float(v)))) for k, v in b["acts"].items() if k in core.BUILTIN_ACTS and str(v).strip() != ""}
         await db.set_setting("coef", {k: v for k, v in clean.items() if v != ACTS[k][1]})
     return web.json_response({"ok": True})
 

@@ -62,8 +62,34 @@ function promoView(p) {
       <td><select class="i" name="exam-${r}"><option value="">— без іспиту —</option>${p.exams.map((e) => `<option value="${e.id}" ${c.exam === e.id ? "selected" : ""}>${esc(e.title)}${e.status !== "published" ? " (чернетка)" : ""}</option>`).join("")}</select></td>
       <td><select class="i" name="mode-${r}"><option value="rap" ${c.mode === "rap" ? "selected" : ""}>рапорт за балами</option><option value="order" ${c.mode === "order" ? "selected" : ""}>лише наказом</option></select></td></tr>`).join("")}</tbody></table></div>
     <h4 class="adm-sub">Вартість звітів у балах</h4>
-    <div class="adm-ranks">${p.acts.map((a) => `<label><span>${esc(a.name)} <i class="muted">· стандарт ${a.default}</i></span><input class="i mono" type="number" min="0" max="100" name="act-${a.key}" value="${a.value}"></label>`).join("")}</div>
-    <div class="acts"><button class="btn gold" type="submit">Зберегти систему підвищення</button></div></form>`;
+    <div class="adm-ranks">${p.acts.filter((a) => !a.custom).map((a) => `<label><span>${esc(a.name)} <i class="muted">· стандарт ${a.default}</i></span><input class="i mono" type="number" min="0" max="100" name="act-${a.key}" value="${a.value}"></label>`).join("")}</div>
+    <div class="acts"><button class="btn gold" type="submit">Зберегти систему підвищення</button></div></form>
+  ${actsCard(p)}`;
+}
+
+// Пункти звітів, додані в панелі: назва, бали, хто подає, чи потрібні статті КК
+function actForm(p, a) {
+  const d = a ? a.d : "all", list = Array.isArray(d) ? d : [];
+  const k = a ? a.key : "new";
+  return `<form class="adm-act" data-f="admact" data-key="${a ? esc(a.key) : ""}">
+    <input class="i" name="name" maxlength="60" placeholder="Назва пункту, напр. Блокпост" value="${a ? esc(a.name) : ""}">
+    <input class="i mono" name="points" type="number" min="0" max="100" placeholder="Бали" value="${a ? a.value : ""}" title="Бали за один звіт">
+    <select class="i" name="scope"><option value="all" ${d === "all" ? "selected" : ""}>Усі відділи</option><option value="instr" ${d === "instr" ? "selected" : ""}>Інструктори (ВКПП, 8 і 11+ звання)</option><option value="list" ${list.length ? "selected" : ""}>Лише обрані відділи…</option></select>
+    <div class="adm-checks" ${list.length ? "" : "hidden"}>${p.actDepts.map((x) => `<label><input type="checkbox" name="dept-${k}" value="${x.key}" ${list.includes(x.key) ? "checked" : ""}> ${esc(x.s)}</label>`).join("")}</div>
+    <label class="adm-art"><input type="checkbox" name="art" ${a && a.art ? "checked" : ""}> потрібні статті КК</label>
+    <div class="acts">${a ? `<button class="btn sm gold" type="submit">Зберегти</button><button class="btn sm bad" type="button" data-a="admactdel" data-key="${esc(a.key)}" data-name="${esc(a.name)}">🗑 Видалити</button>` : '<button class="btn sm gold" type="submit">+ Додати пункт</button>'}</div>
+  </form>`;
+}
+function actsCard(p) {
+  const mine = p.acts.filter((a) => a.custom);
+  return `<div class="card"><header><h3>Пункти звітів</h3></header>
+    <p class="note">Тут можна додати новий вид службового звіту: він одразу з'явиться у формі звіту в тих, кому дозволено. Стандартні пункти (вище) змінюються лише за балами.
+      Видалений пункт зникає з форми; якщо за ним уже є звіти, вони й нараховані бали лишаються.</p>
+    ${mine.length ? mine.map((a) => actForm(p, a)).join("") : '<p class="muted small">Доданих пунктів ще немає.</p>'}
+    <h4 class="adm-sub">Новий пункт</h4>${actForm(p, null)}
+    <style>.adm-act{display:grid;grid-template-columns:2fr 90px 1.4fr auto auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+      .adm-act .adm-checks{grid-column:1/-1}.adm-art{display:flex;gap:6px;align-items:center;font-size:13px;white-space:nowrap}.adm-act .acts{margin:0}
+      @media (max-width:760px){.adm-act{grid-template-columns:1fr 90px}.adm-act select,.adm-act .adm-art,.adm-act .acts{grid-column:1/-1}}</style></div>`;
 }
 
 function permsView(d) {
@@ -162,6 +188,10 @@ Object.assign(S.actions, {
     toast(`Перейменування запущено: ${r.total} співробітників, ~${Math.ceil(r.total * 1.2 / 60)} хв`);
   }),
   admnickdef: (b) => run(b, async () => { if (!confirm("Повернути стандартний формат нікнеймів?")) return; await call("/api/admin/nick", { json: {} }); toast("Формат стандартний"); S.render(); }),
+  admactdel: (b) => run(b, async () => {
+    if (!confirm(`Видалити пункт звітів «${b.dataset.name}»? Він зникне з форми звіту. Уже подані звіти й бали лишаться.`)) return;
+    await call(`/api/admin/acts/${encodeURIComponent(b.dataset.key)}/delete`, { json: {} }); toast("Пункт видалено"); await reloadMeta(); S.render();
+  }),
   admmdef: (b) => run(b, async () => { await call("/api/admin/mentions", { json: { [b.dataset.k]: null } }); toast("Повернено стандартні згадки"); S.render(); }),
 });
 const formData = (f) => Object.fromEntries([...f.querySelectorAll("[name]")].map((el) => [el.name, el.value]));
@@ -178,7 +208,18 @@ S.forms.admpromo = (f) => run(f.querySelector("[type=submit]"), async () => {
   const acts = Object.fromEntries(st.promo.acts.map((a) => [a.key, v(`act-${a.key}`)]));
   await call("/api/admin/promo", { json: { cfg, acts } }); toast("Систему підвищення збережено"); await S.refreshMe(); S.render();
 });
-S.forms.admchan = (f) => run(f.querySelector("[type=submit]"), async () => { await call("/api/admin/channels", { json: formData(f) }); toast("Канали збережено"); S.render(); });
+// після зміни пунктів звітів — свіжий довідник (назви й бали у формі звіту)
+const reloadMeta = async () => { if (S.reloadMeta) await S.reloadMeta(); await S.refreshMe(); };
+document.addEventListener("change", (e) => {  // «Лише обрані відділи…» — показати галочки відділів
+  if (e.target.matches(".adm-act [name=scope]")) e.target.closest(".adm-act").querySelector(".adm-checks").hidden = e.target.value !== "list";
+});
+S.forms.admact = (f) => run(f.querySelector("[type=submit]"), async () => {
+  const scope = f.querySelector("[name=scope]").value;
+  const body = { key: f.dataset.key || undefined, name: f.querySelector("[name=name]").value.trim(), points: f.querySelector("[name=points]").value,
+    depts: scope === "list" ? [...f.querySelectorAll(".adm-checks input:checked")].map((x) => x.value) : scope, art: f.querySelector("[name=art]").checked };
+  await call("/api/admin/acts", { json: body }); toast(f.dataset.key ? "Пункт збережено" : "Пункт додано у форму звітів"); await reloadMeta(); S.render();
+});
+S.forms.admchan =(f) => run(f.querySelector("[type=submit]"), async () => { await call("/api/admin/channels", { json: formData(f) }); toast("Канали збережено"); S.render(); });
 // лише змінені поля: решта лишаються стандартними
 const changed = (f) => Object.fromEntries([...f.querySelectorAll("[name]")].filter((el) => el.value !== el.defaultValue).map((el) => [el.name, el.value]));
 S.forms.admment = (f) => run(f.querySelector("[type=submit]"), async () => { await call("/api/admin/mentions", { json: changed(f) }); toast("Згадки збережено"); S.render(); });

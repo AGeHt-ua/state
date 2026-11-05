@@ -891,7 +891,7 @@ document.addEventListener("change", (e) => {
 
 // Спільні хелпери для модулів (cases.js)
 window.SOVA = { esc, fmtDT, call, toast, $, uploadFiles, render, refreshMe, views: VIEWS, actions: A, forms: F, onNav: HOOKS, cache: {},
-  ME: () => ME, META: () => META };
+  ME: () => ME, META: () => META, reloadMeta: async () => { META = await call("/api/meta"); } };
 
 if (TOKEN) boot(); else render();
 })();

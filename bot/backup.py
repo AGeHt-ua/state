@@ -81,4 +81,6 @@ async def restore(data: bytes, filename: str) -> str:
             p.unlink()
     os.replace(tmp, config.DB_PATH)
     await db.open()
+    import core  # пункти звітів з адмін-панелі зберігаються в базі — перечитати з відновленої
+    await core.load_custom_acts()
     return name
