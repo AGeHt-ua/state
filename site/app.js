@@ -269,7 +269,7 @@ async function vHome() {
       <div class="idcard-ver" id="idver"><span class="iv-st">⟳ Звіряю з Discord…</span></div>
     </div>
     <div class="hero-stats">
-      ${ring(ME.points, goal, "балів за тиждень")}
+      ${ring(ME.points, goal, "підтверджених балів за цей тиждень")}
       <div class="mini"><span>Минулий тиждень</span><b class="num">${ME.pointsPrev}</b></div>
       <div class="mini"><span>Звітів на перевірці</span><b class="num">${wait}</b></div>
       <div class="mini"><span>Підтверджено за весь час</span><b class="num">${okN}</b></div>
@@ -281,7 +281,7 @@ async function vHome() {
   <div class="grid2">
     <div class="card"><header><h3>Наступне звання</h3>${pc ? `<span class="sp chip ${pc.eligible ? "ok" : "wait"}">${pc.eligible ? "Можна подати рапорт" : "Умови ще не виконано"}</span>` : ""}</header>
       ${pc ? `<div class="promo"><span class="from">${esc(me.rankName)}</span><i></i><span class="to">${esc(pc.name)}</span></div>
-        ${pc.need !== undefined ? `<div class="promo-pts"><b class="num">${pc.points}</b><span>/ ${pc.need} балів на званні</span>${pc.points > pc.need ? `<em>+${pc.points - pc.need} перейде далі</em>` : ""}</div>` : ""}
+        ${pc.need !== undefined ? `<div class="promo-pts"><b class="num">${pc.points}</b><span>/ ${pc.need} балів на званні (для підвищення)</span>${pc.points > pc.need ? `<em>+${pc.points - pc.need} перейде далі</em>` : ""}</div>` : ""}
         ${(pc.items.find((i) => i.pct !== undefined)) ? `<div class="bar ${pc.items.find((i) => i.pct !== undefined).ok ? "ok" : ""}"><i style="width:${Math.round(pc.items.find((i) => i.pct !== undefined).pct * 100)}%"></i></div>` : ""}
         <ul class="checklist">${pc.items.map((i) => `<li class="${i.ok ? "" : i.soft ? "soft" : "no"}">${esc(i.t)}</li>`).join("")}</ul>
         <div><button class="btn ${pc.eligible ? "gold" : ""}" data-a="go" data-v="rap" data-tab="new" ${pc.eligible ? "" : "disabled"}>Подати рапорт на підвищення</button></div>`
@@ -881,6 +881,7 @@ addEventListener("keydown", (e) => { if (e.key === "Escape" && UI.file) closeFil
 async function boot() {
   try {
     [META, ME] = await Promise.all([META || call("/api/meta"), call("/api/me")]);
+    meAt = Date.now();
     if (window.SOVA.loadTags) await window.SOVA.loadTags();
   } catch (e) {
     if (!TOKEN) return render();
@@ -906,6 +907,8 @@ async function render(err) {
     return;
   }
   if (!NAV.find((n) => n[0] === UI.view && navOk(n))) UI.view = (NAV.find(navOk) || ["home"])[0];
+  if (Date.now() - meAt > ME_FRESH) await refreshMe();
+  if (!TOKEN || !ME) return render();
   $("#app").innerHTML = viewShell(loading);
   const view = UI.view;
   try {
@@ -918,9 +921,19 @@ async function render(err) {
   if (UI.view === view) syncUrl();
 }
 
+let meAt = 0;  // коли востаннє оновлювали дані співробітника (бали, баланс для підвищення, лічильники в меню)
+const ME_FRESH = 30_000;
 async function refreshMe() {
-  try { ME = await call("/api/me"); } catch (e) {}
+  try { ME = await call("/api/me"); meAt = Date.now(); } catch (e) {}
 }
+// Повернення у вкладку чи застосунок: свіжі бали (напр., поки людини не було, начальник підтвердив звіт).
+// Форму, яку людина заповнює, не чіпаємо; прокрутка лишається на місці.
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible" || !TOKEN || !ME || DIRTY || Date.now() - meAt < ME_FRESH) return;
+  const y = scrollY;
+  await render();
+  scrollTo(0, y);
+});
 
 // номер документа → його адреса на сайті
 const DOC_PATHS = { "ЗВТ": "act/{}", "РАП": "rap/{}", "КФ": "cases/{}", "ПЗ": "kb/prot/{}", "КЛ": "fin/{}", "ЗВК": "fin/{}", "ВП": "bonus/{}",
