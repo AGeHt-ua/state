@@ -137,7 +137,7 @@ const IC = {
 const ico = (k) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${IC[k] || IC.soon}</svg>`;
 const NAV = [
   ["home", "Головна", () => true],
-  ["act", "Моя активність", () => true],
+  ["act", "Звіти", () => true],
   ["rap", "Рапорти", () => true],
   ["staff", "Особовий склад", () => true],
   ["kb", "База даних", () => true],
