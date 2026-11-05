@@ -7,6 +7,7 @@ import logging
 
 import discord
 
+import config
 import core
 import overrides as ov
 import style
@@ -251,32 +252,70 @@ async def _drop_archive(c: dict):
     await db.run("UPDATE cases SET arch_ch=NULL, arch_msg=NULL WHERE id=?", c["id"])
 
 
-async def _links_txt(c: dict, approver: dict | None) -> str:
-    d = c["data"]
-    out = [f"КЕЙС-ФАЙЛ КФ-{c['id']:04d} · операція «{d.get('title', '')}»",
-           f"Підрозділ: {DEPTS[c['dept']]['n']}",
-           f"Гриф: {GRIF[d.get('grif', 'secret')]}"]
-    if approver:
-        out.append(f"Затверджено Генеральним прокурором: {approver['name']} · {style.when(approver['t'])}")
-    out += ["", "ПОСИЛАННЯ НА ДОКАЗИ", "=" * 40]
-    for i, e in enumerate(d.get("evidence") or [], 1):
-        rows = []
-        if e.get("url"):
-            rows.append(f"   Матеріал: {e['url']}")
-        for j, fid in enumerate(e.get("files") or [], 1):
-            row = await db.one("SELECT * FROM files WHERE id=?", fid)
-            if row:
-                rows.append(f"   Додаток {j} ({row['filename']}): https://discord.com/channels/{core.guild().id if core.guild() else '@me'}/{row['ch_id']}/{row['msg_id']}")
-        out.append(f"{i}. {e.get('desc') or 'без опису'}")
-        out += rows or ["   (посилань немає)"]
-    if not d.get("evidence"):
-        out.append("Доказів не додано.")
-    out += ["", f"Сформовано ЄІС «Сова» · {style.when()}"]
-    return "\n".join(out) + "\n"
+def _md(s: str) -> str:
+    """Текст користувача без розмітки Discord (щоб не ламав посилання й жирний шрифт)."""
+    return discord.utils.escape_markdown(str(s or "")).replace("[", "(").replace("]", ")")
+
+
+async def _evidence_links(e: dict) -> str:
+    """Клікабельні посилання доказу: матеріал (відкат) і додатки зі сховища «Сови»."""
+    out = []
+    url = (e.get("url") or "").strip()
+    if url.startswith(("http://", "https://")):
+        host = url.split("/")[2].removeprefix("www.")[:40]
+        out.append(f"[▶ Матеріал · {host}]({url})")
+    elif url:
+        out.append(_md(url)[:200])
+    g = core.guild()
+    for j, fid in enumerate(e.get("files") or [], 1):
+        row = await db.one("SELECT * FROM files WHERE id=?", fid)
+        if row and g:
+            out.append(f"[📎 Додаток {j}](https://discord.com/channels/{g.id}/{row['ch_id']}/{row['msg_id']})")
+    return " · ".join(out) or "*посилань немає*"
+
+
+async def _archive_embed(c: dict, u: dict, approver: dict | None) -> discord.Embed:
+    d, dp = c["data"], DEPTS[c["dept"]]
+    author = await db.one("SELECT name FROM users WHERE sid=?", c["author"])
+    arts = ", ".join(f"ст. {_md(a)}" for a in d.get("arts") or []) or "—"
+    desc = [f"### Операція «{_md(d.get('title', ''))}»"]
+    if d.get("org"):
+        desc.append(f"Об'єкт розробки: **{_md(d['org'])}**")
+    desc += ["",
+             f"🔒 **{GRIF[d.get('grif', 'secret')]}**",
+             f"🏢 **Підрозділ:** {dp['n']}",
+             f"🕵️ **Виконавець:** {_md(author['name']) if author else '—'} · №{c['author']}",
+             f"⚖️ **Кваліфікація:** {arts} КК штату NG",
+             f"📨 **Клопотання:** {REQUESTS.get((d.get('request') or {}).get('type'), '—')}",
+             "",
+             f"✅ **ЗАТВЕРДЖЕНО** Генеральним прокурором" + (f" **{_md(approver['name'])}** · {style.when(approver['t'])}" if approver else "")]
+    e = discord.Embed(title=f"📁 КЕЙС-ФАЙЛ КФ-{c['id']:04d}", url=config.SITE_URL, description="\n".join(desc), color=dp["color"])
+    e.set_author(name=style.AUTHOR, icon_url=style.LOGO, url=config.SITE_URL)
+    e.set_thumbnail(url=style.LOGO)
+    persons = d.get("persons") or []
+    if persons:
+        e.add_field(name=f"👥 Фігуранти · {len(persons)}", inline=False, value="\n".join(
+            f"`{i}` **{_md(p['name'])}**" + (f" · {_md(p['sid'])}" if p.get("sid") else "") + f" — {p.get('role', '')}"
+            for i, p in enumerate(persons[:12], 1))[:990] + (f"\n…ще {len(persons) - 12}" if len(persons) > 12 else ""))
+    ev = d.get("evidence") or []
+    size = len(e.description) + sum(len(f.name) + len(f.value) for f in e.fields)
+    for i, x in enumerate(ev, 1):
+        name = f"🧾 Доказ {i} · {_md(x.get('desc') or 'без опису')}"[:250]
+        value = (await _evidence_links(x))[:1024]
+        if len(e.fields) >= 23 or size + len(name) + len(value) > 5600:
+            e.add_field(name="…", value=f"Ще доказів: {len(ev) - i + 1}. Повний перелік — у PDF та в ЄІС «Сова».", inline=False)
+            break
+        e.add_field(name=name, value=value, inline=False)
+        size += len(name) + len(value)
+    if not ev:
+        e.add_field(name="🧾 Докази", value="*не додано*", inline=False)
+    e.set_footer(text=f"Відправив {u['name']} · №{u['sid']} · бланк справи — у PDF нижче", icon_url=style.LOGO)
+    e.timestamp = discord.utils.utcnow()
+    return e
 
 
 async def archive(u: dict, cid: int, pdf: bytes) -> dict:
-    """Затверджений кейс-файл → архівний канал Discord: PDF бланка (формує сайт) + .txt з усіма посиланнями.
+    """Затверджений кейс-файл → архівний канал Discord: embed з клікабельними посиланнями на докази + PDF бланка (формує сайт).
     Генпрокурор надсилає автоматично одразу після затвердження; Голова чи заступник — кнопкою (зокрема повторно)."""
     c = await get(cid)
     if c["status"] != "approved":
@@ -290,18 +329,9 @@ async def archive(u: dict, cid: int, pdf: bytes) -> dict:
         raise Fail("Архівний канал кейс-файлів недоступний боту.", 503)
     approver = next((h for h in reversed(c["history"]) if h["stage"] == "prosecutor" and h["action"] == "ok"), None)
     name = f"КФ-{c['id']:04d}_" + "".join(ch_ if ch_.isalnum() else "_" for ch_ in c["data"].get("title", ""))[:60]
-    txt = await _links_txt(c, approver)
-    lines = [style.kv("СПРАВА", f"КФ-{c['id']:04d} · «{c['data'].get('title', '')}»", "white", True),
-             style.kv("ПІДРОЗДІЛ", DEPTS[c["dept"]]["s"], "white"),
-             style.kv("ГРИФ", GRIF[c["data"].get("grif", "secret")], "red", True),
-             style.kv("ЗАТВЕРДИВ", f"{approver['name']} · Генпрокурор" if approver else "—", "green", True),
-             style.kv("ДАТА", style.when(c.get("approved")), "gray"),
-             style.kv("ВІДПРАВИВ", f"{u['name']} · №{u['sid']}", "white")]
-    e = style.document("КЕЙС-ФАЙЛ · ЗАТВЕРДЖЕНО", 0x5FB37A, desc=style.block(*lines), no=f"КФ-{c['id']:04d}",
-                       footer="PDF — бланк справи · TXT — посилання на докази")
+    e = await _archive_embed(c, u, approver)
     await _drop_archive(c)
-    msg = await ch.send(embed=e, files=[discord.File(io.BytesIO(pdf), filename=name + ".pdf"),
-                                        discord.File(io.BytesIO(txt.encode("utf-8")), filename=name + "_посилання.txt")],
+    msg = await ch.send(embed=e, file=discord.File(io.BytesIO(pdf), filename=name + ".pdf"),
                         allowed_mentions=discord.AllowedMentions.none())
     h = await _hist(c, u, "archive")
     await db.run("UPDATE cases SET arch_ch=?, arch_msg=?, history=? WHERE id=?", str(ch.id), str(msg.id), json.dumps(h, ensure_ascii=False), cid)
