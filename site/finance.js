@@ -104,7 +104,8 @@ function editView() {
     <label class="f wide"><span>Файли: чеки, перекази, скріни (до 5)</span><input class="i" id="fin-files" type="file" multiple accept="image/*,application/pdf,video/mp4"></label>`;
   return `<div class="kd-bar"><button class="btn" data-a="finback">← До реєстру</button><span class="sp"></span>
       <button class="btn" data-a="finsave">💾 Зберегти чернетку</button><button class="btn gold" data-a="finsave" data-submit="1">Зберегти й подати на погодження</button></div>
-    <div class="grid2 rap-wrap"><form class="card form-grid" onsubmit="return false"><header class="wide"><h3>${e.kind === "petition" ? "Клопотання про цільове фінансування" : "Звіт про використання коштів"}</h3></header>${form}</form>
+    <div class="grid2 rap-wrap"><form class="card form-grid" onsubmit="return false"><header class="wide"><h3>${e.kind === "petition" ? "Клопотання про цільове фінансування" : "Звіт про використання коштів"}</h3></header>${form}
+      <div class="f wide">${S.tagSelect('id="fin-tag"', st.tag || "")}</div></form>
       <div id="fin-prev">${blank({ ...e, data: x }, author)}</div></div>`;
 }
 
@@ -146,6 +147,11 @@ document.addEventListener("input", (e) => { if (st.edit && (e.target.dataset.fx 
 
 const run = async (b, fn) => { if (b) b.disabled = true; try { await fn(); } catch (e) { toast(e.message, 1); } if (b) b.disabled = false; };
 const docName = () => `${st.doc.no}_${st.doc.kind === "petition" ? "Клопотання_Мінфін" : "Звіт_Мінфін"}`;
+// аркуш А4 клопотання / звіту (PDF і картинка в картці Discord)
+const finA4 = (d) => S.a4(blank(d), d.no || "", { bare: true });
+async function finImage(id) {
+  try { const d = await call(`/api/fin/${id}`); await S.docImage("fin", id, finA4(d)); } catch (e) { console.warn(e); }
+}
 Object.assign(S.actions, {
   finnew: () => { st.edit = { kind: "petition", data: { purpose: "arms", why: "", items: [{ name: "", sum: 0 }], account: "Казна Служби безпеки штату NG" } }; S.render(); },
   finopen: (b) => { st.id = +b.dataset.id; st.edit = null; S.render(); scrollTo(0, 0); },
@@ -156,10 +162,11 @@ Object.assign(S.actions, {
   findel: (b) => { read(); st.edit.data.items.splice(+b.dataset.n, 1); S.render(); },
   finsave: (b) => run(b, async () => {
     read();
+    st.tag = (document.getElementById("fin-tag") || {}).value || "";
     const e = st.edit, f = document.getElementById("fin-files");
     if (f && f.files.length) e.data.files = [...(e.data.files || []), ...(await S.uploadFiles(f))].slice(0, 10);
     const d = await call("/api/fin", { json: { id: e.id, kind: e.kind, parent: e.parent, data: e.data } });
-    if (b.dataset.submit) await call(`/api/fin/${d.id}/submit`, { json: {} });
+    if (b.dataset.submit) { await call(`/api/fin/${d.id}/submit`, { json: { tag: st.tag } }); await finImage(d.id); }
     toast(b.dataset.submit ? "Подано на погодження Голові СБУ" : "Чернетку збережено");
     st.edit = null; st.id = d.id; await S.refreshMe(); S.render();
   }),
@@ -170,12 +177,14 @@ Object.assign(S.actions, {
     if (x === "funded") { const a = prompt("Скільки коштів перераховано на казну СБУ, $:", String(st.doc.total)); if (!a) return; body.amount = a; }
     if (x === "ok" && !confirm("Погодити документ? Після цього його можна подавати на форум Мінфіну.")) return;
     if (x === "delete" && !confirm("Видалити документ?")) return;
+    if (x === "submit") body.tag = st.tag || "";
     const r = await call(`/api/fin/${st.doc.id}/${x}`, { json: body });
+    if (!["delete", "withdraw"].includes(x)) await finImage(st.doc.id);
     toast({ submit: "Подано на погодження", withdraw: "Відкликано", ok: "Погоджено", return: "Повернуто", rej: "Відмовлено", posted: "Позначено як подане на форум", funded: "Кошти отримано — звіт протягом 72 годин", denied: "Позначено відмову Мінфіну", delete: "Видалено" }[x]);
     if (x === "delete") st.id = null;
     await S.refreshMe(); S.render();
   }),
-  finpdf: (b) => S.pdfBtn(b, blank(st.doc), docName()),
+  finpdf: (b) => S.pdfA4(b, finA4(st.doc), docName()),
   finpng: (b) => S.pngBtn(b, blank(st.doc), docName()),
   fincopy: async () => { try { await navigator.clipboard.writeText(forumText(st.doc)); toast("Текст скопійовано — вставте відповіддю в темі Мінфіну"); } catch (e) { prompt("Скопіюйте текст:", forumText(st.doc)); } },
 });

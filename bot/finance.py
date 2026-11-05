@@ -8,6 +8,7 @@ import logging
 import discord
 
 import core
+import docpost
 import overrides as ov
 import style
 from core import Fail
@@ -138,7 +139,7 @@ async def act(u: dict, did: int, action: str, b: dict) -> dict:
         if d["kind"] == "report" and (len(x.get("done", "")) < 10 or not (x.get("evidence") or x.get("files"))):
             raise Fail("Опишіть, що закуплено, і додайте докази цільового використання.")
         d = await _set(d, u, "wait", "submit")
-        await journal(d, u, "Подано на погодження Голові СБУ", mention=True)
+        await journal(d, u, "Подано на погодження Голові СБУ", mention=True, tag=b.get("tag"))
     elif action == "withdraw":
         if not can_prepare(u) or d["status"] != "wait":
             raise Fail("Відкликати можна документ на погодженні.", 403)
@@ -181,6 +182,7 @@ async def act(u: dict, did: int, action: str, b: dict) -> dict:
         if not (can_approve(u) or (d["author"] == u["sid"] and d["status"] in ("draft", "rejected"))):
             raise Fail("Видалити може автор (чернетку) або Голова чи Заступник.", 403)
         await db.run("UPDATE fin_docs SET status='deleted', updated=? WHERE id=?", now_ms(), d["id"])
+        await docpost.remove("fin", d["id"])  # видалено — прибрати і з Discord
         return {"ok": True}
     else:
         raise Fail("Невідома дія.")
@@ -198,21 +200,27 @@ async def pending(u: dict) -> int:
     return n
 
 
-async def journal(d: dict, u: dict, label: str, mention: bool = False):
-    ch = await core.channel("fin") or await core.channel("deb")
-    if not ch:
-        return
+FIN_STATE = {"draft": ("📝 ПОВЕРНУТО НА ДООПРАЦЮВАННЯ", 0xD9A23D), "wait": ("🕓 НА ПОГОДЖЕННІ ГОЛОВИ СБУ", 0xD9A23D),
+             "approved": ("✅ ПОГОДЖЕНО · МОЖНА ПОДАВАТИ НА ФОРУМ", 0x5FB37A), "rejected": ("⛔ ВІДМОВЛЕНО", 0xD4605A),
+             "posted": ("📨 ПОДАНО НА ФОРУМ МІНФІНУ", 0x6F9FD6), "funded": ("💰 МІНФІН СХВАЛИВ", 0x5FB37A), "denied": ("⛔ МІНФІН ВІДМОВИВ", 0xD4605A)}
+
+
+async def journal(d: dict, u: dict, label: str, mention: bool = False, tag: str | None = None):
+    """Клопотання чи звіт Мінфіну — одне повідомлення: при поданні — картка з аркушем А4 і тегами (автор, Голова й заступник,
+    обрана роль/відділ), далі кожне рішення оновлює картку з короткою відповіддю."""
     money = lambda v: f"${v:,}".replace(",", " ")
-    lines = [style.kv("ДОКУМЕНТ", f"{d['no']} · {'клопотання про фінансування' if d['kind'] == 'petition' else 'звіт про використання коштів'}", "white", True),
-             style.kv("СУМА", money(d["total"]), "gold", True),
-             style.kv("ПІДГОТУВАВ", (d.get("authorUser") or {}).get("name", "—"), "white"), style.rule(),
-             style.kv("ДІЯ", label[:60], "green" if label.startswith(("ПОГОДЖЕНО", "Мінфін схвалив")) else "red" if label.startswith(("Відмовлено", "Мінфін відмовив")) else "cyan", True),
-             style.kv("ХТО", f"{u['name']} · {rank_name(u['rank'])}", "white"), style.kv("ДАТА", style.when(), "gray")]
-    e = style.document("ФІНАНСУВАННЯ · МІНФІН ШТАТУ NG", 0x5FB37A, desc=style.block(*lines), footer="Зміст документа — у ЄІС «Сова» · розділ «Клопотання»")
-    try:
-        await ch.send(embed=e, **core.mention("fin:wait" if mention else None))
-    except discord.HTTPException as ex:
-        log.warning("Журнал фінансування: %s", ex)
+    state, color = FIN_STATE.get(d["status"], ("📄 " + label.upper()[:60], 0xC9A05A))
+    desc = [f"### {state}",
+            f"📄 {'Клопотання про виділення цільових коштів' if d['kind'] == 'petition' else 'Звіт про цільове використання коштів'}",
+            f"💵 Сума: **{money(d['total'])}**" + (f" · отримано {money(d['funded_amount'])}" if d.get("funded_amount") else ""),
+            f"✍️ Підготував: {(d.get('authorUser') or {}).get('name', '—')}"]
+    if d.get("forum_url"):
+        desc.append(f"🔗 [Тема на форумі Мінфіну]({d['forum_url']})")
+    e = style.document(f"ФІНАНСУВАННЯ {d['no']} · МІНФІН ШТАТУ NG", color, desc="\n".join(desc),
+                       footer=f"Остання дія: {label[:80]} · {u['name']} · {style.when()}")
+    await docpost.journal("fin", d["id"], await core.channel("fin") or await core.channel("deb"), e,
+                          users=await docpost.people(d["author"]), tag=tag, roles=docpost.key_roles("fin:wait" if mention else None),
+                          ping=None if mention else f"🔔 {d['no']}: {label[:150]}", ping_roles=docpost.key_roles("fin:wait") if mention else None)
 
 
 async def reminder_loop():

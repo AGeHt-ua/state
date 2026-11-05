@@ -310,6 +310,12 @@ function actDoc(a) {
     <div class="act-stamp ${sc}">${sw}</div>
     <footer class="kd-foot">ЄІС «Сова» · ${docNo("ЗВТ", a.id)} · Для службового користування</footer></div>`;
 }
+// аркуші А4 (PDF і картинка в картці Discord)
+const actA4 = (a) => window.SOVA.a4(actDoc(a), docNo("ЗВТ", a.id), { bare: true });
+const rapA4 = (r) => window.SOVA.a4(rapDoc(r), docNo("РАП", r.id), { date: fmtDT(r.t), sub: (META.rapTypes[r.type] || "Рапорт") });
+async function actImage(id) { try { const a = await call(`/api/acts/${id}`); await window.SOVA.docImage("act", id, actA4(a)); } catch (e) { console.warn(e); } }
+async function rapImage(id) { try { const r = await call(`/api/raps/${id}`); await window.SOVA.docImage("rap", id, rapA4(r)); } catch (e) { console.warn(e); } }
+
 function actFeed(list, review) {
   window.SOVA.cache.acts = { ...(window.SOVA.cache.acts || {}), ...Object.fromEntries(list.map((a) => [a.id, a])) };
   return `<div class="docs">${list.map((a) => {
@@ -368,6 +374,7 @@ async function vAct() {
         <label class="f"><span>Доказ: посилання на відкат</span><input class="i" id="a-ev" placeholder="https://..."></label>
         <label class="f wide"><span>Скріни (до 5 файлів, зберігаються в Discord)</span><input class="i" id="a-files" type="file" accept="image/*,video/mp4,application/pdf" multiple></label>
         <label class="f wide"><span>Обставини</span><textarea class="i" id="a-note" placeholder="Що сталося, хто був у наряді"></textarea></label>
+        ${window.SOVA.tagSelect('id="a-tag"', "")}
         <div class="wide paper-sign"><span class="muted small">Звіт піде на перевірку керівнику; запис з'явиться в журналі відділу в Discord. Бали — після підтвердження.</span>
           <button class="btn gold" type="submit" id="a-btn">Надіслати на перевірку</button></div>
       </form></div>`;
@@ -420,11 +427,17 @@ async function vRapView(id) {
   const a = r.by || { name: "—", rankName: "", sid: "" }, d = META.depts[r.dept] || {};
   const [sw, sc] = RAP_STAMP[r.status] || ["", ""];
   const bar = `<div class="kd-bar"><button class="btn" data-a="rapback">← До рапортів</button><span class="sp"></span>
-    <button class="btn" data-a="pdfel" data-sel=".rap-doc" data-name="${docNo("РАП", r.id)}_${esc(META.rapTypes[r.type] || "")}">⬇ PDF</button>
+    <button class="btn" data-a="rappdf">⬇ PDF</button>
     ${r.canDecide ? `<button class="btn ok" data-a="rapd" data-id="${r.id}" data-d="ok">Погодити</button><button class="btn bad" data-a="rapd" data-id="${r.id}" data-d="rej">Відмовити</button>` : ""}
     ${r.mine && r.status === "wait" ? `<button class="btn" data-a="wd" data-k="raps" data-id="${r.id}">↩ Відкликати</button>` : ""}
     ${r.mine && ["wait", "rej", "cancel"].includes(r.status) ? `<button class="btn bad" data-a="del" data-url="/api/raps/${r.id}/delete" data-q="Видалити рапорт?">🗑 Видалити</button>` : ""}</div>`;
-  return bar + `<div class="rap-view"><div class="blank rap-doc">
+  window.SOVA.cache.rap = r;
+  return bar + `<div class="rap-view">${rapDoc(r)}</div>`;
+}
+function rapDoc(r) {
+  const a = r.by || { name: "—", rankName: "", sid: "" }, d = META.depts[r.dept] || {};
+  const [sw, sc] = RAP_STAMP[r.status] || ["", ""];
+  return `<div class="blank rap-doc">
       <div class="rap-no">${docNo("РАП", r.id)}</div>
       <div class="blank-to">Голові Служби безпеки штату NG<br>від ${esc((a.rankName || "").toLowerCase())}<br>${esc(d.n || "")}<br><b>${esc(a.name)}</b>, жетон №${a.sid}</div>
       <div class="blank-title">Р А П О Р Т</div>
@@ -437,7 +450,7 @@ async function vRapView(id) {
       <div class="rap-res"><b>Резолюція:</b> ${r.status === "wait" ? `очікує розгляду${r.stageLabel ? " · зараз: " + esc(r.stageLabel) : ""}` : esc(sw.toLowerCase())}
         ${r.reviewer ? ` · ${esc(r.reviewer.rankName || "")} <span class="kf-sign">${esc(r.reviewer.name)}</span>` : ""}${r.reviewed ? ` · ${fmtDT(r.reviewed)}` : ""}</div>
       <div class="rap-stamp ${sc}">${sw}</div>
-    </div></div>`;
+    </div>`;
 }
 
 async function vRap() {
@@ -500,6 +513,7 @@ function rapForm() {
       <fieldset class="rap-ev"><legend>Докази ${t === "refund" ? "(обов'язково)" : "(за потреби)"}</legend>
         <label class="f"><span>Посилання на відео / відкат</span><input class="i" id="r-ev" placeholder="https://…"></label>
         <label class="f"><span>Файли: скріни, чеки, PDF (до 5)</span><input class="i" id="r-files" type="file" multiple accept="image/*,video/mp4,application/pdf"></label></fieldset>
+      ${window.SOVA.tagSelect('id="r-tag"', "")}
       <div><button class="btn gold" type="submit" id="r-btn" ${ok ? "" : "disabled"}>Подати рапорт</button></div></form></div>
     <div class="blank" id="rap-prev">${rapPreview()}</div>
   </div>`;
@@ -723,6 +737,7 @@ const VIEWS = { home: vHome, act: vAct, rap: vRap, staff: vStaff, audit: vAudit,
 async function boot() {
   try {
     [META, ME] = await Promise.all([META || call("/api/meta"), call("/api/me")]);
+    if (window.SOVA.loadTags) await window.SOVA.loadTags();
   } catch (e) {
     if (!TOKEN) return render();
     // Бот перезапускається або тунель ще не піднявся: вхід збережено — чекаємо й пробуємо знову, а не показуємо екран входу
@@ -791,11 +806,12 @@ const A = {
   actback: () => { UI.actId = null; render(); },
   actpdf: (b) => {
     const a = window.SOVA.cache.acts && window.SOVA.cache.acts[b.dataset.id];
-    if (a) window.SOVA.pdfBtn(b, actDoc(a), `${docNo("ЗВТ", a.id)}_${(META.acts[a.type] || {}).n || ""}`);
+    if (a) window.SOVA.pdfA4(b, actA4(a), `${docNo("ЗВТ", a.id)}_${(META.acts[a.type] || {}).n || ""}`);
   },
+  rappdf: (b) => { const r = window.SOVA.cache.rap; if (r) window.SOVA.pdfA4(b, rapA4(r), `${docNo("РАП", r.id)}_${META.rapTypes[r.type] || ""}`); },
   actd: async (b) => {
     b.disabled = true;
-    try { await call(`/api/acts/${b.dataset.id}/decision`, { json: { decision: b.dataset.d } }); toast(b.dataset.d === "ok" ? "Звіт підтверджено" : "Звіт відхилено"); await refreshMe(); render(); }
+    try { await call(`/api/acts/${b.dataset.id}/decision`, { json: { decision: b.dataset.d } }); toast(b.dataset.d === "ok" ? "Звіт підтверджено" : "Звіт відхилено"); await actImage(+b.dataset.id); await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
   cand: async (b) => {
@@ -825,7 +841,7 @@ const A = {
   },
   rapd: async (b) => {
     b.disabled = true;
-    try { await call(`/api/raps/${b.dataset.id}/decision`, { json: { decision: b.dataset.d } }); toast(b.dataset.d === "ok" ? "Рапорт погоджено. Бот оновив ролі й журнал аудиту" : "Рапорт відхилено"); await refreshMe(); render(); }
+    try { await call(`/api/raps/${b.dataset.id}/decision`, { json: { decision: b.dataset.d } }); toast(b.dataset.d === "ok" ? "Рапорт погоджено. Бот оновив ролі й журнал аудиту" : "Рапорт відхилено"); await rapImage(+b.dataset.id); await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
 };
@@ -845,11 +861,13 @@ const F = {
     btn.innerHTML = '<span class="spin"></span> Надсилаю…';
     try {
       const files = await uploadFiles($("#a-files"));
-      await call("/api/acts", { json: {
+      const r = await call("/api/acts", { json: {
         type: $("#a-type").value, t: new Date($("#a-t").value).getTime() || Date.now(), qty: +$("#a-qty").value || 1,
         arts: $("#a-arts").value.split(/[,;\s]+/).filter(Boolean), subj: $("#a-subj").value, evidence: $("#a-ev").value.trim(), files, note: $("#a-note").value,
+        tag: $("#a-tag") ? $("#a-tag").value : "",
       } });
       toast("Звіт надіслано. Картка з'явилась у каналі відділу");
+      await actImage(r.id);
       UI.tabs.act = "mine";
       render();
     } catch (e) { toast(e.message, 1); btn.disabled = false; btn.textContent = "Надіслати на перевірку"; }
@@ -860,9 +878,10 @@ const F = {
     const v = (id) => ($(id) ? $(id).value.trim() : "");
     try {
       const files = $("#r-files") && $("#r-files").files.length ? await uploadFiles($("#r-files")) : [];
-      await call("/api/raps", { json: { type: UI.rapType, reason: v("#r-reason"), days: +v("#r-days") || undefined, from: v("#r-from"), to: v("#r-to"),
-        amount: v("#r-amount") || undefined, spent: v("#r-spent") || undefined, evidence: v("#r-ev"), files } });
+      const r = await call("/api/raps", { json: { type: UI.rapType, reason: v("#r-reason"), days: +v("#r-days") || undefined, from: v("#r-from"), to: v("#r-to"),
+        amount: v("#r-amount") || undefined, spent: v("#r-spent") || undefined, evidence: v("#r-ev"), files, tag: v("#r-tag") } });
       toast("Рапорт подано");
+      await rapImage(r.id);
       UI.tabs.rap = "mine";
       await refreshMe();
       render();

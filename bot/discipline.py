@@ -6,6 +6,7 @@ import logging
 import discord
 
 import core
+import docpost
 import overrides as ov
 import style
 from core import DAY, Fail
@@ -163,7 +164,7 @@ async def issue(u: dict, b: dict) -> dict:
     if b.get("inspection"):
         await db.run("UPDATE inspections SET status='closed', order_id=?, updated=? WHERE id=?", oid, t, int(b["inspection"]))
     await db.audit(u["sid"], f"Стягнення: {KINDS[kind][0]}", target["sid"], f"НС-{oid:04d} · {v[1][:80]}")
-    await journal(o, target, u, "Оголошено наказ")
+    await journal(o, target, u, "Оголошено наказ", tag=b.get("tag"))
     reps = [x for x in await active_blocking(target["sid"]) if x["kind"] == "reprimand"]
     if len(reps) >= 3:  # п. 3.4
         await alert_three(target, reps)
@@ -248,29 +249,34 @@ async def delete(u: dict, oid: int):
     await journal(o, await core.user(o["sid"]), u, "Наказ скасовано й видалено")
 
 
-async def journal(o: dict, target: dict | None, u: dict, label: str):
-    ch = await core.channel("disc")
-    if not ch:
-        return
-    kind = KINDS[o["kind"]][0]
-    col = 0xD4605A if o["kind"] in ("dismiss", "blacklist", "severe") else 0xD9A23D
-    lines = [style.kv("НАКАЗ", f"НС-{o['id']:04d} · {kind}", "white", True),
-             style.kv("СПІВРОБІТНИК", f"{target['name']} · №{target['sid']}" if target else f"№{o['sid']}", "white", True),
-             style.kv("ПОРУШЕННЯ", VMAP.get(o["violation"], VMAP["other"])[1][:40], "white")]
+NS_STATE = {"active": "⚖️ ЧИННЕ", "lifted": "🕊️ ЗНЯТО ДОСТРОКОВО", "cancelled": "↩ СКАСОВАНО ЗА СКАРГОЮ", "deleted": "🗑 СКАСОВАНО Й ВИДАЛЕНО"}
+
+
+async def journal(o: dict, target: dict | None, u: dict, label: str, tag: str | None = None):
+    """Наказ про стягнення — одне повідомлення в каналі дисципліни: картка з аркушем А4, теги (хто наклав, на кого,
+    обрана роль/відділ, роль СБУ — якщо оголосив Голова чи заступник); скарга й рішення оновлюють картку з відповіддю."""
+    o = await db.one("SELECT * FROM discipline WHERE id=?", o["id"]) or o
+    issuer = await core.user(o["issued_by"])
+    expired = o["status"] == "active" and o["expires"] and o["expires"] < now_ms()
+    head = "⌛ СТРОК ДІЇ МИНУВ" if expired else NS_STATE.get(o["status"], "⚖️ ЧИННЕ")
+    desc = [f"### {head} · {KINDS[o['kind']][0]}",
+            f"👤 **{target['name'] if target else '—'}** · жетон №{o['sid']}",
+            f"📕 Порушення: {VMAP.get(o['violation'], VMAP['other'])[1]}"]
     if o["fine"]:
-        lines.append(style.kv("ШТРАФ", f"${o['fine']:,}".replace(",", " "), "gold", True))
+        desc.append(f"💵 Штраф: **${o['fine']:,}**".replace(",", " "))
     if o["expires"]:
-        lines.append(style.kv("ДІЄ ДО", style.when(o["expires"]), "gray"))
-    lines += [style.rule(), style.kv("ДІЯ", label, "red" if "Оголошено" in label else "cyan", True),
-              style.kv("ХТО", f"{u['name']} · №{u['sid']}", "white"), style.kv("ДАТА", style.when(), "gray")]
-    e = style.document("НАКАЗ ПРО ДИСЦИПЛІНАРНЕ СТЯГНЕННЯ", col, desc=style.block(*lines),
-                       footer="Регламент «Дисциплінарні стягнення СБУ» · п. 4.3: реєстрація в журналі кадрового обліку")
-    try:
-        # наказ, оголошений Головою чи Заступником, — згадка ролі СБУ
-        await ch.send(embed=e, **(core.mention("order") if label == "Оголошено наказ" and u["rank"] >= 14
-                                  else {"allowed_mentions": discord.AllowedMentions.none()}))
-    except discord.HTTPException as ex:
-        log.warning("Журнал дисципліни: %s", ex)
+        desc.append(f"⏳ Діє до: {style.when(o['expires'])}")
+    desc += ["", f"🖋️ Наклав: {issuer['name'] if issuer else '—'} · {style.when(o['issued'])}"]
+    ap = json.loads(o["appeal"]) if isinstance(o.get("appeal"), str) else o.get("appeal")
+    if ap:
+        desc.append("📨 Скарга: " + ({"cancel": "задоволено", "uphold": "відхилено"}.get(ap.get("decision")) or "на розгляді Голови СБУ"))
+    e = style.document(f"НАКАЗ НС-{o['id']:04d} · ПРО ДИСЦИПЛІНАРНЕ СТЯГНЕННЯ",
+                       0x5F6A7A if o["status"] in ("deleted", "cancelled", "lifted") else 0xD4605A if o["kind"] in ("dismiss", "blacklist", "severe") else 0xD9A23D,
+                       desc="\n".join(desc), footer=f"Остання дія: {label} · {style.when()}")
+    first = label == "Оголошено наказ"
+    await docpost.journal("ns", o["id"], await core.channel("disc"), e, users=await docpost.people(o["issued_by"], o["sid"]), tag=tag,
+                          roles=docpost.key_roles("order") if first and u["rank"] >= 14 else None,
+                          ping=None if first else f"🔔 {label}.")
 
 
 async def alert_three(target: dict, reps: list[dict]):

@@ -258,9 +258,10 @@ S.pdfBtn = async (b, src, name) => {
 
 /* ---------- аркуш А4: однаковий для PDF і картинки документа в Discord ---------- */
 // inner — HTML бланка; no — номер документа; opts.noTo — сховати рядок «СЛУЖБА БЕЗПЕКИ ШТАТУ NG» (він уже в шапці аркуша)
-S.a4 = (inner, no, opts = {}) => `<div class="a4 ${opts.noTo ? "no-to" : ""}">
-  <header class="a4-head"><img src="sbu-logo.webp" alt="" crossorigin="anonymous"><div><div class="a4-agency">СЛУЖБА БЕЗПЕКИ ШТАТУ NG</div><div class="a4-sub">${esc(opts.sub || "Єдина інформаційна система «Сова»")}</div></div>
-    <div class="a4-no">${esc(no || "")}<span>${esc(opts.date || new Date().toLocaleDateString("uk-UA"))}</span></div></header>
+// opts.bare — бланк уже має власну шапку з емблемою (службовий звіт, відомість): шапку аркуша не дублюємо
+S.a4 = (inner, no, opts = {}) => `<div class="a4 ${opts.noTo ? "no-to" : ""} ${opts.bare ? "bare" : ""}">
+  ${opts.bare ? "" : `<header class="a4-head"><img src="sbu-logo.webp" alt="" crossorigin="anonymous"><div><div class="a4-agency">СЛУЖБА БЕЗПЕКИ ШТАТУ NG</div><div class="a4-sub">${esc(opts.sub || "Єдина інформаційна система «Сова»")}</div></div>
+    <div class="a4-no">${esc(no || "")}<span>${esc(opts.date || new Date().toLocaleDateString("uk-UA"))}</span></div></header>`}
   <div class="a4-body">${inner}</div>
   <footer class="a4-foot"><span>ЄІС «Сова» · ${esc(no || "")}</span><span>${esc(opts.foot || "Документ сформовано автоматично")}</span></footer></div>`;
 async function a4Render(html, fn) {

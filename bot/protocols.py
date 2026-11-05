@@ -7,6 +7,7 @@ import logging
 import discord
 
 import core
+import docpost
 import discipline
 import overrides as ov
 import style
@@ -169,7 +170,7 @@ async def act(u: dict, pid: int, action: str, b: dict) -> dict:
         await db.run("UPDATE protocols SET status='signed', signed=?, act_id=?, history=?, updated=? WHERE id=?",
                      now_ms(), act_id, _hist(p, u, "sign", f"звіт №{act_id}" if act_id else ""), now_ms(), p["id"])
         p = await get(p["id"], u)
-        await journal(p, u, "ЗАРЕЄСТРОВАНО")
+        await journal(p, u, "ЗАРЕЄСТРОВАНО", tag=b.get("tag"))
         await db.audit(u["sid"], "Складено протокол затримання", None, f"{p['no']} · {p['data']['who']} · ст. {', '.join(p['data']['arts'])} КК")
     elif action == "report":
         if not mine or p["status"] != "signed" or p.get("act_id"):
@@ -193,30 +194,34 @@ async def act(u: dict, pid: int, action: str, b: dict) -> dict:
             raise Fail("Відновити анульований протокол може ВВБ або Голова.", 403)
         await db.run("UPDATE protocols SET status='signed', history=?, updated=? WHERE id=?", _hist(p, u, "restore", note), now_ms(), p["id"])
         p = await get(p["id"], u)
+        await journal(p, u, "ВІДНОВЛЕНО" + (f": {note}" if note else ""))
     elif action == "delete":
         if not ((mine and p["status"] == "draft") or is_chief(u)):
             raise Fail("Видалити можна власну чернетку; зареєстрований протокол — лише Голова або Заступник.", 403)
         await db.run("UPDATE protocols SET status='deleted', history=?, updated=? WHERE id=?", _hist(p, u, "delete", note), now_ms(), p["id"])
         if p["status"] != "draft":
             await db.audit(u["sid"], "Видалено протокол затримання", p["author"], p["no"])
+        await docpost.remove("pz", p["id"])  # видалено — прибрати і з Discord
         return {"ok": True}
     else:
         raise Fail("Невідома дія.")
     return p
 
 
-async def journal(p: dict, u: dict, label: str):
+async def journal(p: dict, u: dict, label: str, tag: str | None = None):
+    """Протокол — одне повідомлення: картка з аркушем А4 і тегами (хто склав, обрана роль/відділ); анулювання й відновлення
+    оновлюють картку з короткою відповіддю."""
     ch = await core.channel("prot") or await core.channel(p["dept"]) or await core.channel("log")
-    if not ch:
-        return
     x = p["data"]
-    lines = [style.kv("ПРОТОКОЛ", p["no"], "white", True), style.kv("ЗАТРИМАНИЙ", x.get("who") or "—", "gold", True),
-             style.kv("СТАТТІ КК", ", ".join(x.get("arts", [])) or "—", "white"), style.kv("МІСЦЕ", x.get("place") or "—", "white"),
-             style.kv("РІШЕННЯ", DECISION.get(x.get("decision"), "—")[:40] + (f" · {x['term']} р." if x.get("decision") == "short" and x.get("term") else ""), "cyan"),
-             style.rule(), style.kv("ДІЯ", label[:60], "red" if label.startswith("АНУЛ") else "green", True),
-             style.kv("СКЛАВ", f"{(p.get('authorUser') or {}).get('name', '—')}", "white"), style.kv("ДАТА", style.when(), "gray")]
-    e = style.document("ПРОТОКОЛ ЗАТРИМАННЯ · ст. 41 ПК", 0xC9A24D, desc=style.block(*lines), footer="Повний текст — у ЄІС «Сова» · База даних → Протоколи затримання")
-    try:
-        await ch.send(embed=e)
-    except discord.HTTPException as ex:
-        log.warning("Журнал протоколів: %s", ex)
+    void = p["status"] == "void"
+    term = f" · {x['term']} р." if x.get("decision") == "short" and x.get("term") else ""
+    desc = [f"### {'⛔ АНУЛЬОВАНО' if void else '✅ ЗАРЕЄСТРОВАНО'}",
+            f"🚔 Затриманий: **{x.get('who') or '—'}**",
+            f"⚖️ Статті КК: {', '.join(x.get('arts', [])) or '—'}",
+            f"📍 Місце: {x.get('place') or '—'}",
+            f"🧾 Рішення: {DECISION.get(x.get('decision'), '—')}{term}",
+            "", f"🖋️ Склав: {(p.get('authorUser') or {}).get('name', '—')}"]
+    e = style.document(f"ПРОТОКОЛ ЗАТРИМАННЯ {p['no']} · ст. 41 ПК", 0x5F6A7A if void else 0xC9A24D, desc="\n".join(desc),
+                       footer=f"Остання дія: {label[:80]} · {style.when()}")
+    await docpost.journal("pz", p["id"], ch, e, users=await docpost.people(p["author"]), tag=tag,
+                          ping=None if label == "ЗАРЕЄСТРОВАНО" else f"🔔 Протокол {p['no']}: {label[:150]}")

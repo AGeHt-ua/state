@@ -647,7 +647,8 @@ async def bonus_recalc(request):
 @routes.post("/api/bonus/{id}/status")
 async def bonus_status(request):
     u = await auth(request)
-    s = await bonus.move(u, int(request.match_info["id"]), (await body(request)).get("to"))
+    b = await body(request)
+    s = await bonus.move(u, int(request.match_info["id"]), b.get("to"), tag=b.get("tag"))
     return web.json_response({**s, "report": bonus.report_text(s)})
 
 
@@ -720,9 +721,20 @@ async def insp_move(request):
 
 # ---------------------------------------------------------------- документи в Discord: теги й картинка аркуша А4
 # хто може надіслати картинку аркуша для документа цього виду (бачить і веде такі документи)
+async def _row_ok(table: str, did: int, check) -> bool:
+    row = await db.one(f"SELECT * FROM {table} WHERE id=?", did)
+    return bool(row) and check(row)
+
+
 DOC_IMAGE_RIGHTS = {
-    "np": lambda u: orders.can_prepare(u),
-    "ng": lambda u: orders.can_sign(u),
+    "np": lambda u, i: orders.can_prepare(u),
+    "ng": lambda u, i: orders.can_sign(u),
+    "act": lambda u, i: _row_ok("acts", i, lambda r: r["by_sid"] == u["sid"] or core.can_view_act(u, r)),
+    "rap": lambda u, i: _row_ok("raps", i, lambda r: r["by_sid"] == u["sid"] or u["rank"] >= 14 or core.can_approve_rap(u, r)),
+    "ns": lambda u, i: _row_ok("discipline", i, lambda r: r["issued_by"] == u["sid"] or u["rank"] >= 14),
+    "pz": lambda u, i: _row_ok("protocols", i, lambda r: r["author"] == u["sid"] or u["rank"] >= 14 or core.lead_of(u, r["dept"])),
+    "fin": lambda u, i: finance.can_view(u),
+    "bn": lambda u, i: bonus.can_manage(u) or bonus.can_finalize(u),
 }
 
 
@@ -737,8 +749,11 @@ async def doc_tags(request):
 async def doc_image(request):
     """Картинка аркуша А4, сформована сайтом після створення чи зміни документа, — у його картку в Discord."""
     u = await auth(request)
-    kind = request.match_info["kind"]
-    if kind not in DOC_IMAGE_RIGHTS or not DOC_IMAGE_RIGHTS[kind](u):
+    kind, did = request.match_info["kind"], int(request.match_info["id"])
+    ok = DOC_IMAGE_RIGHTS[kind](u, did) if kind in DOC_IMAGE_RIGHTS else False
+    if asyncio.iscoroutine(ok):
+        ok = await ok
+    if not ok:
         raise Fail("Немає доступу до цього документа.", 403)
     reader = await request.multipart()
     data = bytearray()
@@ -748,7 +763,7 @@ async def doc_image(request):
                 data.extend(chunk)
                 if len(data) > 9 * 1024 * 1024:
                     raise Fail("Картинка документа завелика.", 413)
-    ok = await docpost.set_image(kind, int(request.match_info["id"]), bytes(data), f"{kind}-{request.match_info['id']}")
+    ok = await docpost.set_image(kind, did, bytes(data), f"{kind}-{did}")
     return web.json_response({"ok": ok})
 
 

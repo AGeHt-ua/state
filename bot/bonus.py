@@ -8,6 +8,7 @@ import logging
 import discord
 
 import core
+import docpost
 import overrides as ov
 import style
 from core import DAY, Fail
@@ -157,7 +158,7 @@ FLOW = {"sent": ("draft", can_manage, "Подано куратору на схв
         "approved": ("sent", can_finalize, "Схвалено куратором"), "paid": ("approved", can_finalize, "Премії виплачено")}
 
 
-async def move(u: dict, bid: int, to: str) -> dict:
+async def move(u: dict, bid: int, to: str, tag: str | None = None) -> dict:
     s = await get(bid)
     if to not in FLOW or s["status"] != FLOW[to][0]:
         raise Fail("Такий перехід неможливий.")
@@ -169,16 +170,15 @@ async def move(u: dict, bid: int, to: str) -> dict:
     await db.run("UPDATE bonuses SET status=?, history=?, updated=? WHERE id=?", to, json.dumps(h, ensure_ascii=False), now_ms(), bid)
     s = await get(bid)
     if to in ("sent", "paid"):
-        await journal(s, u, FLOW[to][2])
+        await journal(s, u, FLOW[to][2], tag=tag)
     if to == "paid":
         await db.audit(u["sid"], "Виплачено премії", 0, f"тиждень {s['label']} · ${s['total']:,}".replace(",", " "))
     return s
 
 
-async def journal(s: dict, u: dict, label: str):
+async def journal(s: dict, u: dict, label: str, tag: str | None = None):
+    """Відомість премій — одне повідомлення: при поданні — картка з аркушем А4 і тегами, виплата оновлює її з відповіддю (роль СБУ)."""
     ch = await core.channel("bonus")
-    if not ch:
-        return
     paid = [r for r in s["rows"] if r["amount"] > 0]
     by_dept = {}
     for r in paid:
@@ -191,12 +191,12 @@ async def journal(s: dict, u: dict, label: str):
              style.kv("ЛІМІТ", money(s["cfg"].get("limit", 0)), "gray"), style.rule()]
     lines += [style.kv(DEPTS[d]["s"].upper(), money(v), "white") for d, v in sorted(by_dept.items(), key=lambda x: -x[1])]
     lines += [style.rule(), style.kv("ХТО", f"{u['name']} · №{u['sid']}", "white"), style.kv("ДАТА", style.when(), "gray")]
-    e = style.document("ВІДОМІСТЬ ПРЕМІЮВАННЯ ОСОБОВОГО СКЛАДУ", 0x5FB37A if s["status"] == "paid" else 0xC9A05A, desc=style.block(*lines),
+    e = style.document(f"ВІДОМІСТЬ ПРЕМІЮВАННЯ ВП-{s['id']:04d}", 0x5FB37A if s["status"] == "paid" else 0xC9A05A, desc=style.block(*lines),
                        footer="П. 1.55 Загальних правил держорганізацій · деталі в ЄІС «Сова»")
-    try:
-        await ch.send(embed=e, **(core.mention("bonus:paid") if s["status"] == "paid" else {"allowed_mentions": discord.AllowedMentions.none()}))
-    except discord.HTTPException as ex:
-        log.warning("Журнал премій: %s", ex)
+    paid_now = s["status"] == "paid"
+    await docpost.journal("bn", s["id"], ch, e, users=await docpost.people(s.get("created_by")), tag=tag,
+                          roles=docpost.key_roles("bonus:paid") if paid_now else None,
+                          ping=f"🔔 {label}." , ping_roles=docpost.key_roles("bonus:paid") if paid_now else None)
 
 
 def report_text(s: dict) -> str:

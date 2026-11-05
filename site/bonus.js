@@ -52,6 +52,17 @@ function cfgView(c) {
     ${fin ? '<div><button class="btn gold" type="submit">Зберегти ліміти</button></div>' : ""}</form>`;
 }
 
+// Знімок поточного бланка відомості: поля вводу → значення; чернетка — з водяним знаком «ПРОЄКТ»
+function bnSnapshot() {
+  const el = document.querySelector(".bn-doc");
+  if (!el) return "";
+  const doc = el.cloneNode(true);
+  doc.querySelectorAll("input.bn-in").forEach((i) => { const sp = document.createElement("b"); sp.textContent = i.dataset.k === "amount" ? $(i.value) : i.value; i.replaceWith(sp); });
+  doc.querySelectorAll(".small").forEach((x) => { if (x.textContent.includes("свій рядок")) x.remove(); });
+  if ((S.cache.bonus || {}).status === "draft") doc.insertAdjacentHTML("afterbegin", '<div class="bn-wm">ПРОЄКТ</div>');
+  return doc.outerHTML;
+}
+
 function docView(s) {
   const me = S.ME().me.sid, edit = s.status === "draft", c = s.cfg, D = S.META().depts, r = S.ME().bonus;
   const pct = c.limit ? Math.min(1.2, s.total / c.limit) : 0;
@@ -61,7 +72,8 @@ function docView(s) {
     ${edit ? '<button class="btn" data-a="bnrecalc">↻ Перерахувати з балів</button><button class="btn" data-a="bnsave">Зберегти зміни</button><button class="btn gold" data-a="bnmove" data-to="sent">Подати куратору</button><button class="btn bad" data-a="bndelete">🗑 Видалити</button>' : ""}
     ${s.status === "sent" ? '<button class="btn" data-a="bnmove" data-to="draft">Повернути на доопрацювання</button>' + (r.finalize ? '<button class="btn ok" data-a="bnmove" data-to="approved">Схвалено куратором</button>' : "") : ""}
     ${s.status === "approved" && r.finalize ? '<button class="btn gold" data-a="bnmove" data-to="paid">Позначити виплаченим</button>' : ""}
-    <button class="btn" data-a="bncopy">⧉ Звіт для куратора</button><button class="btn gold" data-a="bnpdf">⬇ PDF</button></div>`;
+    <button class="btn" data-a="bncopy">⧉ Звіт для куратора</button><button class="btn gold" data-a="bnpdf">⬇ PDF</button></div>
+    ${edit ? `<div class="bn-tag">${S.tagSelect('id="bn-tag"', "")}</div>` : ""}`;
   return bar + `<div class="kd-wrap"><div class="kd bn-doc">
     <div class="kd-grif g-dsk">ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ</div>
     <header class="kd-head"><img src="sbu-logo.webp" alt="" width="84" height="84">
@@ -117,21 +129,15 @@ Object.assign(S.actions, {
     const q = { sent: "Подати відомість куратору? Редагування закриється.", draft: "Повернути відомість на доопрацювання?", approved: "Позначити, що куратор схвалив звіт?", paid: "Позначити премії виплаченими?" }[to];
     if (!confirm(q)) return;
     if (to === "sent") await save();
-    await call(`/api/bonus/${st.id}/status`, { json: { to } });
+    const tag = (document.getElementById("bn-tag") || {}).value || "";
+    await call(`/api/bonus/${st.id}/status`, { json: { to, tag } });
     toast("Статус відомості змінено");
-    S.render();
+    await S.render();
+    if (to === "sent" || to === "paid") { const html = bnSnapshot(); if (html) await S.docImage("bn", st.id, S.a4(html, `ВП-${String(st.id).padStart(4, "0")}`, { bare: true })); }
   }),
   bnpdf: (b) => busy(b, async () => {
-    // Знімок поточного бланка: поля вводу замінюються значеннями; чернетку позначаємо водяним знаком «ПРОЄКТ»
-    const doc = document.querySelector(".bn-doc").cloneNode(true);
-    doc.querySelectorAll("input.bn-in").forEach((i) => { const sp = document.createElement("b"); sp.textContent = i.dataset.k === "amount" ? $$(i.value) : i.value; i.replaceWith(sp); });
-    doc.querySelectorAll(".small").forEach((x) => { if (x.textContent.includes("свій рядок")) x.remove(); });
     const s = S.cache.bonus;
-    if (s.status === "draft") doc.insertAdjacentHTML("afterbegin", '<div class="bn-wm">ПРОЄКТ</div>');
-    const t = b.textContent;
-    b.innerHTML = '<span class="spin"></span> Формую PDF…';
-    try { await S.pdf(doc.outerHTML, `ВП-${String(s.id).padStart(4, "0")}_${s.label.replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, ["tr", ".bn-gauge"]); }
-    finally { b.textContent = t; }
+    await S.pdfA4(b, S.a4(bnSnapshot(), `ВП-${String(s.id).padStart(4, "0")}`, { bare: true }), `ВП-${String(s.id).padStart(4, "0")}_${s.label}`);
   }),
   bncopy: async () => {
     try { await navigator.clipboard.writeText(S.cache.bonus.report); toast("Звіт для куратора скопійовано"); }

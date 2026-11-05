@@ -24,8 +24,21 @@
 .a4 .rap-no{display:none}
 .a4.no-to .blank-to{display:none}
 /* печатка: обертання через transform (генератор PDF не знає властивості rotate), не налазить на підпис */
-.a4 .blank-stamp{position:static!important;rotate:0deg!important;display:block;width:max-content;margin:26px 0 0 auto;transform:rotate(-9deg);
+.a4 .blank-stamp{position:static!important;rotate:0deg!important;display:block;width:max-content;margin:26px 8px 16px auto;transform:rotate(-9deg);
   border:3px double var(--seal);color:var(--seal);padding:8px 16px;font:700 13px "IBM Plex Mono",monospace;letter-spacing:.16em}
 .a4 .kf-sign{font-size:26px}
 .a4 .ng-title{font-size:19px;margin:4px 0 18px}
 .a4 .ng-body{font-size:16px}
+
+/* бланки з власною шапкою (.kd: службовий звіт, відомість премій, кейс-файл) — на аркуші без «паперу» й без дубля шапки */
+.a4.bare .a4-body{padding-top:0}
+.a4 .kd{width:auto!important;max-width:none!important;background:none!important;box-shadow:none!important;padding:0!important;margin:0!important;
+  rotate:0deg!important;transform:none!important;color:var(--ink)}
+.a4 .kd-grif{rotate:0deg!important;transform:none!important;position:static!important;width:max-content!important;margin:0 0 12px auto;padding:4px 16px!important}
+.a4 .act-stamp,.a4 .rap-stamp{position:static!important;rotate:0deg!important;transform:rotate(-8deg);display:block;width:max-content;margin:22px 8px 18px auto}
+.a4 .kd::before,.a4 .kd::after{display:none!important}
+.a4 .kd-head{grid-template-columns:auto 1fr auto!important}
+.a4 .kd-no{grid-column:auto!important;justify-items:end!important;text-align:right!important}
+.a4 .kd-meta{grid-template-columns:150px 1fr!important}
+.a4 .kd-foot{display:none}
+.a4 .rap-res{margin-top:18px}

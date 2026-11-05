@@ -3,6 +3,7 @@
 Картку бот оновлює при кожній зміні (підпис, погодження, скасування), картинку — сайт після дії (PNG аркуша).
 """
 import io
+import json
 import logging
 
 import discord
@@ -82,59 +83,92 @@ def concerns_field(e: discord.Embed, users: list[str], tag: str | None = None):
 
 
 # ---------------------------------------------------------------- повідомлення документа
+# doc_msgs: основне повідомлення (ch, msg), копії в інших каналах (extra: [[ch, msg], …]),
+# ім'я картинки аркуша (img), обрана в формі роль/відділ (tag), кого стосується (who: Discord ID через кому)
 async def _row(kind: str, did: int) -> dict | None:
     return await db.one("SELECT * FROM doc_msgs WHERE kind=? AND id=?", kind, did)
 
 
-async def _message(row: dict) -> discord.Message | None:
+async def _fetch(ch_id, msg_id) -> discord.Message | None:
     try:
-        ch = core.bot.get_channel(int(row["ch"])) or await core.bot.fetch_channel(int(row["ch"]))
-        return await ch.fetch_message(int(row["msg"]))
+        ch = core.bot.get_channel(int(ch_id)) or await core.bot.fetch_channel(int(ch_id))
+        return await ch.fetch_message(int(msg_id))
     except (discord.NotFound, discord.Forbidden, discord.HTTPException, TypeError, ValueError):
         return None
+
+
+async def _messages(row: dict) -> list[discord.Message]:
+    """Основне повідомлення документа й копії в інших каналах (наприклад, рапорт у каналах двох відділів)."""
+    out = []
+    for ch_id, msg_id in [[row["ch"], row["msg"]], *json.loads(row.get("extra") or "[]")]:
+        if m := await _fetch(ch_id, msg_id):
+            out.append(m)
+    return out
+
+
+def _who(row: dict | None) -> list[str]:
+    return [x for x in ((row or {}).get("who") or "").split(",") if x]
+
+
+async def register(kind: str, did: int, msgs: list[discord.Message], *, users: list[str] | None = None, tag: str | None = None):
+    """Документ, який модуль надіслав сам (картки звітів і рапортів з копіями): запам'ятати, щоб далі додати картинку й оновлювати."""
+    if not msgs:
+        return
+    main, *rest = msgs
+    await db.run("INSERT OR REPLACE INTO doc_msgs(kind,id,ch,msg,img,tag,who,extra) VALUES(?,?,?,?,?,?,?,?)",
+                 kind, did, str(main.channel.id), str(main.id), None, tag, ",".join(dict.fromkeys(users or [])),
+                 json.dumps([[str(m.channel.id), str(m.id)] for m in rest]))
 
 
 async def post(kind: str, did: int, ch: discord.abc.Messageable | None, embed: discord.Embed, *,
                users: list[str] | None = None, tag: str | None = None, roles: list[int] | None = None,
                view: discord.ui.View | None = None) -> discord.Message | None:
-    """Перша публікація документа: теги над карткою. Якщо повідомлення вже є — лише оновлює картку."""
-    row = await _row(kind, did)
-    if row and row["msg"]:
-        return await update(kind, did, embed, view=view)
+    """Перша публікація документа: теги над карткою (автор, кого стосується, ролі виду документа, обрана роль/відділ)."""
     if not ch:
         return None
+    concerns_field(embed, users or [], tag)
     try:
         msg = await ch.send(embed=embed, **mentions(users or [], tag, roles), **({"view": view} if view else {}))
     except discord.HTTPException as ex:
         log.warning("Документ %s-%s: %s", kind, did, ex)
         return None
-    await db.run("INSERT OR REPLACE INTO doc_msgs(kind,id,ch,msg,img,tag) VALUES(?,?,?,?,?,?)",
-                 kind, did, str(ch.id), str(msg.id), None, tag)
+    await register(kind, did, [msg], users=users, tag=tag)
     return msg
 
 
 async def update(kind: str, did: int, embed: discord.Embed, *, view: discord.ui.View | None = None,
-                 ping: str | None = None, users: list[str] | None = None, roles: list[int] | None = None) -> discord.Message | None:
-    """Оновлює картку документа, зберігаючи картинку аркуша. ping — коротка відповідь під повідомленням,
-    щоб важлива зміна (підпис, рішення) дійшла сповіщенням: редагування в Discord не пінгує."""
+                 ping: str | None = None, users: list[str] | None = None, roles: list[int] | None = None) -> bool:
+    """Оновлює картку документа (і копії), зберігаючи картинку аркуша й рядок «Стосується».
+    ping — коротка відповідь під повідомленням, щоб зміна (підпис, рішення) дійшла сповіщенням: редагування не пінгує."""
     row = await _row(kind, did)
-    msg = await _message(row) if row else None
-    if not msg:
-        return None
+    msgs = await _messages(row) if row else []
+    if not msgs:
+        return False
+    concerns_field(embed, _who(row), row["tag"])
     if row["img"]:
         embed.set_image(url=f"attachment://{row['img']}")
-    try:
-        await msg.edit(embed=embed, **({"view": view} if view is not None else {}))
-        if ping:
-            m = mentions(users or [], row["tag"], roles)
-            await msg.reply(" ".join(filter(None, [ping, m["content"]])), mention_author=False, allowed_mentions=m["allowed_mentions"])
-    except discord.HTTPException as ex:
-        log.warning("Оновлення документа %s-%s: %s", kind, did, ex)
-    return msg
+    for i, msg in enumerate(msgs):
+        try:
+            await msg.edit(embed=embed, **({"view": view} if view is not None else {}))
+            if ping and i == 0:
+                m = mentions([*_who(row), *(users or [])], row["tag"], roles)
+                await msg.reply(" ".join(filter(None, [ping, m["content"]])), mention_author=False, allowed_mentions=m["allowed_mentions"])
+        except discord.HTTPException as ex:
+            log.warning("Оновлення документа %s-%s: %s", kind, did, ex)
+    return True
+
+
+async def journal(kind: str, did: int, ch: discord.abc.Messageable | None, embed: discord.Embed, *,
+                  users: list[str] | None = None, tag: str | None = None, roles: list[int] | None = None,
+                  ping: str | None = None, ping_roles: list[int] | None = None):
+    """Журнал документа одним повідомленням: перша дія публікує картку з тегами, наступні — оновлюють її з короткою відповіддю."""
+    if await _row(kind, did) and await update(kind, did, embed, ping=ping, roles=ping_roles):
+        return
+    await post(kind, did, ch, embed, users=users, tag=tag, roles=roles)
 
 
 async def set_image(kind: str, did: int, data: bytes, name: str) -> bool:
-    """Картинка аркуша А4 (PNG/JPEG, сформована сайтом) — у картку документа."""
+    """Картинка аркуша А4 (PNG/JPEG, сформована сайтом) — у картку документа та її копії."""
     if data.startswith(b"\x89PNG"):
         ext = "png"
     elif data.startswith(b"\xff\xd8\xff"):
@@ -144,26 +178,28 @@ async def set_image(kind: str, did: int, data: bytes, name: str) -> bool:
     if len(data) > 9 * 1024 * 1024:
         raise Fail("Картинка документа завелика.")
     row = await _row(kind, did)
-    msg = await _message(row) if row else None
-    if not msg or not msg.embeds:
+    msgs = [m for m in (await _messages(row) if row else []) if m.embeds]
+    if not msgs:
         return False
     fname = f"{''.join(ch for ch in name if ch.isalnum() or ch in '-_')[:60] or 'doc'}.{ext}"
-    e = msg.embeds[0]
-    e.set_image(url=f"attachment://{fname}")
-    try:
-        await msg.edit(embed=e, attachments=[discord.File(io.BytesIO(data), filename=fname)])
-    except discord.HTTPException as ex:
-        log.warning("Картинка документа %s-%s: %s", kind, did, ex)
-        return False
-    await db.run("UPDATE doc_msgs SET img=? WHERE kind=? AND id=?", fname, kind, did)
-    return True
+    done = False
+    for msg in msgs:
+        e = msg.embeds[0]
+        e.set_image(url=f"attachment://{fname}")
+        try:
+            await msg.edit(embed=e, attachments=[discord.File(io.BytesIO(data), filename=fname)])
+            done = True
+        except discord.HTTPException as ex:
+            log.warning("Картинка документа %s-%s: %s", kind, did, ex)
+    if done:
+        await db.run("UPDATE doc_msgs SET img=? WHERE kind=? AND id=?", fname, kind, did)
+    return done
 
 
 async def remove(kind: str, did: int):
-    """Документ видалено: прибрати і його повідомлення з Discord."""
+    """Документ видалено: прибрати і його повідомлення з Discord (з копіями)."""
     row = await _row(kind, did)
-    msg = await _message(row) if row else None
-    if msg:
+    for msg in (await _messages(row) if row else []):
         try:
             await msg.delete()
         except discord.HTTPException:

@@ -116,6 +116,7 @@ function editView() {
       <label class="f"><span>Строк, років / штраф, $</span><span class="prot-two"><input class="i mono" type="number" min="0" data-px="term" value="${x.term || ""}" placeholder="років" ${x.decision === "short" ? "" : "disabled"}><input class="i mono" type="number" min="0" data-px="fine" value="${x.fine || ""}" placeholder="$"></span></label>
       <label class="f wide"><span>13. Зауваження учасників / затриманого</span><textarea class="i" data-px="remarks">${esc(x.remarks)}</textarea></label>
       <div class="f wide"><label class="chk"><input type="checkbox" id="prot-rep" checked> Після підпису одразу створити звіт про діяльність (затримання)</label></div>
+      ${S.tagSelect('id="prot-tag"', st.tag || "")}
     </form>
     <div class="prot-side"><div class="prot-hints" id="prot-hints">${hintsHtml(x)}</div><div id="prot-prev">${blank({ ...e, data: x, teamUsers: team }, author)}</div></div></div>`;
 }
@@ -179,10 +180,16 @@ const docName = () => `${st.doc.no}_Протокол_затримання_${st.d
 const fresh = () => ({ when: Date.now(), place: "", team: [], who: "", whoId: "", whoMore: "", whoGov: false, basis: "scene", warrant: "", arts: [], desc: "",
   force: "none", forceWhy: "", rights: true, rightsAt: "", call: false, lawyer: false, prosecutor: false, prosecutorName: "",
   items: [{ name: "", qty: "" }], handover: "", video: "", videoAt: "", files: [], decision: "short", term: 0, fine: 0, remarks: "" });
+// аркуш А4 протоколу (PDF, PNG і картинка в картці Discord)
+const protA4 = (p) => S.a4(blank(p), p.no || "", { bare: true });
+async function protImage(id) {
+  try { const p = await call(`/api/protocols/${id}`); await S.docImage("pz", id, protA4(p)); } catch (e) { console.warn(e); }
+}
 const sign = async (id, report) => {
   if (!confirm("Підписати протокол? Після підпису він реєструється і редагувати його вже не можна (лише анулювати з причиною).")) return false;
-  await call(`/api/protocols/${id}/sign`, { json: { report } });
+  await call(`/api/protocols/${id}/sign`, { json: { report, tag: st.tag || "" } });
   toast(report ? "Протокол зареєстровано, звіт про діяльність надіслано на перевірку" : "Протокол зареєстровано");
+  await protImage(id);
   return true;
 };
 Object.assign(S.actions, {
@@ -196,6 +203,7 @@ Object.assign(S.actions, {
   protitemdel: (b) => { read(); st.edit.data.items.splice(+b.dataset.n, 1); S.render(); },
   protsave: (b) => run(b, async () => {
     read();
+    st.tag = (document.getElementById("prot-tag") || {}).value || "";
     const e = st.edit, f = document.getElementById("prot-files"), rep = document.getElementById("prot-rep");
     if (f && f.files.length) e.data.files = [...(e.data.files || []), ...(await S.uploadFiles(f))].slice(0, 10);
     const p = await call("/api/protocols", { json: { id: e.id, data: e.data } });
@@ -212,9 +220,10 @@ Object.assign(S.actions, {
     await call(`/api/protocols/${st.doc.id}/${x}`, { json: body });
     toast({ report: "Звіт про діяльність надіслано на перевірку", void: "Протокол анульовано", restore: "Протокол відновлено", delete: "Видалено" }[x]);
     if (x === "delete") st.id = null;
+    else if (x === "void" || x === "restore") await protImage(st.doc.id);
     S.render();
   }),
-  protpdf: (b) => S.pdfBtn(b, blank(st.doc), docName()),
+  protpdf: (b) => S.pdfA4(b, protA4(st.doc), docName()),
   protpng: (b) => S.pngBtn(b, blank(st.doc), docName()),
 });
 })();

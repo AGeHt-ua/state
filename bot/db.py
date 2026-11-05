@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS candidates (
 CREATE TABLE IF NOT EXISTS doc_msgs (         -- повідомлення документа в Discord (картка + картинка А4)
   kind TEXT NOT NULL, id INTEGER NOT NULL,     -- вид документа (np, ng, …) і номер
   ch TEXT, msg TEXT, img TEXT, tag TEXT,       -- канал, повідомлення, ім'я картинки, обрана роль/відділ
+  who TEXT, extra TEXT,                        -- кого стосується (Discord ID), копії в інших каналах (JSON)
   PRIMARY KEY (kind, id)
 );
 CREATE TABLE IF NOT EXISTS cases (
@@ -227,7 +228,8 @@ class DB:
                     "ALTER TABLE orders ADD COLUMN title TEXT", "ALTER TABLE orders ADD COLUMN body TEXT",
                     "ALTER TABLE kb_items ADD COLUMN fmt TEXT DEFAULT 'text'", "ALTER TABLE users ADD COLUMN blocked INTEGER DEFAULT 0",
                     "ALTER TABLE users ADD COLUMN callsign TEXT", "ALTER TABLE users ADD COLUMN promo_spent INTEGER",
-                    "ALTER TABLE cases ADD COLUMN arch_ch TEXT", "ALTER TABLE cases ADD COLUMN arch_msg TEXT"):
+                    "ALTER TABLE cases ADD COLUMN arch_ch TEXT", "ALTER TABLE cases ADD COLUMN arch_msg TEXT",
+                    "ALTER TABLE doc_msgs ADD COLUMN who TEXT", "ALTER TABLE doc_msgs ADD COLUMN extra TEXT"):
             try:
                 await self.conn.execute(sql)
             except Exception:

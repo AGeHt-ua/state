@@ -190,17 +190,12 @@ async def journal(o: dict, u: dict, label: str, tag: str | None = None):
     """Одне повідомлення на наказ: створюється з тегами (автор, співробітник, обрана роль/відділ), далі лише оновлюється.
     Підпис, відхилення й скасування — ще й коротка відповідь зі сповіщенням."""
     o = await db.one("SELECT * FROM orders WHERE id=?", o["id"]) or o
-    e = await np_embed(o, label)
-    who = await docpost.people(o["sid"])
-    if not await docpost._row("np", o["id"]):
-        docpost.concerns_field(e, who, tag)
-        roles = docpost.key_roles("order" if o["status"] == "active" else "order:draft" if o["status"] == "draft" else None)
-        await docpost.post("np", o["id"], await core.channel("orders"), e, users=await docpost.people(o["by_sid"], o["sid"]), tag=tag, roles=roles)
-        return
-    docpost.concerns_field(e, who, (await docpost._row("np", o["id"]))["tag"])
-    ping = {"active": "✅ Наказ підписано.", "rejected": "⛔ Проєкт наказу відхилено.", "deleted": "↩ Наказ скасовано."}.get(o["status"])
-    await docpost.update("np", o["id"], e, ping=ping, users=await docpost.people(o["sid"], o["by_sid"]),
-                         roles=docpost.key_roles("order") if o["status"] == "active" else None)
+    st = o["status"]
+    await docpost.journal("np", o["id"], await core.channel("orders"), await np_embed(o, label),
+                          users=await docpost.people(o["by_sid"], o["sid"]), tag=tag,
+                          roles=docpost.key_roles("order" if st == "active" else "order:draft" if st == "draft" else None),
+                          ping={"active": "✅ Наказ підписано.", "rejected": "⛔ Проєкт наказу відхилено.", "deleted": "↩ Наказ скасовано."}.get(st),
+                          ping_roles=docpost.key_roles("order") if st == "active" else None)
 
 
 async def listing() -> list[dict]:
@@ -246,16 +241,9 @@ def ng_embed(o: dict, by: dict | None, cancelled_by: dict | None = None) -> disc
 async def free_post(o: dict, u: dict, cancelled: bool = False, tag: str | None = None):
     """Одне повідомлення на наказ Голови: при оголошенні — теги (автор, «order» з панелі, обрана роль/відділ), скасування — оновлення картки."""
     by = await core.user(o["by_sid"])
-    e = ng_embed(o, by, u if cancelled else None)
-    if cancelled:
-        row = await docpost._row("ng", o["id"])
-        docpost.concerns_field(e, [], row["tag"] if row else None)
-        if row:
-            await docpost.update("ng", o["id"], e, ping="↩ Наказ скасовано.", users=await docpost.people(o["by_sid"]))
-            return
-    docpost.concerns_field(e, [], tag)
-    await docpost.post("ng", o["id"], await core.channel("orders"), e, users=await docpost.people(o["by_sid"]),
-                       tag=tag, roles=docpost.key_roles(None if cancelled else "order"))
+    await docpost.journal("ng", o["id"], await core.channel("orders"), ng_embed(o, by, u if cancelled else None),
+                          users=await docpost.people(o["by_sid"]), tag=tag, roles=docpost.key_roles(None if cancelled else "order"),
+                          ping="↩ Наказ скасовано." if cancelled else None)
 
 
 def free_blank(o: dict, u: dict) -> str:

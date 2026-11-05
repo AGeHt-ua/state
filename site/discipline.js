@@ -47,6 +47,16 @@ function spDoc(i, kinds) {
     <div class="blank-stamp">ЄІС «СОВА»</div></div>`;
 }
 
+// аркуш А4 наказу про стягнення (PDF і картинка в картці Discord)
+const nsA4 = (o) => S.a4(nsDoc(o), no(o.id), { noTo: true, date: fmtDT(o.issued), sub: "Наказ про дисциплінарне стягнення" });
+async function nsImage(id) {
+  try {
+    const d = await call("/api/discipline");
+    const o = [...(d.journal || []), ...(d.mine || [])].find((x) => x.id === id);
+    if (o) await S.docImage("ns", id, nsA4(o));
+  } catch (e) { console.warn(e); }
+}
+
 function order(o, D, opts = {}) {
   ALL[o.id] = o;
   const [sl, sc] = STATUS(o), t = o.target || { name: "№" + o.sid, rankName: "" };
@@ -111,6 +121,7 @@ function formView(d, staff) {
       <label class="f"><span>Вид стягнення</span><select class="i" id="ns-kind" data-ns>${kinds.length ? kinds.map((k) => `<option value="${k}" ${k === kind ? "selected" : ""}>${esc(d.kinds[k])}</option>`).join("") : '<option value="">немає повноважень</option>'}</select></label>
       ${kind === "fine" ? `<label class="f"><span>Сума штрафу, $</span><input class="i" id="ns-fine" type="number" min="0" step="1000" value="${f.fine ?? v.fine}" data-ns></label>` : ""}
       <label class="f wide"><span>Обставини порушення</span><textarea class="i" id="ns-reason" data-ns placeholder="Коли, де, що сталося; докази">${esc(f.reason || "")}</textarea></label>
+      ${S.tagSelect('id="ns-tag" data-ns', f.tag || "")}
     </div>
     ${["demote", "dismiss", "blacklist"].includes(kind) ? '<p class="note warn">Бот одразу виконає наказ: змінить звання або зніме ролі СБУ в Discord і запише це в кадровий аудит.</p>' : ""}
     ${f.inspection ? `<p class="note">Наказ за матеріалами службової перевірки СП-${String(f.inspection).padStart(4, "0")}.</p>` : ""}
@@ -182,10 +193,10 @@ async function view() {
 
 const run = async (b, fn) => { if (b) b.disabled = true; try { await fn(); } catch (e) { toast(e.message, 1); } if (b) b.disabled = false; };
 const readForm = () => ({ sid: S.$("#ns-sid")?.value, violation: S.$("#ns-v")?.value, kind: S.$("#ns-kind")?.value,
-  fine: S.$("#ns-fine") ? +S.$("#ns-fine").value : undefined, reason: S.$("#ns-reason")?.value, inspection: (st.form || {}).inspection });
+  fine: S.$("#ns-fine") ? +S.$("#ns-fine").value : undefined, reason: S.$("#ns-reason")?.value, inspection: (st.form || {}).inspection, tag: S.$("#ns-tag")?.value || "" });
 S.views.disc = view;
 Object.assign(S.actions, {
-  nspdf: (b) => { const o = ALL[b.dataset.id]; if (o) S.pdfBtn(b, nsDoc(o), `${no(o.id)}_${o.kindName}`); },
+  nspdf: (b) => { const o = ALL[b.dataset.id]; if (o) S.pdfA4(b, nsA4(o), `${no(o.id)}_${o.kindName}`); },
   sppdf: (b) => { const i = (S.cache.disc.inspections || []).find((x) => String(x.id) === b.dataset.id); if (i) S.pdfBtn(b, spDoc(i, S.cache.disc.kinds), `СП-${String(i.id).padStart(4, "0")}_${i.title || ""}`); },
   nstab: (b) => { st.tab = b.dataset.v; st.insp = null; S.render(); },
   nsf: (b) => { st.f = b.dataset.v; S.render(); },
@@ -198,7 +209,7 @@ Object.assign(S.actions, {
     const x = b.dataset.x, q = { cancel: "Задовольнити скаргу й скасувати стягнення?", uphold: "Відхилити скаргу?", lift: "Зняти догану достроково?" }[x];
     const note = prompt(q + "\nКоментар (необов'язково):", "");
     if (note === null) return;
-    await call(`/api/discipline/${b.dataset.id}/decide`, { json: { action: x, note } }); toast("Рішення внесено"); await S.refreshMe(); S.render();
+    await call(`/api/discipline/${b.dataset.id}/decide`, { json: { action: x, note } }); toast("Рішення внесено"); await nsImage(+b.dataset.id); await S.refreshMe(); S.render();
   }),
   nsdel: (b) => run(b, async () => {
     if (!confirm("Скасувати й видалити наказ? Пониження чи звільнення бот назад не поверне — це робиться окремо.")) return;
@@ -230,8 +241,9 @@ S.forms.nsissue = async (f) => run(f.querySelector("button[type=submit]"), async
   const b = readForm();
   if (!b.sid) throw new Error("Оберіть співробітника.");
   if (!confirm("Оголосити наказ? Співробітник побачить його в кабінеті, запис піде в кадровий аудит.")) return;
-  await call("/api/discipline", { json: b });
-  toast("Наказ оголошено"); st.form = null; st.tab = "journal"; await S.refreshMe(); S.render();
+  const r = await call("/api/discipline", { json: b });
+  toast("Наказ оголошено");
+  await nsImage(r.id); st.form = null; st.tab = "journal"; await S.refreshMe(); S.render();
 });
 S.forms.nsinsp = async (f) => run(f.querySelector("button[type=submit]"), async () => {
   const v = (id) => S.$(id).value;

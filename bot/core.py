@@ -698,7 +698,8 @@ def mention(key: str | None, users: list | None = None) -> dict:
             "allowed_mentions": discord.AllowedMentions(everyone=False, users=[discord.Object(x) for x in uids], roles=[discord.Object(r) for r in ids])}
 
 
-async def post_card(kind: str, row: dict):
+async def post_card(kind: str, row: dict, tag: str | None = None):
+    import docpost  # тут, а не вгорі: docpost сам імпортує core
     special = f"rap:{row['type']}" if kind == "rap" else None
     if kind == "rap" and row["type"] == "transfer":
         special = f"rapdept:{row['dept']}"  # рапорт на переведення — лише в канали начальників відділів (звідки й куди)
@@ -706,10 +707,13 @@ async def post_card(kind: str, row: dict):
     if not ch:
         return
     embed = await (act_embed(row) if kind == "act" else rap_embed(row))
-    # згадується той, хто подав документ, і ролі, яким він адресований; рішення ухвалюються лише в ЄІС «Сова»
+    # згадується той, хто подав документ, ролі, яким він адресований, і роль/відділ, обрані у формі; рішення — лише в ЄІС «Сова»
     sender = await user(row["by_sid"])
-    who = [sender["discord_id"]] if kind == "rap" and sender and sender.get("discord_id") else []
-    msg = await ch.send(embed=embed, **mention(f"rap:{row['type']}" if kind == "rap" else None, who))
+    who = [sender["discord_id"]] if sender and sender.get("discord_id") else []
+    tags = docpost.mentions(who, tag, docpost.key_roles(f"rap:{row['type']}" if kind == "rap" else None))
+    docpost.concerns_field(embed, who, tag)
+    msg = await ch.send(embed=embed, **tags)
+    sent = [msg]
     table = "acts" if kind == "act" else "raps"
     await db.run(f"UPDATE {table} SET ch_id=?, msg_id=? WHERE id=?", str(ch.id), str(msg.id), row["id"])
     if kind == "rap" and row["type"] in STAGES:
@@ -722,19 +726,28 @@ async def post_card(kind: str, row: dict):
                 continue
             try:
                 c = bot.get_channel(cid) or await bot.fetch_channel(cid)
-                m = await c.send(embed=embed, **mention(f"rap:{row['type']}", who))
+                m = await c.send(embed=embed, **tags)
                 copies.append([str(c.id), str(m.id)])
+                sent.append(m)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException) as ex:
                 log.warning("Копія рапорту в канал відділу %s: %s", d, ex)
         if copies:
             await db.run("UPDATE raps SET copies=? WHERE id=?", json.dumps(copies), row["id"])
+    await docpost.register(kind, row["id"], sent, users=who, tag=tag)  # далі сайт додасть картинку аркуша А4
 
 
 async def refresh_card(kind: str, row: dict):
     if not row.get("msg_id"):
         return
     embed = await (act_embed(row) if kind == "act" else rap_embed(row))
-    for cid, mid in [[row["ch_id"], row["msg_id"]], *json.loads(row.get("copies") or "[]")]:
+    import docpost
+    if await docpost._row(kind, row["id"]):  # картка з картинкою аркуша: оновити, зберігши картинку й «Стосується»
+        await docpost.update(kind, row["id"], embed, view=None,
+                             ping={"ok": "✅ Погоджено." if kind == "rap" else "✅ Звіт підтверджено.", "rej": "⛔ Відхилено."}.get(row["status"]))
+        cards = []
+    else:
+        cards = [[row["ch_id"], row["msg_id"]], *json.loads(row.get("copies") or "[]")]
+    for cid, mid in cards:
         try:  # основна картка й копії в каналах відділів
             ch = bot.get_channel(int(cid)) or await bot.fetch_channel(int(cid))
             await (await ch.fetch_message(int(mid))).edit(embed=embed, view=None)
@@ -843,7 +856,7 @@ async def create_act(u: dict, body: dict) -> dict:
                        u["sid"], dept, t, qty, min(when, now_ms()), json.dumps(arts, ensure_ascii=False),
                        str(body.get("subj", ""))[:200], ev[:500], json.dumps(files), str(body.get("note", ""))[:1500])
     row = await db.one("SELECT * FROM acts WHERE id=?", rid)
-    await post_card("act", row)
+    await post_card("act", row, tag=body.get("tag"))
     return row
 
 
@@ -927,7 +940,7 @@ async def create_rap(u: dict, body: dict) -> dict:
     rid = await db.run("INSERT INTO raps(by_sid,dept,type,data,t) VALUES(?,?,?,?,?)",
                        u["sid"], u["dept"], t, json.dumps(data, ensure_ascii=False), now_ms())
     row = await db.one("SELECT * FROM raps WHERE id=?", rid)
-    await post_card("rap", row)
+    await post_card("rap", row, tag=body.get("tag"))
     return row
 
 
