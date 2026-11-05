@@ -712,7 +712,8 @@ async def post_card(kind: str, row: dict, tag: str | None = None):
     who = [sender["discord_id"]] if sender and sender.get("discord_id") else []
     tags = docpost.mentions(who, tag, docpost.key_roles(f"rap:{row['type']}" if kind == "rap" else None))
     docpost.concerns_field(embed, who, tag)
-    msg = await ch.send(embed=embed, **tags)
+    link = docpost.link_view(kind, row["id"])  # кнопка «Відкрити в Сові»
+    msg = await ch.send(embed=embed, **tags, **({"view": link} if link else {}))
     sent = [msg]
     table = "acts" if kind == "act" else "raps"
     await db.run(f"UPDATE {table} SET ch_id=?, msg_id=? WHERE id=?", str(ch.id), str(msg.id), row["id"])
@@ -726,7 +727,7 @@ async def post_card(kind: str, row: dict, tag: str | None = None):
                 continue
             try:
                 c = bot.get_channel(cid) or await bot.fetch_channel(cid)
-                m = await c.send(embed=embed, **tags)
+                m = await c.send(embed=embed, **tags, **({"view": docpost.link_view(kind, row["id"])} if link else {}))
                 copies.append([str(c.id), str(m.id)])
                 sent.append(m)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException) as ex:

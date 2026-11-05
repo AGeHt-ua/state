@@ -94,4 +94,6 @@ async function view() {
 
 S.views.dept = view;
 S.actions.dpsel = (b) => { st.d = b.dataset.v; S.render(); };
+// адреса: #/dept/відділ
+S.routes.dept = { get: () => [st.d], set: (p) => { st.d = p[0] || null; } };
 })();

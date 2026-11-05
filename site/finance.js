@@ -188,4 +188,10 @@ Object.assign(S.actions, {
   finpng: (b) => S.pngBtn(b, blank(st.doc), docName()),
   fincopy: async () => { try { await navigator.clipboard.writeText(forumText(st.doc)); toast("Текст скопійовано — вставте відповіддю в темі Мінфіну"); } catch (e) { prompt("Скопіюйте текст:", forumText(st.doc)); } },
 });
+// адреса: #/fin · #/fin/3 · #/fin/3/edit
+const isId = (x) => /^\d+$/.test(x || "");
+S.routes.fin = {
+  get: () => st.edit ? [st.edit.id || "new", "edit"] : st.id ? [st.id] : [],
+  set: (p) => { st.edit = null; st.id = isId(p[0]) ? +p[0] : null; },
+};
 })();

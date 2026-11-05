@@ -491,4 +491,16 @@ setInterval(() => {
   if (!left && !t.dataset.done) { t.dataset.done = 1; toast("Час вийшов — іспит здається автоматично", 1); document.querySelector("form[data-f=exsubmit]")?.requestSubmit(); }
 }, 1000);
 S.onNav.push((v) => { if (v !== "kb") { st.take = null; } });
+// адреса: #/kb/law/<документ> · #/kb/lib/4 · #/kb/prot/… · #/kb/exams · #/kb/changes
+S.routes.kb = {
+  get: () => st.tab === "prot" ? ["prot", ...((S.protRoute && S.protRoute.get()) || [])]
+    : st.tab === "lib" ? ["lib", st.lib] : st.tab === "law" || !st.tab ? ["law", st.doc] : [st.tab],
+  set: (p) => {
+    st.tab = p[0] || "law";
+    st.take = st.result = st.review = st.examEdit = st.libEdit = null;
+    st.doc = st.tab === "law" ? p[1] || null : null;
+    st.lib = st.tab === "lib" && /^\d+$/.test(p[1] || "") ? +p[1] : null;
+    if (st.tab === "prot" && S.protRoute) S.protRoute.set(p.slice(1));
+  },
+};
 })();

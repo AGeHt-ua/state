@@ -82,6 +82,26 @@ def concerns_field(e: discord.Embed, users: list[str], tag: str | None = None):
         e.add_field(name="Стосується", value=" ".join(parts)[:1024], inline=False)
 
 
+# ---------------------------------------------------------------- кнопка «Відкрити в Сові»: адреса документа на сайті
+LINKS = {"act": "act/{}", "rap": "rap/{}", "np": "staff/appoint", "ng": "staff/orders", "ns": "disc/journal",
+         "pz": "kb/prot/{}", "fin": "fin/{}", "bn": "bonus/{}", "cases": "cases/{}"}
+
+
+def link(kind: str, did: int) -> str | None:
+    path = LINKS.get(kind)
+    return f"{config.SITE_URL.rstrip('/')}/site/#/{path.format(did)}" if path else None
+
+
+def link_view(kind: str, did: int) -> discord.ui.View | None:
+    """Кнопка-посилання під карткою документа: відкриває саме цей документ у ЄІС «Сова»."""
+    url = link(kind, did)
+    if not url:
+        return None
+    v = discord.ui.View(timeout=None)
+    v.add_item(discord.ui.Button(label="Відкрити в Сові", emoji="🦉", url=url))
+    return v
+
+
 # ---------------------------------------------------------------- повідомлення документа
 # doc_msgs: основне повідомлення (ch, msg), копії в інших каналах (extra: [[ch, msg], …]),
 # ім'я картинки аркуша (img), обрана в формі роль/відділ (tag), кого стосується (who: Discord ID через кому)
@@ -127,6 +147,7 @@ async def post(kind: str, did: int, ch: discord.abc.Messageable | None, embed: d
     if not ch:
         return None
     concerns_field(embed, users or [], tag)
+    view = view or link_view(kind, did)
     try:
         msg = await ch.send(embed=embed, **mentions(users or [], tag, roles), **({"view": view} if view else {}))
     except discord.HTTPException as ex:

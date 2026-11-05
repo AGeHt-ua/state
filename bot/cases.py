@@ -9,6 +9,7 @@ import discord
 
 import config
 import core
+import docpost
 import overrides as ov
 import style
 from core import Fail
@@ -344,7 +345,7 @@ async def archive(u: dict, cid: int, pdf: bytes) -> dict:
     name = f"КФ-{c['id']:04d}_" + "".join(ch_ if ch_.isalnum() else "_" for ch_ in c["data"].get("title", ""))[:60]
     e = await _archive_embed(c, u, approver)
     await _drop_archive(c)
-    msg = await ch.send(embed=e, file=discord.File(io.BytesIO(pdf), filename=name + ".pdf"),
+    msg = await ch.send(embed=e, file=discord.File(io.BytesIO(pdf), filename=name + ".pdf"), view=docpost.link_view("cases", c["id"]),
                         allowed_mentions=discord.AllowedMentions.none())
     h = await _hist(c, u, "archive")
     await db.run("UPDATE cases SET arch_ch=?, arch_msg=?, history=? WHERE id=?", str(ch.id), str(msg.id), json.dumps(h, ensure_ascii=False), cid)

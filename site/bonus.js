@@ -160,4 +160,10 @@ S.forms.bncfg = async (f) => {
   } catch (e) { toast(e.message, 1); }
 };
 S.onNav.push((v) => { if (v !== "bonus") st.id = null; });
+// адреса: #/bonus/вкладка · #/bonus/12
+const isId = (x) => /^\d+$/.test(x || "");
+S.routes.bonus = {
+  get: () => st.id ? [st.id] : [st.tab],
+  set: (p) => { st.id = isId(p[0]) ? +p[0] : null; if (!st.id) st.tab = p[0] || null; },
+};
 })();

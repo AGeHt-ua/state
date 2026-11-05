@@ -223,4 +223,6 @@ S.forms.admchan =(f) => run(f.querySelector("[type=submit]"), async () => { awai
 // лише змінені поля: решта лишаються стандартними
 const changed = (f) => Object.fromEntries([...f.querySelectorAll("[name]")].filter((el) => el.value !== el.defaultValue).map((el) => [el.name, el.value]));
 S.forms.admment = (f) => run(f.querySelector("[type=submit]"), async () => { await call("/api/admin/mentions", { json: changed(f) }); toast("Згадки збережено"); S.render(); });
+// адреса: #/admin/вкладка
+S.routes.admin = { get: () => [st.tab], set: (p) => { st.tab = p[0] || "users"; } };
 })();

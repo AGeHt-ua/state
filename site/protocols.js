@@ -226,4 +226,10 @@ Object.assign(S.actions, {
   protpdf: (b) => S.pdfA4(b, protA4(st.doc), docName()),
   protpng: (b) => S.pngBtn(b, blank(st.doc), docName()),
 });
+// адреса: #/kb/prot · #/kb/prot/12 · #/kb/prot/12/edit · #/kb/prot/new
+const isId = (x) => /^\d+$/.test(x || "");
+S.protRoute = {
+  get: () => st.edit ? [st.edit.id || "new", st.edit.id ? "edit" : null] : st.id ? [st.id] : [],
+  set: (p) => { st.id = isId(p[0]) ? +p[0] : null; st.edit = p[0] === "new" ? { data: fresh() } : null; },
+};
 })();

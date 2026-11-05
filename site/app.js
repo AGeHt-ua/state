@@ -733,6 +733,132 @@ async function vHr() {
 const HOOKS = [];
 const VIEWS = { home: vHome, act: vAct, rap: vRap, staff: vStaff, audit: vAudit, hr: vHr };
 
+/* ---------------- адреси сторінок: #/розділ/вкладка/документ ----------------
+   Кожен екран має свою адресу: працюють «Назад» / «Вперед» (браузер, планшет), оновлення сторінки й посилання.
+   Розділ описує свій стан у ROUTES[розділ] = { get: () => [частини адреси], set: (частини) => стан }.
+   Без опису — адреса з поточної вкладки розділу. Переглядач файлів додає «/~/<id файлу>». */
+const ROUTES = {};
+const defRoute = (v) => ({ get: () => [UI.tabs[v]], set: (p) => { if (p[0]) UI.tabs[v] = p[0]; else delete UI.tabs[v]; } });
+const isId = (x) => /^\d+$/.test(x || "");
+ROUTES.home = { get: () => [], set: () => {} };
+ROUTES.act = { get: () => UI.actId ? [UI.actId] : [UI.tabs.act],
+  set: (p) => { UI.actId = isId(p[0]) ? +p[0] : null; if (!UI.actId) { if (p[0]) UI.tabs.act = p[0]; else delete UI.tabs.act; } } };
+ROUTES.rap = { get: () => UI.rapId ? [UI.rapId] : UI.tabs.rap === "new" ? ["new", UI.rapType] : [UI.tabs.rap],
+  set: (p) => { UI.rapId = isId(p[0]) ? +p[0] : null; if (!UI.rapId) { if (p[0]) UI.tabs.rap = p[0]; else delete UI.tabs.rap; } if (p[0] === "new" && p[1]) UI.rapType = p[1]; } };
+let fromHistory = false, lastPath = "", DIRTY = false;
+function routePath() {
+  const parts = ((ROUTES[UI.view] || defRoute(UI.view)).get() || []).filter((x) => x !== null && x !== undefined && x !== "");
+  return "#/" + UI.view + (parts.length ? "/" + parts.map((x) => encodeURIComponent(x)).join("/") : "") + (UI.file ? "/~/" + encodeURIComponent(UI.file) : "");
+}
+// розібрати адресу: розділ, його частини й відкритий у переглядачі файл
+function parseRoute(hash) {
+  const parts = (hash || "").replace(/^#\/?/, "").split("/").filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch (e) { return x; } });
+  const fi = parts.indexOf("~");
+  return { view: parts[0] || "home", parts: (fi >= 0 ? parts.slice(0, fi) : parts).slice(1), file: fi >= 0 ? parts[fi + 1] || null : null };
+}
+function applyRoute(hash) {
+  const r = parseRoute(hash);
+  if (r.view !== UI.view) HOOKS.forEach((f) => f(r.view));  // інші розділи скидають свій стан, як при переході з меню
+  UI.view = r.view;
+  UI.actId = null; UI.rapId = null;
+  try { (ROUTES[r.view] || defRoute(r.view)).set(r.parts); } catch (e) { console.warn("Адреса", hash, e); }
+  UI.file = r.file;
+}
+// після кожного рендеру — записати адресу; новий екран = новий запис в історії, той самий — без змін
+function syncUrl() {
+  const p = routePath();
+  if (p !== location.hash) {
+    if (fromHistory || !location.hash || !lastPath) history.replaceState({ y: 0 }, "", p);
+    else history.pushState({ y: 0 }, "", p);
+  }
+  lastPath = p; fromHistory = false;
+  const open = document.getElementById("viewer");
+  if (UI.file && !(open && !open.hidden && open.dataset.id === UI.file)) openViewer(UI.file);
+  else if (!UI.file) closeViewer();
+}
+// позиція прокрутки кожного запису історії — щоб «Назад» повертав на те саме місце
+let scrollT = 0;
+addEventListener("scroll", () => {
+  clearTimeout(scrollT);
+  scrollT = setTimeout(() => { try { history.replaceState({ ...(history.state || {}), y: scrollY }, ""); } catch (e) {} }, 250);
+}, { passive: true });
+addEventListener("popstate", async (e) => {
+  if (!TOKEN || !ME) return;
+  const was = parseRoute(lastPath), now = parseRoute(location.hash);
+  const sameScreen = was.view === now.view && was.parts.join("/") === now.parts.join("/");
+  if (!sameScreen && DIRTY && !confirm("Є незбережені зміни у формі. Вийти без збереження?")) { history.pushState({ y: scrollY }, "", lastPath); return; }
+  if (sameScreen) {  // змінився лише переглядач файлу — без перемальовування сторінки
+    UI.file = now.file; lastPath = location.hash;
+    return now.file ? openViewer(now.file) : closeViewer();
+  }
+  DIRTY = false;
+  applyRoute(location.hash);
+  fromHistory = true;
+  await render();
+  scrollTo(0, (e.state && e.state.y) || 0);
+});
+// незбережені зміни: введення у формах на сторінці; попередження при виході зі сторінки чи закритті вкладки
+document.addEventListener("input", (e) => { if (e.target.closest("#view form, #view .kf-ed, #view [data-f]") && e.target.type !== "search" && !/-q$/.test(e.target.id || "")) DIRTY = true; });
+document.addEventListener("submit", () => { DIRTY = false; }, true);
+addEventListener("beforeunload", (e) => { if (DIRTY) { e.preventDefault(); e.returnValue = ""; } });
+// кнопки переходу поза формою (меню, вкладки, «← назад», відкрити документ) — спитати, якщо форма змінена
+const LEAVE = /^(nav|go|tab|\w*back|\w*open|\w*tab|kbopen|dpsel)$/;
+function leaveOk(b) {
+  if (!DIRTY || !LEAVE.test(b.dataset.a || "") || b.closest("form")) return true;
+  if (!confirm("Є незбережені зміни у формі. Вийти без збереження?")) return false;
+  DIRTY = false;
+  return true;
+}
+
+/* ---------------- переглядач скрінів і відео всередині сайту (своя адреса: «Назад» закриває його) ---------------- */
+async function openViewer(id) {
+  let box = document.getElementById("viewer");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "viewer";
+    box.className = "viewer";
+    box.addEventListener("click", (e) => { if (e.target === box || e.target.closest("[data-vclose]")) closeFile(); });
+    document.body.append(box);
+  }
+  box.dataset.id = id;
+  box.innerHTML = '<div class="viewer-bar"><span class="spin"></span><span class="sp"></span><button class="btn sm" data-vclose>✕ Закрити</button></div>';
+  box.hidden = false;
+  document.body.classList.add("viewer-on");
+  try {
+    const r = await call(`/api/files/${encodeURIComponent(id)}/url`);
+    if (box.dataset.id !== id) return;
+    const ext = (new URL(r.url).pathname.split(".").pop() || "").toLowerCase();
+    const media = /^(png|jpe?g|gif|webp|bmp)$/.test(ext) ? `<img src="${esc(r.url)}" alt="Файл">`
+      : /^(mp4|webm|mov|m4v)$/.test(ext) ? `<video src="${esc(r.url)}" controls autoplay playsinline></video>`
+      : `<div class="viewer-file"><p>Цей файл (.${esc(ext)}) не відкривається в переглядачі.</p><a class="btn gold" href="${esc(r.url)}" target="_blank" rel="noopener">Відкрити файл</a></div>`;
+    box.innerHTML = `<div class="viewer-bar"><a class="btn sm" href="${esc(r.url)}" target="_blank" rel="noopener" download>⬇ Завантажити</a><span class="sp"></span><button class="btn sm" data-vclose>✕ Закрити</button></div><div class="viewer-body">${media}</div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="viewer-bar"><span class="sp"></span><button class="btn sm" data-vclose>✕ Закрити</button></div><div class="viewer-body"><p class="note bad">${esc(e.message)}</p></div>`;
+  }
+}
+function closeViewer() {
+  const box = document.getElementById("viewer");
+  if (box) { box.hidden = true; box.innerHTML = ""; delete box.dataset.id; }
+  document.body.classList.remove("viewer-on");
+}
+// відкрити файл: новий запис історії; закрити — «Назад» (якщо відкрили ми) або просто прибрати з адреси
+function showFile(id) {
+  UI.file = id;
+  const p = routePath();
+  history.pushState({ y: scrollY, file: id }, "", p);
+  lastPath = p;
+  openViewer(id);
+}
+function closeFile() {
+  if (history.state && history.state.file) return history.back();
+  UI.file = null;
+  const p = routePath();
+  history.replaceState({ y: scrollY }, "", p);
+  lastPath = p;
+  closeViewer();
+}
+addEventListener("keydown", (e) => { if (e.key === "Escape" && UI.file) closeFile(); });
+
 /* ---------------- рендер ---------------- */
 async function boot() {
   try {
@@ -748,7 +874,11 @@ async function boot() {
     }
     return render(e.message);
   }
-  render();
+  applyRoute(location.hash);
+  fromHistory = true;  // перший екран — замінити запис, а не додавати
+  await render();
+  const y = history.state && history.state.y;
+  if (y) scrollTo(0, y);
 }
 
 async function render(err) {
@@ -766,6 +896,8 @@ async function render(err) {
   } catch (e) {
     if ($("#view")) $("#view").innerHTML = `<p class="note bad">${esc(e.message)}</p>`;
   }
+  DIRTY = false;
+  if (UI.view === view) syncUrl();
 }
 
 async function refreshMe() {
@@ -782,8 +914,7 @@ const A = {
   tab: (b) => { UI.rapId = null; UI.actId = null; UI.tabs[b.dataset.k] = b.dataset.v; render(); },
   logout: () => logout(false),
   file: async (b) => {
-    try { const r = await call(`/api/files/${encodeURIComponent(b.dataset.id)}/url`); window.open(r.url, "_blank", "noopener"); }
-    catch (e) { toast(e.message, 1); }
+    showFile(b.dataset.id);
   },
   // універсальна кнопка PDF: data-sel — селектор бланка на сторінці, data-name — назва файлу
   verify: (b) => verifyCard(b),
@@ -895,7 +1026,7 @@ document.addEventListener("input", (e) => {
   const p = document.getElementById("cs-prev");
   if (p) p.textContent = p.dataset.s.replace("ПОЗИВНИЙ", e.target.value.replace(/\s+/g, "").toUpperCase() || "ПОЗИВНИЙ").slice(0, 32);
 });
-document.addEventListener("click", (e) => { const b = e.target.closest("[data-a]"); if (!b || b.disabled) return; const ln = e.target.closest("a[href]"); if (ln && ln !== b && b.contains(ln)) return; const f = A[b.dataset.a]; if (f) { e.preventDefault(); f(b); } });
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-a]"); if (!b || b.disabled) return; const ln = e.target.closest("a[href]"); if (ln && ln !== b && b.contains(ln)) return; const f = A[b.dataset.a]; if (f) { e.preventDefault(); if (leaveOk(b)) f(b); } });
 document.addEventListener("submit", (e) => { const f = e.target.closest("[data-f]"); if (!f) return; e.preventDefault(); const h = F[f.dataset.f]; if (h) h(f, e); });
 document.addEventListener("input", (e) => {
   if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview();
@@ -910,7 +1041,7 @@ document.addEventListener("change", (e) => {
 
 // Спільні хелпери для модулів (cases.js)
 window.SOVA = { esc, fmtDT, call, toast, $, uploadFiles, render, refreshMe, views: VIEWS, actions: A, forms: F, onNav: HOOKS, cache: {},
-  ME: () => ME, META: () => META, reloadMeta: async () => { META = await call("/api/meta"); } };
+  ME: () => ME, META: () => META, routes: ROUTES, showFile, setDirty: (v) => { DIRTY = !!v; }, reloadMeta: async () => { META = await call("/api/meta"); } };
 
 if (TOKEN) boot(); else render();
 })();

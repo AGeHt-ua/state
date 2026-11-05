@@ -252,4 +252,12 @@ S.forms.nsinsp = async (f) => run(f.querySelector("button[type=submit]"), async 
   toast("Перевірку збережено"); st.insp = null; S.render();
 });
 S.onNav.push((v) => { if (v !== "disc") { st.insp = null; } });
+// адреса: #/disc/вкладка · #/disc/insp/5 (службова перевірка) · #/disc/insp/new
+S.routes.disc = {
+  get: () => [st.tab, st.insp ? (st.insp.id || "new") : null],
+  set: (p) => {
+    st.tab = p[0] || null;
+    st.insp = p[1] === "new" ? {} : p[1] ? (((S.cache.disc || {}).inspections) || []).find((i) => String(i.id) === p[1]) || null : null;
+  },
+};
 })();

@@ -405,4 +405,15 @@ S.forms.kfsave = async (f, ev) => {
   catch (e) { toast(e.message, 1); btns.forEach((x) => (x.disabled = false)); }
 };
 S.onNav.push((v) => { if (v !== "cases") { UIc.id = null; UIc.edit = null; } });
+// адреса: #/cases/вкладка · #/cases/7 · #/cases/7/edit · #/cases/new
+const isId = (x) => /^\d+$/.test(x || "");
+S.routes.cases = {
+  get: () => UIc.edit ? (UIc.edit.id ? [UIc.edit.id, "edit"] : ["new"]) : UIc.id ? [UIc.id] : [UIc.tab],
+  set: (p) => {
+    UIc.edit = null;
+    UIc.id = isId(p[0]) ? +p[0] : null;
+    if (!UIc.id) UIc.tab = p[0] && p[0] !== "new" ? p[0] : null;
+    if (p[0] === "new" && ((S.ME().cases || {}).create || []).length) UIc.edit = blankCase();
+  },
+};
 })();
