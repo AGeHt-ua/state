@@ -339,11 +339,11 @@ function resultView(a, review) {
   const qs = a.questions || [];
   return `<div class="kd-bar"><button class="btn" data-a="exback">← До іспитів</button></div>
   <form class="card" data-f="exgrade"><header class="paper-head"><div><div class="eyebrow">${review ? "Перевірка ВКПП" : "Результат іспиту"}</div><h3>${esc(a.examTitle)}</h3>
-    <div class="muted small">${esc(a.rankName)} ${esc(a.name)} · ${fmtDT(a.finished)}${a.late ? " · здано після ліміту часу" : ""}</div></div>
+    <div class="muted small">${esc(a.rankName)} ${esc(a.name)} · ${fmtDT(a.finished)}${a.late ? " · здано після ліміту часу (не зараховується)" : ""}</div></div>
     <div class="ex-score ${a.pct == null ? "" : a.passed ? "ok" : "bad"}">${a.pct == null ? "?" : a.pct + "%"}<span>${a.pct == null ? "на перевірці" : a.passed ? "СКЛАДЕНО" : "НЕ СКЛАДЕНО"}</span></div></header>
     ${qs.map((q, i) => { const p = a.answers[q.id] || {}; return `<div class="ex-rq ${q.type === "text" ? "" : p.ok ? "ok" : "bad"}"><b>${i + 1}. ${esc(q.q)}</b>
       ${q.type === "text" ? `<p class="ex-txt">${esc(p.answer || "—")}</p>${review ? `<label class="f" style="max-width:200px"><span>Бали (з ${q.points})</span><input class="i" type="number" min="0" max="${q.points}" step="0.5" data-pts="${q.id}" value="${p.points ?? ""}"></label>` : `<div class="small muted">Бали: ${p.points ?? "на перевірці"} з ${q.points}</div>`}`
-        : `<ul>${q.options.map((o, k) => `<li class="${q.correct.includes(k) ? "right" : ""} ${(p.answer || []).includes(k) ? "chosen" : ""}">${esc(o)}</li>`).join("")}</ul>`}</div>`; }).join("") || '<p class="muted">Відповіді з\'являться після перевірки ВКПП.</p>'}
+        : `<ul>${q.options.map((o, k) => `<li class="${(q.correct || []).includes(k) ? "right" : ""} ${(p.answer || []).includes(k) ? "chosen" : ""}">${esc(o)}</li>`).join("")}</ul>`}</div>`; }).join("") || '<p class="muted">Відповіді з\'являться після перевірки ВКПП.</p>'}
     ${review ? `<label class="f"><span>Коментар ВКПП</span><input class="i" id="ex-note" value="${esc(a.note || "")}"></label>
       <div class="acts"><button class="btn gold" type="submit">Зберегти оцінку</button><button class="btn bad" type="button" data-a="exattdel" data-id="${a.id}">🗑 Анулювати спробу</button></div>` : a.note ? `<p class="note">ВКПП: ${esc(a.note)}</p>` : ""}</form>`;
 }

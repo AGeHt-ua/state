@@ -852,15 +852,54 @@ async def create_act(u: dict, body: dict) -> dict:
     arts = [str(a).strip() for a in body.get("arts", []) if str(a).strip()][:10]
     if ACTS[t][3] and not arts:
         raise Fail("Для затримання вкажіть статті, які оголошено затриманому.")
-    qty = max(1, min(12, int(body.get("qty") or 1)))
+    qty = max(1, min(12, int(body.get("qty") or 1))) if t == "patrol" else 1  # кількість — лише блоки патрулювання по 30 хв
     when = int(body.get("t") or now_ms())
     dept = "press" if ACTS[t][2] == ["press"] else u["dept"]
+    if u.get("status") == "vacation":
+        await back_from_vacation(u["sid"], "подав службовий звіт — вийшов на службу раніше")
     rid = await db.run("INSERT INTO acts(by_sid,dept,type,qty,t,arts,subj,evidence,files,note) VALUES(?,?,?,?,?,?,?,?,?,?)",
                        u["sid"], dept, t, qty, min(when, now_ms()), json.dumps(arts, ensure_ascii=False),
                        str(body.get("subj", ""))[:200], ev[:500], json.dumps(files), str(body.get("note", ""))[:1500])
     row = await db.one("SELECT * FROM acts WHERE id=?", rid)
     await post_card("act", row, tag=body.get("tag"))
     return row
+
+
+# ---------------------------------------------------------------- відпустка: кінець — автоматично
+def vacation_until(data: dict, approved: int) -> int:
+    """Кінець відпустки: з дати «з» (якщо вона пізніше за погодження) або з моменту погодження + кількість діб."""
+    start = approved
+    try:
+        d = datetime.strptime(str(data.get("from") or "")[:10], "%Y-%m-%d").replace(tzinfo=TZ or timezone.utc)
+        start = max(start, int(d.timestamp() * 1000))
+    except ValueError:
+        pass
+    return start + max(1, int(data.get("days") or 1)) * DAY
+
+
+async def back_from_vacation(sid: int, why: str):
+    await db.run("UPDATE users SET status='active', vac_until=NULL WHERE sid=? AND status='vacation'", sid)
+    await db.audit(0, "Повернення з відпустки", sid, why)
+
+
+async def vacation_loop():
+    """Раз на 30 хв: хто відгуляв відпустку — знову «на службі». Старі відпустки (без дати кінця) — за останнім погодженим рапортом."""
+    import asyncio
+    await asyncio.sleep(120)
+    while True:
+        try:
+            now = now_ms()
+            for u in await db.all("SELECT sid, vac_until FROM users WHERE status='vacation'"):
+                until = u["vac_until"]
+                if not until:
+                    r = await db.one("SELECT data, reviewed FROM raps WHERE by_sid=? AND type='vac' AND status='ok' ORDER BY reviewed DESC LIMIT 1", u["sid"])
+                    until = vacation_until(json.loads(r["data"] or "{}"), r["reviewed"] or now) if r else now
+                    await db.run("UPDATE users SET vac_until=? WHERE sid=?", until, u["sid"])
+                if until <= now:
+                    await back_from_vacation(u["sid"], f"строк відпустки минув {style.when(until)}")
+        except Exception as ex:
+            log.warning("Повернення з відпусток: %s", ex)
+        await asyncio.sleep(1800)
 
 
 async def decide_act(actor: dict, act_id: int, decision: str) -> dict:
@@ -954,6 +993,15 @@ async def decide_rap(actor: dict, rap_id: int, decision: str) -> dict:
     if not can_approve_rap(actor, r):
         raise Fail("Ви не можете розглядати цей рапорт.", 403)
     ok = decision == "ok"
+    if ok and r["type"] == "promo":  # за час розгляду звання могли змінити наказом або анулювати звіти — тоді рапорт застарів
+        import promo
+        target, data = await user(r["by_sid"]), json.loads(r["data"] or "{}")
+        to = int(data.get("to") or 0)
+        if not target or target["rank"] != to - 1:
+            raise Fail("Звання співробітника вже змінилося після подання рапорту — рапорт застарів. Відмовте його; за потреби співробітник подасть новий.")
+        need, bal = (await promo.cfg())[to]["pts"], await promo.balance(target)
+        if bal < need:
+            raise Fail(f"У співробітника вже недостатньо балів для підвищення ({bal} з {need}): звіти могли анулювати. Відмовте рапорт.")
     if r["type"] in STAGES:
         data = json.loads(r["data"] or "{}")
         st = data.get("stage", "from")
@@ -1029,8 +1077,9 @@ async def apply_rap(actor: dict, r: dict):
         await db.run("DELETE FROM sessions WHERE sid=?", u["sid"])
         await db.audit(actor["sid"], "Звільнення (ПСЖ)", u["sid"], "ролі СБУ знято")
     elif r["type"] == "vac":
-        await db.run("UPDATE users SET status='vacation' WHERE sid=?", u["sid"])
-        await db.audit(actor["sid"], "Відпустка", u["sid"], f"{data.get('days')} діб")
+        until = vacation_until(data, now_ms())
+        await db.run("UPDATE users SET status='vacation', vac_until=? WHERE sid=?", until, u["sid"])
+        await db.audit(actor["sid"], "Відпустка", u["sid"], f"{data.get('days')} діб · до {style.when(until)}")
     elif r["type"] == "refund":
         await db.audit(actor["sid"], "Відшкодування коштів", u["sid"], f"${data.get('amount', 0):,} · рапорт №{r['id']}".replace(",", " "))
     u = await user(r["by_sid"])

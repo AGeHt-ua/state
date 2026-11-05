@@ -65,7 +65,9 @@ async def exam_passed(sid: int, eid: int) -> bool:
     e = await db.one("SELECT pass_pct FROM exams WHERE id=?", eid)
     if not e:
         return True  # іспит видалено — вимога не діє
-    for a in await db.all("SELECT score, total FROM attempts WHERE sid=? AND exam_id=? AND score IS NOT NULL AND status!='deleted'", sid, eid):
+    # прострочена спроба (здано після ліміту часу) не зараховується
+    for a in await db.all("SELECT score, total FROM attempts WHERE sid=? AND exam_id=? AND score IS NOT NULL AND status!='deleted' AND COALESCE(late,0)=0",
+                          sid, eid):
         if a["total"] and 100 * a["score"] / a["total"] >= e["pass_pct"]:
             return True
     return False

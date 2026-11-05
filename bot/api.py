@@ -1228,6 +1228,7 @@ async def start() -> web.AppRunner:
     core.ROLES_CHANGED.append(build_structure)
     asyncio.create_task(finance.reminder_loop())
     asyncio.create_task(docpost.reminder_loop())  # нагадування про документи, що чекають рішення понад добу
+    asyncio.create_task(core.vacation_loop())     # повернення з відпусток
     asyncio.create_task(games.weekly_loop())
     asyncio.create_task(structure_loop())
     asyncio.create_task(kb.ensure_seeded())

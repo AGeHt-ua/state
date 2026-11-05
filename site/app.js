@@ -385,7 +385,7 @@ async function vAct() {
       <form data-f="act" class="form-grid">
         <label class="f"><span>Тип дії</span><select class="i" id="a-type">${allowed.map(([k, a]) => `<option value="${k}">${esc(a.n)} · ${a.p} б.</option>`).join("")}</select></label>
         <label class="f"><span>Дата і час</span><input class="i" id="a-t" type="datetime-local" value="${localInput(Date.now())}"></label>
-        <label class="f"><span>Кількість (патруль — блоків по 30 хв)</span><input class="i" id="a-qty" type="number" min="1" max="12" value="1"></label>
+        <label class="f" id="a-qty-f" ${allowed[0] && allowed[0][0] === "patrol" ? "" : "hidden"}><span>Кількість блоків патрулювання по 30 хв</span><input class="i" id="a-qty" type="number" min="1" max="12" value="1"></label>
         <label class="f"><span>Статті КК (через кому)</span><input class="i mono" id="a-arts" placeholder="напр. 263, 342"></label>
         <label class="f"><span>Фігурант</span><input class="i" id="a-subj" placeholder="ім'я або «невстановлена особа»"></label>
         <label class="f"><span>Доказ: посилання на відкат</span><input class="i" id="a-ev" placeholder="https://..."></label>
@@ -1088,6 +1088,7 @@ document.addEventListener("input", (e) => {
   }
 });
 document.addEventListener("change", (e) => {
+  if (e.target.id === "a-type" && $("#a-qty-f")) { $("#a-qty-f").hidden = e.target.value !== "patrol"; if (e.target.value !== "patrol") $("#a-qty").value = 1; }
   if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview(); if (e.target.dataset.change === "raptype") { UI.rapType = e.target.value; render(); } });
 
 // Спільні хелпери для модулів (cases.js)

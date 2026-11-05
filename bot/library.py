@@ -117,12 +117,24 @@ def public_exam(e: dict) -> dict:
             "questions": [{k: q[k] for k in ("id", "type", "q", "options", "points")} | {"multi": q["type"] == "multi"} for q in e["questions"]]}
 
 
+RETRY_MS = 24 * 3600 * 1000  # пауза між спробами іспиту після нескладеної
+
+
 async def start(u: dict, eid: int) -> dict:
     e = await exam_get(eid)
     if e["status"] != "published":
         raise Fail("Іспит ще не опубліковано.")
     a = await db.one("SELECT * FROM attempts WHERE exam_id=? AND sid=? AND status='progress'", eid, u["sid"])
     if not a:
+        last = await db.one("SELECT * FROM attempts WHERE exam_id=? AND sid=? AND status IN ('submitted','graded') ORDER BY finished DESC LIMIT 1",
+                            eid, u["sid"])
+        if last and last["status"] == "submitted":
+            raise Fail("Попередня спроба ще на перевірці ВКПП.")
+        if last and now_ms() - (last["finished"] or 0) < RETRY_MS:
+            ok = last["total"] and last["score"] is not None and 100 * last["score"] / last["total"] >= e["pass_pct"] and not last["late"]
+            if not ok:
+                left = RETRY_MS - (now_ms() - (last["finished"] or 0))
+                raise Fail(f"Нову спробу можна почати через {left // 3_600_000} год {left % 3_600_000 // 60_000} хв (між спробами — 24 години).")
         aid = await db.run("INSERT INTO attempts(exam_id,sid,status,started) VALUES(?,?,?,?)", eid, u["sid"], "progress", now_ms())
         a = await db.one("SELECT * FROM attempts WHERE id=?", aid)
     return {"attempt": a["id"], "started": a["started"], "exam": public_exam(e)}
@@ -173,7 +185,7 @@ async def grade(u: dict, aid: int, points: dict, note: str) -> dict:
         score += p.get("points") or 0
     await db.run("UPDATE attempts SET answers=?, score=?, status='graded', grader=?, graded=?, note=? WHERE id=?",
                  json.dumps(per, ensure_ascii=False), score, u["sid"], now_ms(), (note or "")[:1000], aid)
-    return await attempt_out(await db.one("SELECT * FROM attempts WHERE id=?", aid), e, reveal=True)
+    return await attempt_out(await db.one("SELECT * FROM attempts WHERE id=?", aid), e, reveal=True, keys=True)
 
 
 async def attempt_delete(u: dict, aid: int):
@@ -182,7 +194,8 @@ async def attempt_delete(u: dict, aid: int):
     await db.run("UPDATE attempts SET status='deleted' WHERE id=?", aid)
 
 
-async def attempt_out(a: dict, e: dict | None = None, reveal: bool = False) -> dict:
+async def attempt_out(a: dict, e: dict | None = None, reveal: bool = False, keys: bool = False) -> dict:
+    """reveal — показати питання й відповіді людини; keys — ще й правильні варіанти (лише ВКПП, щоб іспит не складали перебором)."""
     e = e or await exam_get(a["exam_id"])
     p = await core.user(a["sid"])
     g = await core.user(a["grader"]) if a.get("grader") else None
@@ -192,7 +205,8 @@ async def attempt_out(a: dict, e: dict | None = None, reveal: bool = False) -> d
            "name": p["name"] if p else f"№{a['sid']}", "rankName": rank_name(p["rank"]) if p else "", "graderName": g["name"] if g else None,
            "answers": json.loads(a["answers"] or "{}")}
     if reveal:
-        out["questions"] = e["questions"]
+        out["questions"] = e["questions"] if keys else [{k: v for k, v in q.items() if k != "correct"} for q in e["questions"]]
+    out["counts"] = out["passed"] and not a.get("late")  # прострочена спроба не зараховується для підвищення
     return out
 
 
@@ -206,5 +220,5 @@ async def overview(u: dict) -> dict:
         "examiner": ex,
         "exams": [{**{k: e[k] for k in ("id", "title", "descr", "pass_pct", "minutes", "status", "t")}, "count": len(json.loads(e["questions"] or "[]"))} for e in exams],
         "mine": [await attempt_out(a, reveal=a["status"] == "graded") for a in mine if a["status"] != "progress"],
-        "review": [await attempt_out(a, reveal=True) for a in review],
+        "review": [await attempt_out(a, reveal=True, keys=True) for a in review],
     }
