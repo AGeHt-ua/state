@@ -91,7 +91,7 @@ function docHtml(c, pdf) {
 }
 
 function history(c) {
-  const W = { create: "Заведено справу", withdraw: "Відкликано виконавцем з погодження", submit: "Подано на погодження", ok: "Погоджено", return: "Повернуто на доопрацювання", rej: "Відмовлено" };
+  const W = { create: "Заведено справу", withdraw: "Відкликано виконавцем з погодження", submit: "Подано на погодження", ok: "Погоджено", return: "Повернуто на доопрацювання", rej: "Відмовлено", archive: "Відправлено в Discord (PDF + посилання)" };
   return `<div class="card"><header><h3>Рух документа</h3></header><div class="aud">${(c.history || []).slice().reverse().map((h) => `
     <div class="aud-it k-${h.action === "ok" || h.action === "submit" ? "in" : h.action === "rej" ? "down" : h.action === "return" ? "up" : "misc"}"><i></i>
       <div class="aud-when"><b>${new Date(h.t).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })}</b><span>${new Date(h.t).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span></div>
@@ -107,6 +107,7 @@ async function vCase(id) {
     ${c.canWithdraw ? '<button class="btn" data-a="kfwd">↩ Відкликати з погодження</button>' : ""}
     ${c.canDecide ? `<button class="btn ok" data-a="kfdec" data-d="ok">${pros ? "Затвердити" : "Погодити"}</button><button class="btn" data-a="kfdec" data-d="return">Повернути на доопрацювання</button><button class="btn bad" data-a="kfdec" data-d="rej">Відмовити</button>` : ""}
     ${c.status === "approved" ? '<button class="btn gold" data-a="kfpdf">⬇ Завантажити PDF</button>' : ""}
+    ${c.canArchive ? `<button class="btn" data-a="kfsend">📤 ${c.archived ? "Відправити в ДС повторно" : "Відправити в ДС"}</button>` : ""}
     ${c.canDelete && c.status !== "deleted" ? '<button class="btn bad" data-a="kfdelete">🗑 Видалити справу</button>' : ""}</div>`;
   // автор не може погоджувати власну справу (навіть якщо пізніше отримав роль прокурора чи керівника)
   const me = S.ME().me;
@@ -196,8 +197,9 @@ function loadPdf() {
     document.head.append(s);
   }));
 }
-// Спільний генератор PDF для документів на бланку (.kd): кейс-файли, відомості премій
-async function pdfFrom(html, filename, avoid = []) {
+// Спільний генератор PDF для документів на бланку (.kd): кейс-файли, відомості премій.
+// asBlob — повернути файл (для відправки в Discord) замість завантаження
+async function pdfFrom(html, filename, avoid = [], asBlob = false) {
   await loadPdf();
   const box = document.createElement("div");
   box.className = "pdf-host";
@@ -207,10 +209,11 @@ async function pdfFrom(html, filename, avoid = []) {
   box.querySelectorAll("details").forEach((n) => { n.open = true; });  // згорнуті розділи — у PDF повністю
   document.body.append(box);
   try {
-    await window.html2pdf().set({ margin: [8, 8, 10, 8], filename,
-      image: { type: "jpeg", quality: 0.96 }, html2canvas: { scale: 2, backgroundColor: "#f3eee2", useCORS: true },
+    const job = window.html2pdf().set({ margin: [8, 8, 10, 8], filename,
+      image: { type: "jpeg", quality: asBlob ? 0.85 : 0.96 }, html2canvas: { scale: 2, backgroundColor: "#f3eee2", useCORS: true },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }, pagebreak: { mode: ["css", "legacy"], avoid: [".kf-visa", ...avoid] } })
-      .from(box.firstElementChild).save();
+      .from(box.firstElementChild);
+    return asBlob ? await job.outputPdf("blob") : await job.save();
   } finally { box.remove(); }
 }
 S.pdf = pdfFrom;
@@ -245,8 +248,15 @@ S.pdfBtn = async (b, src, name) => {
   finally { b.disabled = false; b.textContent = old; }
 };
 
-async function makePdf(c) {
-  await pdfFrom(docHtml(c, true), `${no(c.id)}_${(c.data.title || "").replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, [".kd-p", ".kd-ev li", ".kd-approved"]);
+async function makePdf(c, asBlob = false) {
+  return pdfFrom(docHtml(c, true), `${no(c.id)}_${(c.data.title || "").replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, [".kd-p", ".kd-ev li", ".kd-approved"], asBlob);
+}
+// Затверджений кейс-файл → архівний канал Discord: сайт формує PDF, бот додає .txt з посиланнями
+async function sendToDiscord(id) {
+  const c = await call(`/api/cases/${id}`);
+  const fd = new FormData();
+  fd.append("pdf", await makePdf(c, true), `${no(c.id)}.pdf`);
+  return call(`/api/cases/${id}/archive`, { method: "POST", body: fd });
 }
 
 /* ---------- підключення до кабінету ---------- */
@@ -302,8 +312,23 @@ Object.assign(S.actions, {
     if (d !== "ok") { note = prompt(d === "return" ? "Що доопрацювати? (виконавець побачить)" : "Причина відмови:", ""); if (note === null) return; }
     else if (!confirm(S.cache.case.status === "prosecutor" ? "Затвердити кейс-файл?" : "Погодити й передати далі?")) return;
     b.disabled = true;
-    try { await call(`/api/cases/${UIc.id}/decision`, { json: { decision: d, note } }); toast(d === "ok" ? "Рішення внесено" : d === "return" ? "Повернуто виконавцю" : "Відмовлено"); await S.refreshMe(); S.render(); }
+    try {
+      const r = await call(`/api/cases/${UIc.id}/decision`, { json: { decision: d, note } });
+      toast(d === "ok" ? "Рішення внесено" : d === "return" ? "Повернуто виконавцю" : "Відмовлено");
+      if (r.status === "approved") {  // затвердив Генпрокурор — одразу PDF + посилання в Discord
+        b.innerHTML = '<span class="spin"></span> Відправляю в Discord…';
+        try { await sendToDiscord(r.id); toast("Кейс-файл відправлено в Discord: PDF + посилання"); }
+        catch (e) { toast("Затверджено, але не відправлено в Discord: " + e.message + ". Голова СБУ або заступник може відправити кнопкою.", 1); }
+      }
+      await S.refreshMe(); S.render();
+    }
     catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
+  kfsend: async (b) => {
+    if (S.cache.case.archived && !confirm("Кейс-файл уже є в Discord. Відправити заново? Попереднє повідомлення буде замінено.")) return;
+    b.disabled = true; const t = b.textContent; b.innerHTML = '<span class="spin"></span> Відправляю…';
+    try { await sendToDiscord(UIc.id); toast("Кейс-файл відправлено в Discord: PDF + посилання"); S.render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; b.textContent = t; }
   },
   kfpdf: async (b) => {
     b.disabled = true; const t = b.textContent; b.innerHTML = '<span class="spin"></span> Формую PDF…';

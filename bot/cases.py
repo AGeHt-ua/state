@@ -1,6 +1,7 @@
 """Кейс-файли: оперативні справи ОРВ, ДЕБ, АТЦ, ЦСО «А».
 Маршрут: виконавець → начальник відділу → Голова СБУ або заступник → Генеральний прокурор → затверджено.
 Зміст справи бачать лише учасники маршруту; у Discord іде тільки журнал руху документа, без змісту."""
+import io
 import json
 import logging
 
@@ -104,6 +105,7 @@ def out(c: dict, u: dict) -> dict:
     return {**c, "canEdit": c["author"] == u["sid"] and c["status"] == "draft", "canDecide": can_decide(u, c),
             "canWithdraw": c["author"] == u["sid"] and c["status"] in ("head", "chief", "prosecutor"),
             "canDelete": (c["author"] == u["sid"] and c["status"] == "draft") or is_chief(u),
+            "canArchive": c["status"] == "approved" and is_chief(u), "archived": bool(c.get("arch_msg")),
             "stageName": STAGE_NAME[c["status"]]}
 
 
@@ -190,6 +192,7 @@ async def delete(u: dict, cid: int):
         raise Fail("Видалити можна власну чернетку. Якщо справа на погодженні — спершу відкличте її.", 403)
     h = await _hist(c, u, "delete")
     await db.run("UPDATE cases SET status='deleted', history=?, updated=? WHERE id=?", json.dumps(h, ensure_ascii=False), now_ms(), cid)
+    await _drop_archive(c)
     c = await get(cid)
     await journal(c, u, "Справу видалено")
 
@@ -233,6 +236,76 @@ async def journal(c: dict, u: dict, label: str):
         await ch.send(embed=e, allowed_mentions=discord.AllowedMentions.none())
     except discord.HTTPException as ex:
         log.warning("Журнал кейс-файлу: %s", ex)
+
+
+# ---------------------------------------------------------------- архів у Discord: PDF + текстовий файл з посиланнями
+async def _drop_archive(c: dict):
+    """Прибирає попереднє повідомлення справи з архівного каналу (перевідправка або видалення справи)."""
+    if not c.get("arch_ch") or not c.get("arch_msg"):
+        return
+    try:
+        ch = core.bot.get_channel(int(c["arch_ch"])) or await core.bot.fetch_channel(int(c["arch_ch"]))
+        await (await ch.fetch_message(int(c["arch_msg"]))).delete()
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        pass
+    await db.run("UPDATE cases SET arch_ch=NULL, arch_msg=NULL WHERE id=?", c["id"])
+
+
+async def _links_txt(c: dict, approver: dict | None) -> str:
+    d = c["data"]
+    out = [f"КЕЙС-ФАЙЛ КФ-{c['id']:04d} · операція «{d.get('title', '')}»",
+           f"Підрозділ: {DEPTS[c['dept']]['n']}",
+           f"Гриф: {GRIF[d.get('grif', 'secret')]}"]
+    if approver:
+        out.append(f"Затверджено Генеральним прокурором: {approver['name']} · {style.when(approver['t'])}")
+    out += ["", "ПОСИЛАННЯ НА ДОКАЗИ", "=" * 40]
+    for i, e in enumerate(d.get("evidence") or [], 1):
+        rows = []
+        if e.get("url"):
+            rows.append(f"   Матеріал: {e['url']}")
+        for j, fid in enumerate(e.get("files") or [], 1):
+            row = await db.one("SELECT * FROM files WHERE id=?", fid)
+            if row:
+                rows.append(f"   Додаток {j} ({row['filename']}): https://discord.com/channels/{core.guild().id if core.guild() else '@me'}/{row['ch_id']}/{row['msg_id']}")
+        out.append(f"{i}. {e.get('desc') or 'без опису'}")
+        out += rows or ["   (посилань немає)"]
+    if not d.get("evidence"):
+        out.append("Доказів не додано.")
+    out += ["", f"Сформовано ЄІС «Сова» · {style.when()}"]
+    return "\n".join(out) + "\n"
+
+
+async def archive(u: dict, cid: int, pdf: bytes) -> dict:
+    """Затверджений кейс-файл → архівний канал Discord: PDF бланка (формує сайт) + .txt з усіма посиланнями.
+    Генпрокурор надсилає автоматично одразу після затвердження; Голова чи заступник — кнопкою (зокрема повторно)."""
+    c = await get(cid)
+    if c["status"] != "approved":
+        raise Fail("У Discord відправляється лише затверджений кейс-файл.")
+    if not is_chief(u) and not (is_prosecutor(u) and not c.get("arch_msg")):
+        raise Fail("Відправити кейс-файл у Discord може Голова СБУ або заступник.", 403)
+    if not pdf.startswith(b"%PDF"):
+        raise Fail("Пошкоджений PDF. Спробуйте ще раз.")
+    ch = await core.channel("cases:archive")
+    if not ch:
+        raise Fail("Архівний канал кейс-файлів недоступний боту.", 503)
+    approver = next((h for h in reversed(c["history"]) if h["stage"] == "prosecutor" and h["action"] == "ok"), None)
+    name = f"КФ-{c['id']:04d}_" + "".join(ch_ if ch_.isalnum() else "_" for ch_ in c["data"].get("title", ""))[:60]
+    txt = await _links_txt(c, approver)
+    lines = [style.kv("СПРАВА", f"КФ-{c['id']:04d} · «{c['data'].get('title', '')}»", "white", True),
+             style.kv("ПІДРОЗДІЛ", DEPTS[c["dept"]]["s"], "white"),
+             style.kv("ГРИФ", GRIF[c["data"].get("grif", "secret")], "red", True),
+             style.kv("ЗАТВЕРДИВ", f"{approver['name']} · Генпрокурор" if approver else "—", "green", True),
+             style.kv("ДАТА", style.when(c.get("approved")), "gray"),
+             style.kv("ВІДПРАВИВ", f"{u['name']} · №{u['sid']}", "white")]
+    e = style.document("КЕЙС-ФАЙЛ · ЗАТВЕРДЖЕНО", 0x5FB37A, desc=style.block(*lines), no=f"КФ-{c['id']:04d}",
+                       footer="PDF — бланк справи · TXT — посилання на докази")
+    await _drop_archive(c)
+    msg = await ch.send(embed=e, files=[discord.File(io.BytesIO(pdf), filename=name + ".pdf"),
+                                        discord.File(io.BytesIO(txt.encode("utf-8")), filename=name + "_посилання.txt")],
+                        allowed_mentions=discord.AllowedMentions.none())
+    h = await _hist(c, u, "archive")
+    await db.run("UPDATE cases SET arch_ch=?, arch_msg=?, history=? WHERE id=?", str(ch.id), str(msg.id), json.dumps(h, ensure_ascii=False), cid)
+    return await get(cid)
 
 
 async def visible(u: dict) -> list[dict]:

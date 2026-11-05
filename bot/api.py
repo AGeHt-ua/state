@@ -561,6 +561,22 @@ async def cases_decide(request):
     return web.json_response(cases.out(c, u))
 
 
+@routes.post("/api/cases/{id}/archive")
+async def cases_archive(request):
+    """Затверджений кейс-файл у Discord: PDF бланка (сформований сайтом) у полі pdf."""
+    u = await auth(request)
+    reader = await request.multipart()
+    pdf = bytearray()
+    while (part := await reader.next()) is not None:
+        if part.name == "pdf":
+            while chunk := await part.read_chunk(64 * 1024):
+                pdf.extend(chunk)
+                if len(pdf) > config.MAX_UPLOAD_MB * 1024 * 1024:
+                    raise Fail(f"PDF більший за {config.MAX_UPLOAD_MB:g} МБ.", 413)
+    c = await cases.archive(u, int(request.match_info["id"]), bytes(pdf))
+    return web.json_response(cases.out(c, u))
+
+
 @routes.get("/api/dept")
 async def dept_overview(request):
     u = await auth(request)
