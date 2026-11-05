@@ -82,9 +82,10 @@ function docHtml(c, pdf) {
     ${sec("IV", "Докази", (d.evidence || []).length ? `<ol class="kd-ev">${d.evidence.map((e) => `<li><div>${esc(e.desc || "без опису")}</div>
         ${pdf ? (e.url ? `<div class="mono small">${esc(e.url)}</div>` : "") : `<div class="files">${e.url ? `<a class="btn sm" href="${esc(e.url)}" target="_blank" rel="noopener">▶ Матеріал</a>` : ""}${(e.files || []).map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}">📎 Додаток ${i + 1}</button>`).join("")}</div>`}
         ${pdf && (e.files || []).length ? `<div class="small">Додатків: ${e.files.length} (зберігаються в ЄІС «Сова»)</div>` : ""}</li>`).join("")}</ol>` : "<p>—</p>")}
-    ${sec("V", "Проведені оперативно-розшукові заходи", `<p class="kd-text">${esc(d.measures || "—")}</p>`)}
-    ${sec("VI", "Клопотання", `<div class="kd-req"><div class="kd-req-t">${esc(REQ[(d.request || {}).type] || "")}</div><p class="kd-text">${esc((d.request || {}).text || "—")}</p></div>`)}
-    ${sec("VII", "Візи погодження", visas(c))}
+    ${sec("V", "Хід розслідування", (d.timeline || []).length ? `<ol class="kd-tl">${d.timeline.map((x) => `<li><span class="kd-tl-w">${esc(x.when || "—")}</span><div class="kd-tl-t">${esc(x.text)}</div></li>`).join("")}</ol>` : "<p>—</p>")}
+    ${sec("VI", "Проведені оперативно-розшукові заходи", `<p class="kd-text">${esc(d.measures || "—")}</p>`)}
+    ${sec("VII", "Клопотання", `<div class="kd-req"><div class="kd-req-t">${esc(REQ[(d.request || {}).type] || "")}</div><p class="kd-text">${esc((d.request || {}).text || "—")}</p></div>`)}
+    ${sec("VIII", "Візи погодження", visas(c))}
     ${approvedBy ? `<div class="kd-approved"><b>ЗАТВЕРДЖУЮ</b><span>Генеральний прокурор штату NG</span><span class="kf-sign">${esc(approvedBy.name)}</span><span>${fmtDT(approvedBy.t)}</span></div>` : ""}
     <footer class="kd-foot">ЄІС «Сова» · ${no(c.id)} · ${GRIF[d.grif]} · Розголошення відомостей тягне відповідальність згідно із Законом «Про Державну та Службову таємницю»</footer>
   </div>`;
@@ -118,7 +119,7 @@ async function vCase(id) {
 }
 
 /* ---------- редактор ---------- */
-const blankCase = () => ({ dept: (S.ME().cases.create || [])[0], data: { title: "", org: "", grif: "secret", summary: "", measures: "", arts: [], persons: [{ name: "", sid: "", role: "підозрюваний", org: "", note: "" }], evidence: [{ desc: "", url: "", files: [] }], request: { type: "search", text: "" } } });
+const blankCase = () => ({ dept: (S.ME().cases.create || [])[0], data: { title: "", org: "", grif: "secret", summary: "", measures: "", arts: [], persons: [{ name: "", sid: "", role: "підозрюваний", org: "", note: "" }], evidence: [{ desc: "", url: "", files: [] }], timeline: [{ when: "", text: "" }], request: { type: "search", text: "" } } });
 
 function editor(c) {
   const d = c.data, depts = S.ME().cases.create || [];
@@ -145,9 +146,15 @@ function editor(c) {
         <input class="i" data-f="file" type="file" accept="image/*,video/mp4,application/pdf" multiple>
         <span class="kf-files">${(e.files || []).map((f, i) => `<span class="kf-file">📎 ${i + 1}<button type="button" data-a="kffiledel" data-id="${esc(f)}" title="Видалити файл">✕</button></span>`).join("")}</span>
         <button type="button" class="btn sm bad" data-a="kfdel" title="Прибрати">✕</button></div>`).join("")}</div></div>
+    <div class="kf-ed-sec"><div class="kf-ed-h"><b>V</b> Хід розслідування <button type="button" class="btn sm" data-a="kfadd" data-k="timeline">+ Додати запис</button></div>
+      <p class="muted small">Хронологія: коли що сталося, які докази й від кого здобуто, які дії проведено. Записи йдуть у тому порядку, як ви їх додаєте.</p>
+      <div id="kf-timeline">${(d.timeline || []).map((x) => `<div class="kf-row kf-tl">
+        <input class="i mono" data-f="when" maxlength="30" placeholder="05.11 18:40" value="${esc(x.when)}">
+        <textarea class="i" data-f="text" maxlength="600" rows="2" placeholder="Що відбулося: напр. отримано відеозапис з камери біля банку від свідка J. Doe">${esc(x.text)}</textarea>
+        <button type="button" class="btn sm bad" data-a="kfdel" title="Прибрати">✕</button></div>`).join("")}</div></div>
     <div class="form-grid">
-      <label class="f wide"><span>V. Проведені оперативно-розшукові заходи</span><textarea class="i" id="kf-measures" maxlength="4000">${esc(d.measures)}</textarea></label>
-      <label class="f"><span>VI. Клопотання</span><select class="i" id="kf-rtype">${Object.entries(REQ).map(([k, v]) => `<option value="${k}" ${k === (d.request || {}).type ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+      <label class="f wide"><span>VI. Проведені оперативно-розшукові заходи</span><textarea class="i" id="kf-measures" maxlength="4000">${esc(d.measures)}</textarea></label>
+      <label class="f"><span>VII. Клопотання</span><select class="i" id="kf-rtype">${Object.entries(REQ).map(([k, v]) => `<option value="${k}" ${k === (d.request || {}).type ? "selected" : ""}>${v}</option>`).join("")}</select></label>
       <label class="f wide"><span>Зміст клопотання</span><textarea class="i" id="kf-rtext" maxlength="3000" placeholder="Прошу надати санкцію на...">${esc((d.request || {}).text)}</textarea></label>
     </div>
     <div class="paper-sign"><span class="muted small">Чернетку бачите лише ви. Після подання справа піде начальнику відділу, далі Голові СБУ та Генеральному прокурору.</span>
@@ -166,6 +173,7 @@ function collect() {
       persons: rows(".kf-person").map((r) => Object.fromEntries(["name", "sid", "role", "org", "note"].map((k) => [k, r.querySelector(`[data-f=${k}]`).value.trim()]))),
       evidence: rows(".kf-ev").map((r) => ({ desc: r.querySelector("[data-f=desc]").value.trim(), url: r.querySelector("[data-f=url]").value.trim(),
         files: (r.dataset.files || "").split(",").filter(Boolean), _input: r.querySelector("[data-f=file]") })),
+      timeline: rows(".kf-tl").map((r) => ({ when: r.querySelector("[data-f=when]").value.trim(), text: r.querySelector("[data-f=text]").value.trim() })),
       request: { type: v("#kf-rtype"), text: v("#kf-rtext") },
     },
   };
@@ -249,7 +257,7 @@ S.pdfBtn = async (b, src, name) => {
 };
 
 async function makePdf(c, asBlob = false) {
-  return pdfFrom(docHtml(c, true), `${no(c.id)}_${(c.data.title || "").replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, [".kd-p", ".kd-ev li", ".kd-approved"], asBlob);
+  return pdfFrom(docHtml(c, true), `${no(c.id)}_${(c.data.title || "").replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, [".kd-p", ".kd-ev li", ".kd-tl li", ".kd-approved"], asBlob);
 }
 // Затверджений кейс-файл → архівний канал Discord: сайт формує PDF, бот додає .txt з посиланнями
 async function sendToDiscord(id) {
@@ -274,7 +282,9 @@ Object.assign(S.actions, {
   kfadd: (b) => {
     const cur = collect();
     UIc.edit = { ...(UIc.edit || {}), dept: cur.dept, data: { ...cur.data, evidence: cur.data.evidence.map(({ _input, ...e }) => e) } };
-    UIc.edit.data[b.dataset.k].push(b.dataset.k === "persons" ? { name: "", sid: "", role: "фігурант", org: "", note: "" } : { desc: "", url: "", files: [] });
+    const k = b.dataset.k;
+    if (!UIc.edit.data[k]) UIc.edit.data[k] = [];
+    UIc.edit.data[k].push(k === "persons" ? { name: "", sid: "", role: "фігурант", org: "", note: "" } : k === "timeline" ? { when: "", text: "" } : { desc: "", url: "", files: [] });
     S.render();
   },
   kfdel: (b) => b.closest(".kf-row").remove(),

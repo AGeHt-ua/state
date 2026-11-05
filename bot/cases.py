@@ -83,9 +83,11 @@ def clean(b: dict) -> dict:
                 "org": s(p.get("org"), 80), "note": s(p.get("note"), 300)} for p in (b.get("persons") or [])[:30] if s(p.get("name"), 60)]
     evidence = [{"desc": s(e.get("desc"), 300), "url": s(e.get("url"), 400), "files": [str(f)[:40] for f in (e.get("files") or [])[:5]]}
                 for e in (b.get("evidence") or [])[:40] if s(e.get("desc"), 300) or e.get("files") or s(e.get("url"), 400)]
+    # хід розслідування: хронологія (коли й що встановлено, які докази здобуто)
+    timeline = [{"when": s(x.get("when"), 30), "text": s(x.get("text"), 600)} for x in (b.get("timeline") or [])[:60] if s(x.get("text"), 600)]
     return {
         "title": s(b.get("title"), 80), "org": s(b.get("org"), 120), "grif": b.get("grif") if b.get("grif") in GRIF else "secret",
-        "summary": s(b.get("summary"), 6000), "measures": s(b.get("measures"), 4000),
+        "summary": s(b.get("summary"), 6000), "measures": s(b.get("measures"), 4000), "timeline": timeline,
         "arts": [s(a, 12) for a in (b.get("arts") or [])[:20] if s(a, 12)],
         "persons": persons, "evidence": evidence,
         "request": {"type": (b.get("request") or {}).get("type") if (b.get("request") or {}).get("type") in REQUESTS else "search",
@@ -297,6 +299,17 @@ async def _archive_embed(c: dict, u: dict, approver: dict | None) -> discord.Emb
         e.add_field(name=f"👥 Фігуранти · {len(persons)}", inline=False, value="\n".join(
             f"`{i}` **{_md(p['name'])}**" + (f" · {_md(p['sid'])}" if p.get("sid") else "") + f" — {p.get('role', '')}"
             for i, p in enumerate(persons[:12], 1))[:990] + (f"\n…ще {len(persons) - 12}" if len(persons) > 12 else ""))
+    tl = d.get("timeline") or []
+    if tl:
+        rows = [f"`{_md(x['when']) or '—'}` {_md(x['text'])}" for x in tl]
+        val = ""
+        for i, r in enumerate(rows):
+            r = r if len(r) <= 200 else r[:197] + "…"
+            if len(val) + len(r) > 900:
+                val += f"\n…ще записів: {len(rows) - i} (повністю — у PDF)"
+                break
+            val += ("\n" if val else "") + r
+        e.add_field(name=f"🕒 Хід розслідування · {len(tl)}", value=val, inline=False)
     ev = d.get("evidence") or []
     size = len(e.description) + sum(len(f.name) + len(f.value) for f in e.fields)
     for i, x in enumerate(ev, 1):

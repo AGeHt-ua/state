@@ -98,11 +98,19 @@
 .kf-row .wide{grid-column:1/-2}
 .kf-ev{grid-template-columns:1fr 1fr auto auto}
 .kf-ev .wide{grid-column:1/-1}
+.kf-tl{grid-template-columns:130px 1fr auto;align-items:start}
+.kf-tl textarea{min-height:44px;resize:vertical}
+.kd-tl{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid var(--ink);display:grid;gap:10px}
+.kd-tl li{position:relative;display:grid;grid-template-columns:120px 1fr;gap:12px;break-inside:avoid}
+.kd-tl li::before{content:"";position:absolute;left:-20px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--ink)}
+.kd-tl-w{font:600 13px var(--mono);white-space:nowrap}
+.kd-tl-t{white-space:pre-wrap}
 
 @media (max-width:860px){
   .kd{padding:34px 20px 20px;font-size:14px}.kd-head{grid-template-columns:auto 1fr}.kd-no{grid-column:1/-1;justify-items:start;text-align:left}
   .kd-meta{grid-template-columns:110px 1fr}.kd-persons,.kf-visas{grid-template-columns:1fr 1fr}.kd-title h2{font-size:26px}
-  .kf-row,.kf-ev{grid-template-columns:1fr 1fr}.kf-row .wide{grid-column:1/-1}}
+  .kf-row,.kf-ev{grid-template-columns:1fr 1fr}.kf-row .wide{grid-column:1/-1}
+  .kf-tl{grid-template-columns:1fr auto}.kf-tl textarea{grid-column:1/-1;grid-row:2}.kd-tl li{grid-template-columns:1fr;gap:2px}}
 /* будь-який бланк у PDF: рівно, без тіней і поворотів, на ширину A4 */
 .pdf-host>.pdf{width:733px!important;box-sizing:border-box!important;min-height:0!important;max-width:none!important;box-shadow:none!important;rotate:0deg!important;transform:none!important;margin:0!important}
 .pdf-host>.pdf.dark{background:#f3eee2!important;color:#231c12!important}
