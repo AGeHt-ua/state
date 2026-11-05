@@ -843,9 +843,11 @@ async def create_act(u: dict, body: dict) -> dict:
     t = body.get("type")
     if t not in ACTS or not act_allowed(u, t):
         raise Fail("Цей тип дії недоступний для вашої посади або відділу.")
-    ev = str(body.get("evidence", "")).strip()
+    ev = str(body.get("evidence", "")).strip()[:500]
     files = [f for f in body.get("files", []) if isinstance(f, str)][:10]
-    if not ev.startswith(("http://", "https://")) and not files:
+    if ev and not ev.startswith(("http://", "https://")):  # лише веб-посилання: інше (javascript: тощо) на сайті стало б шкідливою кнопкою
+        raise Fail("Посилання на відкат має починатися з http:// або https://")
+    if not ev and not files:
         raise Fail("Додайте посилання на відкат або завантажте файл. Без доказу звіт не зараховується.")
     arts = [str(a).strip() for a in body.get("arts", []) if str(a).strip()][:10]
     if ACTS[t][3] and not arts:

@@ -82,8 +82,9 @@ def clean(b: dict) -> dict:
     s = lambda v, n: str(v or "").strip()[:n]
     persons = [{"name": s(p.get("name"), 60), "sid": s(p.get("sid"), 10), "role": p.get("role") if p.get("role") in ROLES else "фігурант",
                 "org": s(p.get("org"), 80), "note": s(p.get("note"), 300)} for p in (b.get("persons") or [])[:30] if s(p.get("name"), 60)]
-    evidence = [{"desc": s(e.get("desc"), 300), "url": s(e.get("url"), 400), "files": [str(f)[:40] for f in (e.get("files") or [])[:5]]}
-                for e in (b.get("evidence") or [])[:40] if s(e.get("desc"), 300) or e.get("files") or s(e.get("url"), 400)]
+    web = lambda v: s(v, 400) if s(v, 400).lower().startswith(("http://", "https://")) else ""  # лише веб-посилання
+    evidence = [{"desc": s(e.get("desc"), 300), "url": web(e.get("url")), "files": [str(f)[:40] for f in (e.get("files") or [])[:5]]}
+                for e in (b.get("evidence") or [])[:40] if s(e.get("desc"), 300) or e.get("files") or web(e.get("url"))]
     # хід розслідування: хронологія (коли й що встановлено, які докази здобуто)
     timeline = [{"when": s(x.get("when"), 30), "text": s(x.get("text"), 600)} for x in (b.get("timeline") or [])[:60] if s(x.get("text"), 600)]
     return {

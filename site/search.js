@@ -14,14 +14,19 @@ function enhanceSelect(sel) {
   box.innerHTML = '<input class="i sq-in" type="search" placeholder="🔍 Пошук: SID, ім\'я, звання або відділ" autocomplete="off"><span class="sq-n"></span>';
   sel.before(box);
   const inp = box.firstElementChild, n = box.lastElementChild;
+  // повний перелік пунктів; фільтр лишає в списку лише збіги (Safari на iPhone/iPad ігнорує option.hidden — тому прибираємо, а не ховаємо)
+  const all = [...sel.options];
+  let chosen = sel.value;  // вибір людини: не губиться, поки пошук тимчасово прибирає пункти
+  sel.addEventListener("change", () => { if (!inp.value) chosen = sel.value; });
   const filter = () => {
     const q = norm(inp.value);
     let shown = 0, first = null;
-    [...sel.options].forEach((o) => {
-      const ok = !q || !o.value || hit(norm(o.textContent), q);
-      o.hidden = !ok;
-      if (ok && o.value) { shown++; first = first || o; }
-    });
+    const keep = all.filter((o) => !q || !o.value || hit(norm(o.textContent), q));
+    if (keep.length !== sel.options.length || keep.some((o, i) => sel.options[i] !== o)) {
+      sel.replaceChildren(...keep);
+    }
+    sel.value = keep.some((o) => o.value === chosen) ? chosen : "";
+    keep.forEach((o) => { if (o.value) { shown++; first = first || o; } });
     n.textContent = q ? (shown ? `знайдено: ${shown}` : "нікого не знайдено") : "";
     sel.size = q && shown ? Math.min(8, shown + 1) : 0;  // поки шукаємо — список розкритий під полем
     sel.classList.toggle("sq-open", !!q && shown > 0);
@@ -29,7 +34,7 @@ function enhanceSelect(sel) {
   };
   const pick = (o) => {
     if (!o) return;
-    sel.value = o.value;
+    chosen = o.value;
     inp.value = "";
     filter();
     sel.dispatchEvent(new Event("input", { bubbles: true }));

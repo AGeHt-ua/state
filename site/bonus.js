@@ -63,6 +63,8 @@ function bnSnapshot() {
   return doc.outerHTML;
 }
 
+S.docImageFns.bn = async (id) => { const html = bnSnapshot(); return html ? S.docImage("bn", id, S.a4(html, `ВП-${String(id).padStart(4, "0")}`, { bare: true })) : false; };
+
 function docView(s) {
   const me = S.ME().me.sid, edit = s.status === "draft", c = s.cfg, D = S.META().depts, r = S.ME().bonus;
   const pct = c.limit ? Math.min(1.2, s.total / c.limit) : 0;
@@ -72,7 +74,7 @@ function docView(s) {
     ${edit ? '<button class="btn" data-a="bnrecalc">↻ Перерахувати з балів</button><button class="btn" data-a="bnsave">Зберегти зміни</button><button class="btn gold" data-a="bnmove" data-to="sent">Подати куратору</button><button class="btn bad" data-a="bndelete">🗑 Видалити</button>' : ""}
     ${s.status === "sent" ? '<button class="btn" data-a="bnmove" data-to="draft">Повернути на доопрацювання</button>' + (r.finalize ? '<button class="btn ok" data-a="bnmove" data-to="approved">Схвалено куратором</button>' : "") : ""}
     ${s.status === "approved" && r.finalize ? '<button class="btn gold" data-a="bnmove" data-to="paid">Позначити виплаченим</button>' : ""}
-    <button class="btn" data-a="bncopy">⧉ Звіт для куратора</button><button class="btn gold" data-a="bnpdf">⬇ PDF</button></div>
+    <button class="btn" data-a="bncopy">⧉ Звіт для куратора</button><button class="btn gold" data-a="bnpdf">⬇ PDF</button>${s.status !== "draft" ? S.docImgBtn("bn", s.id) : ""}</div>
     ${edit ? `<div class="bn-tag">${S.tagSelect('id="bn-tag"', "")}</div>` : ""}`;
   return bar + `<div class="kd-wrap"><div class="kd bn-doc">
     <div class="kd-grif g-dsk">ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ</div>

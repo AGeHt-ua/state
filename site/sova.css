@@ -288,3 +288,8 @@ select.sq-open option:checked{background:rgba(201,162,77,.25)}
 .viewer-body img,.viewer-body video{max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 18px 50px rgba(0,0,0,.6)}
 .viewer-file{text-align:center;color:#d9dde5;display:grid;gap:12px;justify-items:center}
 body.viewer-on{overflow:hidden}
+
+/* пошук документа за номером у шапці (ЗВТ-0042, РАП-13, КФ-7…) */
+.docgo{display:flex}
+.docgo .i{width:190px;padding:6px 10px;font-size:12px}
+@media (max-width:760px){.docgo .i{width:130px}}

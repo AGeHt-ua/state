@@ -55,8 +55,9 @@ const apA4 = (o) => S.a4(apDoc(o), no(o.id), { noTo: true, date: fmtDT(o.signed 
 async function apImage(id) {
   const list = await call("/api/orders").catch(() => []);
   const o = list.find((x) => x.id === id);
-  if (o) await S.docImage("np", id, apA4(o));
+  return o ? S.docImage("np", id, apA4(o)) : false;
 }
+S.docImageFns.np = apImage;
 
 async function view(head) {
   const [staff, list] = await Promise.all([call("/api/structure"), call("/api/orders"), S.loadTags()]);
@@ -92,7 +93,7 @@ async function view(head) {
           ${o.status === "rejected" && o.note ? `<div class="doc-note"><b>Відхилено:</b> ${esc(o.note)}</div>` : ""}
           <div class="small muted">Проєкт: ${esc(o.byName)}${o.signedName ? ` · ${o.status === "rejected" ? "відхилив" : "підписав"} ${esc(o.signedName)}` : ""}</div></div>
         <div class="doc-side"><span class="doc-stamp">${{ draft: "На підписі", active: "Чинний", rejected: "Відхилено" }[o.status]}</span>
-          <button class="btn sm" data-a="appdf" data-id="${o.id}">⬇ PDF</button>
+          <button class="btn sm" data-a="appdf" data-id="${o.id}">⬇ PDF</button>${S.docImgBtn("np", o.id, true)}
           ${o.status === "draft" && sign ? `<button class="btn sm ok" data-a="apsign" data-id="${o.id}">Підписати</button><button class="btn sm" data-a="apreject" data-id="${o.id}">Відхилити</button>` : ""}
           ${o.status === "active" && sign ? `<button class="btn sm bad" data-a="apcancel" data-id="${o.id}">↩ Скасувати наказ</button>` : ""}
           ${o.status !== "active" && (sign || o.by_sid === me.sid) ? `<button class="btn sm" data-a="apdel" data-id="${o.id}">🗑</button>` : ""}</div>
@@ -160,7 +161,7 @@ const paper = (o, draft) => `<article class="blank ng-doc" ${draft ? "" : `id="n
     <p class="ng-body">${esc(o.body || "Текст наказу…")}</p>
     <div class="blank-sign"><span>${esc(o.byRank || S.ME().me.rankName)}</span><span class="kf-sign">${esc(o.byName || S.ME().me.name)}</span></div>
     <div class="blank-stamp">ЄІС «СОВА»</div>
-    ${draft ? "" : `<div class="ng-act no-pdf"><button class="btn sm" data-a="ngpdf" data-id="${o.id}">⬇ PDF</button>${o.by_sid === S.ME().me.sid || S.ME().me.rank === 15 ? `<button class="btn sm bad" data-a="ngdel" data-id="${o.id}">↩ Скасувати наказ</button>` : ""}</div>`}
+    ${draft ? "" : `<div class="ng-act no-pdf"><button class="btn sm" data-a="ngpdf" data-id="${o.id}">⬇ PDF</button>${S.docImgBtn("ng", o.id, true)}${o.by_sid === S.ME().me.sid || S.ME().me.rank === 15 ? `<button class="btn sm bad" data-a="ngdel" data-id="${o.id}">↩ Скасувати наказ</button>` : ""}</div>`}
   </article>`;
 const ngA4 = (o) => S.a4(paper(o, false), no(o.id), { noTo: true, date: fmtDT(o.t), sub: "Наказ Голови Служби безпеки" });
 S.freeOrdersView = async (head) => {
@@ -196,6 +197,7 @@ S.forms.ngsave = async (f) => {
   }
   catch (e) { toast(e.message, 1); b.disabled = false; }
 };
+S.docImageFns.ng = async (id) => { const o = (await call("/api/orders/free").catch(() => [])).find((x) => x.id === id); return o ? S.docImage("ng", id, ngA4(o)) : false; };
 S.actions.ngpdf = (b) => { const o = (S.cache.ngList || {})[b.dataset.id]; if (o) S.pdfA4(b, ngA4(o), `${no(o.id)}_${o.title || ""}`); };
 S.actions.ngdel = async (b) => {
   if (!confirm("Скасувати наказ? У Discord з'явиться повідомлення про скасування.")) return;

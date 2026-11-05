@@ -117,6 +117,7 @@ async function docView(id) {
     d.status === "draft" && R.prepare && `<button class="btn" data-a="finedit">Редагувати</button><button class="btn gold" data-a="finact" data-x="submit">Подати на погодження</button>`,
     d.status === "wait" && R.prepare && `<button class="btn" data-a="finact" data-x="withdraw">↩ Відкликати</button>`,
     d.status === "wait" && R.approve && !mine && `<button class="btn ok" data-a="finact" data-x="ok">✔ Погодити</button><button class="btn" data-a="finact" data-x="return">Повернути</button><button class="btn bad" data-a="finact" data-x="rej">Відмовити</button>`,
+    d.status !== "draft" && S.docImgBtn("fin", d.id),
     done && `<button class="btn gold" data-a="finpdf">⬇ PDF</button><button class="btn" data-a="finpng">⬇ PNG</button><button class="btn" data-a="fincopy">⧉ Текст для форуму</button>`,
     d.status === "approved" && R.prepare && `<button class="btn ok" data-a="finact" data-x="posted">Подано на форум…</button>`,
     d.status === "posted" && d.kind === "petition" && (R.prepare || R.approve) && `<button class="btn ok" data-a="finact" data-x="funded">Мінфін схвалив…</button><button class="btn bad" data-a="finact" data-x="denied">Мінфін відмовив</button>`,
@@ -127,7 +128,7 @@ async function docView(id) {
   const W = { create: "Створено", submit: "Подано на погодження", withdraw: "Відкликано", ok: "Погоджено", return: "Повернуто на доопрацювання", rej: "Відмовлено", posted: "Подано на форум", funded: "Мінфін схвалив", denied: "Мінфін відмовив" };
   return `<div class="kd-bar"><button class="btn" data-a="finback">← До реєстру</button><span class="chip ${CHIP[d.status] || "mute"}">${esc(d.statusName)}</span><span class="sp"></span>${btn}</div>
     ${d.status === "funded" && !d.report ? `<p class="note warn">Кошти отримано ${fmtDT(d.funded_at)}: звіт про використання треба подати до ${fmtDT(d.deadline)} (лишилось ${left(d.deadline)}).</p>` : ""}
-    ${d.forum_url ? `<p class="note">На форумі: <a href="${esc(d.forum_url)}" target="_blank" rel="noopener">${esc(d.forum_url)}</a></p>` : ""}
+    ${S.safeUrl(d.forum_url) ? `<p class="note">На форумі: <a href="${esc(S.safeUrl(d.forum_url))}" target="_blank" rel="noopener">${esc(d.forum_url)}</a></p>` : ""}
     <div class="fin-page"><div id="fin-doc">${blank(d)}</div>
     <aside class="card"><header><h3>Рух документа</h3></header><div class="aud">${d.history.slice().reverse().map((h) => `<div class="aud-it k-${h.action === "rej" || h.action === "denied" ? "down" : "in"}"><i></i>
       <div class="aud-when"><b>${new Date(h.t).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })}</b><span>${new Date(h.t).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span></div>
@@ -150,8 +151,9 @@ const docName = () => `${st.doc.no}_${st.doc.kind === "petition" ? "Клопот
 // аркуш А4 клопотання / звіту (PDF і картинка в картці Discord)
 const finA4 = (d) => S.a4(blank(d), d.no || "", { bare: true });
 async function finImage(id) {
-  try { const d = await call(`/api/fin/${id}`); await S.docImage("fin", id, finA4(d)); } catch (e) { console.warn(e); }
+  try { const d = await call(`/api/fin/${id}`); return await S.docImage("fin", id, finA4(d)); } catch (e) { console.warn(e); return false; }
 }
+S.docImageFns.fin = finImage;
 Object.assign(S.actions, {
   finnew: () => { st.edit = { kind: "petition", data: { purpose: "arms", why: "", items: [{ name: "", sum: 0 }], account: "Казна Служби безпеки штату NG" } }; S.render(); },
   finopen: (b) => { st.id = +b.dataset.id; st.edit = null; S.render(); scrollTo(0, 0); },

@@ -611,8 +611,8 @@ async def bonus_home(request):
 @routes.get("/api/bonus/{id}")
 async def bonus_get(request):
     u = await auth(request)
-    if not bonus.can_manage(u):
-        raise Fail("Відомості премій доступні Голові СБУ та Заступнику.", 403)
+    if not (bonus.can_manage(u) or u.get("curator")):  # куратор відкриває відомість, щоб схвалити
+        raise Fail("Відомості премій доступні Голові СБУ, Заступнику та куратору.", 403)
     s = await bonus.get(int(request.match_info["id"]))
     return web.json_response({**s, "report": bonus.report_text(s)})
 
@@ -731,10 +731,10 @@ DOC_IMAGE_RIGHTS = {
     "ng": lambda u, i: orders.can_sign(u),
     "act": lambda u, i: _row_ok("acts", i, lambda r: r["by_sid"] == u["sid"] or core.can_view_act(u, r)),
     "rap": lambda u, i: _row_ok("raps", i, lambda r: r["by_sid"] == u["sid"] or u["rank"] >= 14 or core.can_approve_rap(u, r)),
-    "ns": lambda u, i: _row_ok("discipline", i, lambda r: r["issued_by"] == u["sid"] or u["rank"] >= 14),
+    "ns": lambda u, i: _row_ok("discipline", i, lambda r: u["sid"] in (r["issued_by"], r["sid"]) or u["rank"] >= 14),  # і сам покараний (скарга)
     "pz": lambda u, i: _row_ok("protocols", i, lambda r: r["author"] == u["sid"] or u["rank"] >= 14 or core.lead_of(u, r["dept"])),
     "fin": lambda u, i: finance.can_view(u),
-    "bn": lambda u, i: bonus.can_manage(u) or bonus.can_finalize(u),
+    "bn": lambda u, i: bonus.can_manage(u) or bonus.can_finalize(u) or bool(u.get("curator")),
 }
 
 
@@ -1227,6 +1227,7 @@ async def start() -> web.AppRunner:
     await core.load_custom_acts()
     core.ROLES_CHANGED.append(build_structure)
     asyncio.create_task(finance.reminder_loop())
+    asyncio.create_task(docpost.reminder_loop())  # нагадування про документи, що чекають рішення понад добу
     asyncio.create_task(games.weekly_loop())
     asyncio.create_task(structure_loop())
     asyncio.create_task(kb.ensure_seeded())

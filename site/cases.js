@@ -80,7 +80,7 @@ function docHtml(c, pdf) {
         <div class="kd-p-n">${i + 1}</div><div><b>${esc(p.name)}</b>${p.sid ? ` <span class="mono">· ${esc(p.sid)}</span>` : ""}<div class="kd-p-r">${esc(p.role)}${p.org ? ` · ${esc(p.org)}` : ""}</div>${p.note ? `<div class="kd-p-x">${esc(p.note)}</div>` : ""}</div></div>`).join("")}</div>` : "<p>—</p>")}
     ${sec("III", "Кваліфікація", `<div class="kd-arts">${(d.arts || []).map((a) => `<span>ст. ${esc(a)} КК штату NG</span>`).join("") || "—"}</div>`)}
     ${sec("IV", "Докази", (d.evidence || []).length ? `<ol class="kd-ev">${d.evidence.map((e) => `<li><div>${esc(e.desc || "без опису")}</div>
-        ${pdf ? (e.url ? `<div class="mono small">${esc(e.url)}</div>` : "") : `<div class="files">${e.url ? `<a class="btn sm" href="${esc(e.url)}" target="_blank" rel="noopener">▶ Матеріал</a>` : ""}${(e.files || []).map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}">📎 Додаток ${i + 1}</button>`).join("")}</div>`}
+        ${pdf ? (e.url ? `<div class="mono small">${esc(e.url)}</div>` : "") : `<div class="files">${S.safeUrl(e.url) ? `<a class="btn sm" href="${esc(S.safeUrl(e.url))}" target="_blank" rel="noopener">▶ Матеріал</a>` : ""}${(e.files || []).map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}">📎 Додаток ${i + 1}</button>`).join("")}</div>`}
         ${pdf && (e.files || []).length ? `<div class="small">Додатків: ${e.files.length} (зберігаються в ЄІС «Сова»)</div>` : ""}</li>`).join("")}</ol>` : "<p>—</p>")}
     ${sec("V", "Хід розслідування", (d.timeline || []).length ? `<ol class="kd-tl">${d.timeline.map((x) => `<li><span class="kd-tl-w">${esc(x.when || "—")}</span><div class="kd-tl-t">${esc(x.text)}</div></li>`).join("")}</ol>` : "<p>—</p>")}
     ${sec("VI", "Проведені оперативно-розшукові заходи", `<p class="kd-text">${esc(d.measures || "—")}</p>`)}
@@ -295,8 +295,23 @@ S.docImage = async (kind, id, html) => {
     if (blob.size > 7.5 * 1024 * 1024) blob = await new Promise((ok) => canvas.toBlob(ok, "image/jpeg", 0.9));
     const fd = new FormData();
     fd.append("img", blob, `${kind}-${id}.${blob.type === "image/png" ? "png" : "jpg"}`);
-    await S.call(`/api/doc/${kind}/${id}/image`, { method: "POST", body: fd });
-  } catch (e) { console.warn("Картинка документа", kind, id, e); }
+    const r = await S.call(`/api/doc/${kind}/${id}/image`, { method: "POST", body: fd });
+    return !!(r && r.ok);
+  } catch (e) { console.warn("Картинка документа", kind, id, e); return false; }
+};
+// «🔄 Оновити картинку в Discord» — для керівництва, якщо картинка не сформувалася (закрили вкладку тощо).
+// Кожен розділ реєструє, як перемалювати свій документ: S.docImageFns[вид] = async (id) => true/false
+S.docImageFns = S.docImageFns || {};
+S.docImgBtn = (kind, id, sm) => S.ME().me.rank >= 14 || S.ME().curator
+  ? `<button class="btn ${sm ? "sm" : ""}" data-a="docimg" data-kind="${kind}" data-id="${id}" title="Перемалювати аркуш А4 у картці документа в Discord">🔄 Картинка в Discord</button>` : "";
+S.actions.docimg = async (b) => {
+  const fn = S.docImageFns[b.dataset.kind];
+  if (!fn) return;
+  const t = b.textContent;
+  b.disabled = true; b.innerHTML = '<span class="spin"></span> Оновлюю…';
+  const ok = await fn(+b.dataset.id).catch(() => false);
+  S.toast(ok ? "Картинку документа в Discord оновлено" : "Не вдалося: документ створено до запуску картинок або його повідомлення в Discord видалено", !ok);
+  b.disabled = false; b.textContent = t;
 };
 // Поле «Тегнути в Discord»: відділ або роль (автор і той, кого стосується, тегаються завжди)
 S.loadTags = async () => S.cache.tags || (S.cache.tags = await S.call("/api/doc/tags").catch(() => ({ depts: [], roles: [] })));

@@ -53,9 +53,10 @@ async function nsImage(id) {
   try {
     const d = await call("/api/discipline");
     const o = [...(d.journal || []), ...(d.mine || [])].find((x) => x.id === id);
-    if (o) await S.docImage("ns", id, nsA4(o));
-  } catch (e) { console.warn(e); }
+    return o ? await S.docImage("ns", id, nsA4(o)) : false;
+  } catch (e) { console.warn(e); return false; }
 }
+S.docImageFns.ns = nsImage;
 
 function order(o, D, opts = {}) {
   ALL[o.id] = o;
@@ -74,7 +75,7 @@ function order(o, D, opts = {}) {
     </div>
     <div class="ns-stamp">${esc(o.kindName.toUpperCase())}</div>
     <footer>
-      <button class="btn sm" data-a="nspdf" data-id="${o.id}">⬇ PDF</button>
+      <button class="btn sm" data-a="nspdf" data-id="${o.id}">⬇ PDF</button>${S.docImgBtn("ns", o.id, true)}
       ${canAppeal ? `<button class="btn sm" data-a="nsappeal" data-id="${o.id}">⚖ Оскаржити (до ${fmtDT(o.issued + 864e5)})</button>` : ""}
       ${opts.head && ap && !ap.decision ? `<button class="btn sm ok" data-a="nsdec" data-id="${o.id}" data-x="cancel">Задовольнити скаргу</button><button class="btn sm" data-a="nsdec" data-id="${o.id}" data-x="uphold">Відхилити скаргу</button>` : ""}
       ${opts.head && o.active ? `<button class="btn sm" data-a="nsdec" data-id="${o.id}" data-x="lift">Зняти достроково</button>` : ""}
@@ -203,7 +204,7 @@ Object.assign(S.actions, {
   nsappeal: (b) => run(b, async () => {
     const text = prompt("Скарга Голові СБУ (п. 4.1): чому стягнення незаконне чи необґрунтоване?", "");
     if (text === null) return;
-    await call(`/api/discipline/${b.dataset.id}/appeal`, { json: { text } }); toast("Скаргу подано Голові СБУ"); S.render();
+    await call(`/api/discipline/${b.dataset.id}/appeal`, { json: { text } }); toast("Скаргу подано Голові СБУ"); await nsImage(+b.dataset.id); S.render();
   }),
   nsdec: (b) => run(b, async () => {
     const x = b.dataset.x, q = { cancel: "Задовольнити скаргу й скасувати стягнення?", uphold: "Відхилити скаргу?", lift: "Зняти догану достроково?" }[x];

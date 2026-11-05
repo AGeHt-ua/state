@@ -2,6 +2,7 @@
 Над карткою — теги: хто створив, кого стосується, і роль чи відділ, які автор обрав у формі.
 Картку бот оновлює при кожній зміні (підпис, погодження, скасування), картинку — сайт після дії (PNG аркуша).
 """
+import asyncio
 import io
 import json
 import logging
@@ -12,7 +13,7 @@ import config
 import core
 import overrides as ov
 from core import Fail
-from db import db
+from db import db, now_ms
 from roles import DEPTS, RANK_ROLES, RANKS, SBU_ROLE
 
 log = logging.getLogger("sova.docpost")
@@ -226,3 +227,53 @@ async def remove(kind: str, did: int):
         except discord.HTTPException:
             pass
     await db.run("DELETE FROM doc_msgs WHERE kind=? AND id=?", kind, did)
+
+
+# ---------------------------------------------------------------- нагадування про документи, що довго чекають рішення
+REMIND_AFTER = 24 * 3600 * 1000   # перше нагадування — через добу, далі не частіше ніж раз на добу
+REMIND_MAX = 3                    # не більше трьох нагадувань на документ
+
+
+async def remind_waiting():
+    """Відповідь під карткою документа з тегами тих, хто має ухвалити рішення: звіти, рапорти, проєкти наказів, документи Мінфіну."""
+    now = now_ms()
+    old = now - REMIND_AFTER
+    todo = []  # (вид, номер, з якого часу чекає, ролі, що робити)
+    heads = [RANK_ROLES[10], RANK_ROLES[11]]  # заступник начальника й начальник відділу (у каналі відділу бачать лише свої)
+    for a in await db.all("SELECT id, t FROM acts WHERE status='wait' AND t<?", old):
+        todo.append(("act", a["id"], a["t"], heads, "Звіт чекає перевірки"))
+    for r in await db.all("SELECT id, type, t FROM raps WHERE status='wait' AND t<?", old):
+        todo.append(("rap", r["id"], r["t"], key_roles(f"rap:{r['type']}"), "Рапорт чекає розгляду"))
+    for o in await db.all("SELECT id, t FROM orders WHERE kind='appoint' AND status='draft' AND t<?", old):
+        todo.append(("np", o["id"], o["t"], key_roles("order:draft"), "Проєкт наказу чекає підпису"))
+    for d in await db.all("SELECT id, updated FROM fin_docs WHERE status='wait' AND updated<?", old):
+        todo.append(("fin", d["id"], d["updated"], key_roles("fin:wait"), "Документ Мінфіну чекає погодження"))
+    seen = await db.get_setting("doc_remind", {})
+    for kind, did, since, roles, label in todo:
+        key = f"{kind}:{did}"
+        cnt, last = seen.get(key, [0, 0])
+        if cnt >= REMIND_MAX or now - last < REMIND_AFTER:
+            continue
+        row = await _row(kind, did)
+        msgs = await _messages(row) if row else []
+        if not msgs:
+            continue  # документ, створений до появи карток з картинкою, або повідомлення видалено
+        m = mentions([], None, roles)
+        try:
+            await msgs[0].reply(" ".join(filter(None, [f"⏰ {label} вже {(now - since) // 3_600_000} год.", m["content"]])),
+                                mention_author=False, allowed_mentions=m["allowed_mentions"])
+            seen[key] = [cnt + 1, now]
+        except discord.HTTPException as ex:
+            log.warning("Нагадування %s: %s", key, ex)
+    live = {f"{k}:{i}" for k, i, *_ in todo}
+    await db.set_setting("doc_remind", {k: v for k, v in seen.items() if k in live})  # вирішені — забути
+
+
+async def reminder_loop():
+    await asyncio.sleep(180)  # дати боту під'єднатися після запуску
+    while True:
+        try:
+            await remind_waiting()
+        except Exception as ex:
+            log.warning("Нагадування про документи: %s", ex)
+        await asyncio.sleep(3600)

@@ -130,6 +130,7 @@ async function docView(id) {
   const me = S.ME().me, mine = p.author === me.sid, R = st.meta.rights;
   const btn = [
     p.status === "draft" && mine && `<button class="btn" data-a="protedit">Редагувати</button><button class="btn gold" data-a="protsign">✍ Підписати</button>`,
+    p.status !== "draft" && S.docImgBtn("pz", p.id),
     p.status !== "draft" && `<button class="btn gold" data-a="protpdf">⬇ PDF</button><button class="btn" data-a="protpng">⬇ PNG</button>`,
     p.status === "signed" && mine && !p.act_id && `<button class="btn" data-a="protx" data-x="report">+ Звіт про діяльність</button>`,
     p.act_id && `<button class="btn" data-a="actopen" data-id="${p.act_id}">📂 Звіт №${p.act_id}</button>`,
@@ -183,8 +184,9 @@ const fresh = () => ({ when: Date.now(), place: "", team: [], who: "", whoId: ""
 // аркуш А4 протоколу (PDF, PNG і картинка в картці Discord)
 const protA4 = (p) => S.a4(blank(p), p.no || "", { bare: true });
 async function protImage(id) {
-  try { const p = await call(`/api/protocols/${id}`); await S.docImage("pz", id, protA4(p)); } catch (e) { console.warn(e); }
+  try { const p = await call(`/api/protocols/${id}`); return await S.docImage("pz", id, protA4(p)); } catch (e) { console.warn(e); return false; }
 }
+S.docImageFns.pz = protImage;
 const sign = async (id, report) => {
   if (!confirm("Підписати протокол? Після підпису він реєструється і редагувати його вже не можна (лише анулювати з причиною).")) return false;
   await call(`/api/protocols/${id}/sign`, { json: { report, tag: st.tag || "" } });
