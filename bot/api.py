@@ -1020,7 +1020,8 @@ async def public_candidate(request):
             raise Fail("Забагато анкет. Спробуйте пізніше.", 429)
         _cand_hits[key] = hits
     # multipart: поле data (JSON анкети) і photo (фото персонажа, до 5 МБ)
-    b, photo = {}, None
+    # і work (скриншот трудової книжки з гри, до 5 МБ)
+    b, imgs = {}, {}
     reader = await request.multipart()
     while (part := await reader.next()) is not None:
         if part.name == "data":
@@ -1028,14 +1029,14 @@ async def public_candidate(request):
                 b = json.loads(await part.text())
             except ValueError:
                 raise Fail("Пошкоджені дані анкети.")
-        elif part.name == "photo":
+        elif part.name in ("photo", "work"):
             data = bytearray()
             while chunk := await part.read_chunk(64 * 1024):
                 data.extend(chunk)
                 if len(data) > 5 * 1024 * 1024:
-                    raise Fail("Фото більше за 5 МБ.", 413)
-            photo = (bytes(data), part.filename or "photo")
-    cid = await candidates.submit_form(str(b.get("discord") or ""), b, photo)
+                    raise Fail("Фото більше за 5 МБ." if part.name == "photo" else "Скриншот трудової книжки більший за 5 МБ.", 413)
+            imgs[part.name] = (bytes(data), part.filename or part.name)
+    cid = await candidates.submit_form(str(b.get("discord") or ""), b, imgs.get("photo"), imgs.get("work"))
     for key in (ip, "*"):
         _cand_hits[key].append(now)
     c = await db.one("SELECT discord_id FROM candidates WHERE id=?", cid)
@@ -1092,6 +1093,10 @@ async def hr_list(request):
             c["photoUrl"] = await core.file_url(c["photo"]) if c.get("photo") else None
         except Fail:
             c["photoUrl"] = None
+        try:
+            c["workUrl"] = await core.file_url(c["extra"]["work"]) if c["extra"] and c["extra"].get("work") else None
+        except Fail:
+            c["workUrl"] = None
     for a in acc_done:
         a["reviewerName"] = nm.get(a["reviewer"])
     return web.json_response({"rights": r, "cand": cand, "candDone": done, "access": acc, "accessDone": acc_done})

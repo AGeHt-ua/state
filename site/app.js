@@ -681,10 +681,13 @@ function candCard(c, r) {
       <dl class="dz-kv">${x.record_note ? `<dt>Судимості</dt><dd>${esc(x.record_note)}</dd>` : ""}<dt>Адмінпорушення</dt><dd>${dash(x.admin_note)}</dd></dl></section>
     <section><h4><b>IV</b>Службовий досвід</h4><p class="dz-text">${esc(c.exp || "—")}</p></section>
     <section class="wide"><h4><b>V</b>Мотивація</h4><p class="dz-text quote">${esc(c.motive || "—")}</p></section>
+    <section class="wide"><h4><b>VI</b>Трудова книжка</h4>${c.workUrl
+      ? `<a href="${esc(c.workUrl)}" target="_blank" rel="noopener" title="Відкрити в повному розмірі"><img src="${esc(c.workUrl)}" alt="Трудова книжка кандидата" loading="lazy" style="display:block;max-width:100%;max-height:520px;border:1px solid var(--line2)"></a>`
+      : '<p class="dz-text muted">Не додано (анкета подана до запровадження цього пункту).</p>'}</section>
   </div>
   ${c.note ? `<div class="dz-note"><b>Причина відмови:</b> ${esc(c.note)}</div>` : ""}
   ${candRoute(c)}
-  ${r.vvb || r.vkpp ? `<div class="dz-del"><button class="btn sm bad" data-a="del" data-url="/api/hr/cand/${c.id}/delete" data-q="Видалити анкету ${docNo("АНК", c.id)} (спам, дубль)? Фото кандидата теж буде видалено.">🗑 Видалити анкету</button></div>` : ""}
+  ${r.vvb || r.vkpp ? `<div class="dz-del"><button class="btn sm bad" data-a="del" data-url="/api/hr/cand/${c.id}/delete" data-q="Видалити анкету ${docNo("АНК", c.id)} (спам, дубль)? Фото кандидата й трудову книжку теж буде видалено.">🗑 Видалити анкету</button></div>` : ""}
   ${mine ? `<footer class="dz-act"><span class="muted small">${c.status === "vvb" ? "Висновок Відділу внутрішньої безпеки" : "Рішення Відділу кадрів та підготовки персоналу"}</span>
     <div class="acts"><button class="btn ok" data-a="cand" data-id="${c.id}" data-d="ok">${c.status === "vvb" ? "Погодити й передати до ВКПП" : "Погодити зарахування"}</button>
     <button class="btn bad" data-a="cand" data-id="${c.id}" data-d="rej">Відмовити</button></div></footer>` : ""}

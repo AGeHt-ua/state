@@ -96,20 +96,27 @@ def clean_extra(b: dict) -> dict:
     }
 
 
-async def submit_form(username: str, b: dict, photo: tuple[bytes, str] | None) -> int:
-    """Розширена анкета з публічної сторінки сайту."""
+def _img_ext(img: tuple[bytes, str] | None, what: str) -> str:
+    """Перевірка зображення з анкети: є, PNG/JPG/WEBP, до 5 МБ. Повертає розширення."""
+    if not img:
+        raise Fail(f"Додайте {what}.")
+    ext = next((e for m, e in IMG_MAGIC.items() if img[0].startswith(m)), None)
+    if not ext:
+        raise Fail(f"{what[0].upper() + what[1:]}: лише PNG, JPG або WEBP.")
+    if len(img[0]) > 5 * 1024 * 1024:
+        raise Fail(f"{what[0].upper() + what[1:]}: більше за 5 МБ.")
+    return ext
+
+
+async def submit_form(username: str, b: dict, photo: tuple[bytes, str] | None, work: tuple[bytes, str] | None = None) -> int:
+    """Розширена анкета з публічної сторінки сайту (фото персонажа + скриншот трудової книжки з гри)."""
     sid = str(b.get("sid") or "").strip()
     if not sid.isdigit() or len(sid) > 8:
         raise Fail("Static ID — лише цифри.")
     extra = clean_extra(b)
-    if not photo:
-        raise Fail("Додайте фото персонажа (IC).")
-    data, _ = photo
-    ext = next((e for m, e in IMG_MAGIC.items() if data.startswith(m)), None)
-    if not ext:
-        raise Fail("Фото має бути PNG, JPG або WEBP.")
-    if len(data) > 5 * 1024 * 1024:
-        raise Fail("Фото більше за 5 МБ.")
+    ext = _img_ext(photo, "фото персонажа (IC)")
+    wext = _img_ext(work, "скриншот трудової книжки з гри")
+    data = photo[0]
     name = str(b.get("name") or "").strip()
     username = username.strip().lstrip("@")[:40]
     if not re.fullmatch(r"[\w.]{2,40}", username):
@@ -121,22 +128,41 @@ async def submit_form(username: str, b: dict, photo: tuple[bytes, str] | None) -
         raise Fail("Розпишіть мотивацію детальніше (щонайменше 20 символів).")
     extra["photo_name"] = f"photo.{ext}"
     fid = await core.store_file(data, extra["photo_name"], f"image/{'jpeg' if ext == 'jpg' else ext}", 0)
+    extra["work_name"] = f"workbook.{wext}"
+    extra["work"] = await core.store_file(work[0], extra["work_name"], f"image/{'jpeg' if wext == 'jpg' else wext}", 0)
     return await submit(None, int(sid), name, str(b.get("age") or "").strip(), str(b.get("exp") or "").strip(),
                         motive, username=username, extra=extra, photo=fid)
 
 
-async def photo_file(c: dict) -> discord.File | None:
-    """Фото кандидата як вкладення для картки в Discord (береться зі сховища файлів)."""
-    if not c.get("photo"):
+async def _stored(fid: str | None, cid: int) -> discord.File | None:
+    if not fid:
         return None
     try:
-        row = await db.one("SELECT * FROM files WHERE id=?", c["photo"])
+        row = await db.one("SELECT * FROM files WHERE id=?", fid)
         ch = core.bot.get_channel(int(row["ch_id"])) or await core.bot.fetch_channel(int(row["ch_id"]))
         msg = await ch.fetch_message(int(row["msg_id"]))
         return discord.File(io.BytesIO(await msg.attachments[0].read()), filename=row["filename"])
     except Exception as e:
-        log.warning("Фото анкети №%s недоступне: %s", c["id"], e)
+        log.warning("Зображення анкети №%s недоступне: %s", cid, e)
         return None
+
+
+async def photo_files(c: dict) -> list[discord.File]:
+    """Фото кандидата й трудова книжка як вкладення для картки в Discord (зі сховища файлів)."""
+    x = json.loads(c.get("extra") or "null") or {}
+    return [f for f in (await _stored(c.get("photo"), c["id"]), await _stored(x.get("work"), c["id"])) if f]
+
+
+async def embeds(c: dict, member: discord.Member | None) -> list[discord.Embed]:
+    """Картка анкети + окремий embed зі скриншотом трудової книжки (у Discord одне зображення на embed)."""
+    e = await card(c, member)
+    x = json.loads(c.get("extra") or "null") or {}
+    out = [e]
+    if x.get("work") and x.get("work_name"):
+        w = discord.Embed(title="📗 Трудова книжка (скриншот з гри)", color=e.color)
+        w.set_image(url=f"attachment://{x['work_name']}")
+        out.append(w)
+    return out
 
 
 async def submit(member: discord.Member | None, sid: int, name: str, age: str, exp: str, motive: str, username: str | None = None,
@@ -154,8 +180,7 @@ async def submit(member: discord.Member | None, sid: int, name: str, age: str, e
     c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
     ch = await core.channel("cand:vvb")
     if ch:
-        f = await photo_file(c)
-        msg = await ch.send(embed=await card(c, member), **({"file": f} if f else {}), **core.mention("cand:vvb"))
+        msg = await ch.send(embeds=await embeds(c, member), files=await photo_files(c), **core.mention("cand:vvb"))
         await db.run("UPDATE candidates SET vvb_ch=?, vvb_msg=? WHERE id=?", str(ch.id), str(msg.id), cid)
     else:
         log.warning("Канал ВВБ не знайдено — анкету №%s збережено без картки", cid)
@@ -255,7 +280,7 @@ async def _refresh(c: dict, member: discord.Member | None):
         try:
             ch = core.bot.get_channel(int(c[chk])) or await core.bot.fetch_channel(int(c[chk]))
             msg = await ch.fetch_message(int(c[mk]))
-            await msg.edit(embed=await card(c, member), view=None)
+            await msg.edit(embeds=await embeds(c, member), view=None)
         except (discord.NotFound, discord.Forbidden):
             pass
 
@@ -294,8 +319,7 @@ async def decide(cid: int, reviewer: discord.Member, decision: str, note: str = 
     if new == "vkpp":
         ch = await core.channel("cand:vkpp")
         if ch:
-            f = await photo_file(c)
-            msg = await ch.send(embed=await card(c, None), **({"file": f} if f else {}), **core.mention("cand:vkpp"))
+            msg = await ch.send(embeds=await embeds(c, None), files=await photo_files(c), **core.mention("cand:vkpp"))
             await db.run("UPDATE candidates SET vkpp_ch=?, vkpp_msg=? WHERE id=?", str(ch.id), str(msg.id), cid)
         return "Анкету погоджено й передано до ВКПП."
     if new == "ok":
@@ -316,11 +340,12 @@ async def delete(u: dict, cid: int):
     await _refresh(c, None)
     ch_key, msg_key = ("vkpp_ch", "vkpp_msg") if c["vkpp_ch"] else ("vvb_ch", "vvb_msg")
     await core.post_log(c[ch_key], c[msg_key], style.doc_no("АНК", cid), "Анкета кандидата", f"{c['name']} · №{c['sid']}", "deleted", u["name"], now_ms())
-    if c["photo"]:
-        try:
-            await core.delete_file(u, c["photo"], force=True)
-        except Fail:
-            pass
+    for fid in (c["photo"], (json.loads(c.get("extra") or "null") or {}).get("work")):
+        if fid:
+            try:
+                await core.delete_file(u, fid, force=True)
+            except Fail:
+                pass
 
 
 def _notice(c: dict, text: str) -> discord.Embed:

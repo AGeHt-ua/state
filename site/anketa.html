@@ -35,6 +35,8 @@
   .photo .pv::after{content:"ФОТО\A3×4";white-space:pre}
   .photo .pv.has::after{content:"";}
   .photo .pv.has{border-style:solid;border-color:var(--gold)}
+  .wb{display:grid;place-items:center;min-height:150px;border:1px dashed var(--line2);background:var(--bg2) center/contain no-repeat;color:var(--dim);font:11px var(--mono);letter-spacing:.08em;text-align:center;cursor:pointer;padding:12px}
+  .wb.has{border-style:solid;border-color:var(--gold);min-height:260px;color:transparent}
   .yn{display:flex;gap:8px}
   .yn label{flex:1;justify-content:center}
   .warnbox{border-left:3px solid var(--bad);background:var(--bad-soft);padding:10px 12px;font-size:13px}
@@ -101,6 +103,9 @@
         <label><input type="checkbox" name="lics" value="weapon"> На зброю</label><label><input type="checkbox" name="lics" value="hunt"> На полювання</label>
         <label><input type="checkbox" name="lics" value="fish"> На рибальство</label>
       </div>
+      <div class="sub">Трудова книжка (обов'язково)</div>
+      <label class="wb" id="wbv" tabindex="0" title="Завантажити скриншот трудової книжки"><input type="file" id="work" accept="image/png,image/jpeg,image/webp" hidden>ТРУДОВА КНИЖКА<br>натисніть, щоб завантажити скриншот з гри</label>
+      <small>Скриншот трудової книжки персонажа з гри, щоб було видно всі записи. PNG/JPG/WEBP до 5 МБ.</small>
       <p class="warnbox" id="docwarn" hidden>Без паспорта, медичної карти та військового квитка (або згоди пройти КМБ у НГУ) анкету буде відхилено.</p>
     </fieldset>
 
@@ -159,7 +164,7 @@
 (() => {
   const API = (new URLSearchParams(location.search).get("api") || "https://sova.d-f-12339.workers.dev").replace(/\/$/, "");
   const $ = (s) => document.querySelector(s);
-  const f = $("#f"), btn = $("#btn"), err = $("#err"), pv = $("#pv"), photo = $("#photo");
+  const f = $("#f"), btn = $("#btn"), err = $("#err"), pv = $("#pv"), photo = $("#photo"), wbv = $("#wbv"), work = $("#work");
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   pv.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); photo.click(); } });
   photo.addEventListener("change", () => {
@@ -168,6 +173,14 @@
     if (file.size > 5 * 1024 * 1024) { photo.value = ""; return fail("Фото більше за 5 МБ."); }
     pv.style.backgroundImage = `url("${URL.createObjectURL(file)}")`;
     pv.classList.add("has");
+  });
+  wbv.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); work.click(); } });
+  work.addEventListener("change", () => {
+    const file = work.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { work.value = ""; return fail("Скриншот трудової книжки більший за 5 МБ."); }
+    wbv.style.backgroundImage = `url("${URL.createObjectURL(file)}")`;
+    wbv.classList.add("has");
   });
   const has = (v) => f.querySelector(`input[name=docs][value=${v}]`).checked;
   const docsOk = () => has("passport") && has("med") && (has("military") || has("kmb"));
@@ -188,6 +201,7 @@
     const fd = new FormData(f);
     const val = (k) => String(fd.get(k) || "").trim();
     if (!photo.files[0]) return fail("Додайте фото персонажа (IC).");
+    if (!work.files[0]) return fail("Додайте скриншот трудової книжки з гри.");
     for (const [k, m] of [["name", "Вкажіть ім'я та прізвище."], ["sid", "Вкажіть Static ID."], ["birth", "Вкажіть дату народження."],
       ["exp", "Опишіть досвід (або напишіть, що його немає)."], ["motive", "Напишіть мотивацію."], ["discord", "Вкажіть нік у Discord."], ["age", "Вкажіть ваш вік."]]) {
       if (!val(k)) return fail(m);
@@ -206,6 +220,7 @@
     const body = new FormData();
     body.append("data", JSON.stringify(data));
     body.append("photo", photo.files[0]);
+    body.append("work", work.files[0]);
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span> Надсилаю…';
     try {
