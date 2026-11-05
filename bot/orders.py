@@ -7,6 +7,7 @@ import logging
 import discord
 
 import core
+import docpost
 import overrides as ov
 import style
 from core import Fail
@@ -58,13 +59,13 @@ async def appoint(u: dict, b: dict) -> dict:
     oid = await db.run("INSERT INTO orders(sid,kind,from_rank,to_rank,from_dept,to_dept,extra,reason,by_sid,t,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                        p["sid"], "appoint", p["rank"], to_rank, p["dept"], to_dept, extra, reason, u["sid"], now_ms(), "draft")
     if b.get("sign") and can_sign(u):
-        return await sign(u, oid)
+        return await sign(u, oid, tag=b.get("tag"))
     o = await get(oid)
-    await journal(o, u, "Проєкт наказу підготовлено · на підписі Голови")
+    await journal(o, u, "Проєкт наказу підготовлено · на підписі Голови", tag=b.get("tag"))
     return o
 
 
-async def sign(u: dict, oid: int) -> dict:
+async def sign(u: dict, oid: int, tag: str | None = None) -> dict:
     """Підпис наказу Головою або заступником: звання, підрозділ, ролі й нікнейм змінюються одразу."""
     if not can_sign(u):
         raise Fail("Підписують накази Голова СБУ та Заступник Голови.", 403)
@@ -86,7 +87,7 @@ async def sign(u: dict, oid: int) -> dict:
                    f"{rank_name(p['rank'])} / {DEPTS[p['dept']]['s']} → {rank_name(o['to_rank'])} / {DEPTS[o['to_dept']]['s']}"
                    + (f" + {DEPTS[o['extra']]['s']}" if o["extra"] else "") + f" · НП-{oid:04d}")
     o = await get(oid)
-    await journal(o, u, "Наказ підписано й оголошено")
+    await journal(o, u, "Наказ підписано й оголошено", tag=tag)
     await core.send_audit(await core.user(p["sid"]), u)
     return o
 
@@ -110,6 +111,7 @@ async def delete_draft(u: dict, oid: int):
     if not (o["by_sid"] == u["sid"] or can_sign(u)):
         raise Fail("Видалити проєкт може той, хто його підготував, або Голова й заступник.", 403)
     await db.run("UPDATE orders SET status='deleted', cancelled_by=?, cancelled=? WHERE id=?", u["sid"], now_ms(), oid)
+    await docpost.remove("np", oid)  # проєкт видалено — і його повідомлення в Discord
 
 
 async def apply_roles(sid: int, extra: str | None, reason: str, drop_extra: str | None = None):
@@ -158,27 +160,47 @@ async def cancel(u: dict, oid: int) -> dict:
     return {"reverted": reverted}
 
 
-async def journal(o: dict, u: dict, label: str):
-    ch = await core.channel("orders")
-    if not ch:
+NP_STATE = {"draft": ("🕓 ПРОЄКТ · НА ПІДПИСІ", 0xD9A23D), "active": ("✅ ПІДПИСАНО · ЧИННИЙ", 0x5FB37A),
+            "rejected": ("⛔ ВІДХИЛЕНО", 0xD4605A), "deleted": ("↩ СКАСОВАНО", 0x5F6A7A)}
+
+
+async def np_embed(o: dict, label: str) -> discord.Embed:
+    """Картка наказу про призначення: стан, співробітник, було → стало, підстава, хто готував і підписав."""
+    p, by = await core.user(o["sid"]), await core.user(o["by_sid"])
+    sg = await core.user(o["signed_by"]) if o.get("signed_by") else None
+    state, color = NP_STATE.get(o["status"], NP_STATE["draft"])
+    to = f"{rank_name(o['to_rank'])} · {DEPTS[o['to_dept']]['n']}" + (f" + {DEPTS[o['extra']]['n']}" if o.get("extra") else "")
+    desc = [f"### {state}",
+            f"👤 **{p['name'] if p else '—'}** · жетон №{o['sid']}",
+            f"⬅️ Було: {rank_name(o['from_rank'])} · {DEPTS[o['from_dept']]['n']}",
+            f"➡️ **Призначено: {to}**"]
+    if o.get("reason"):
+        desc.append(f"📄 Підстава: {o['reason'][:500]}")
+    desc += ["", f"✍️ Проєкт: {by['name'] if by else '—'}"]
+    if sg:
+        desc.append(f"🖋️ {'Відхилив' if o['status'] == 'rejected' else 'Підписав'}: {sg['name']} · {style.when(o.get('signed'))}")
+    if o["status"] == "rejected" and o.get("note"):
+        desc.append(f"💬 Причина: {o['note']}")
+    e = style.document(f"НАКАЗ НП-{o['id']:04d} · ПРО ПРИЗНАЧЕННЯ НА ПОСАДУ", color, desc="\n".join(desc),
+                       footer=f"Остання дія: {label} · {style.when()}")
+    return e
+
+
+async def journal(o: dict, u: dict, label: str, tag: str | None = None):
+    """Одне повідомлення на наказ: створюється з тегами (автор, співробітник, обрана роль/відділ), далі лише оновлюється.
+    Підпис, відхилення й скасування — ще й коротка відповідь зі сповіщенням."""
+    o = await db.one("SELECT * FROM orders WHERE id=?", o["id"]) or o
+    e = await np_embed(o, label)
+    who = await docpost.people(o["sid"])
+    if not await docpost._row("np", o["id"]):
+        docpost.concerns_field(e, who, tag)
+        roles = docpost.key_roles("order" if o["status"] == "active" else "order:draft" if o["status"] == "draft" else None)
+        await docpost.post("np", o["id"], await core.channel("orders"), e, users=await docpost.people(o["by_sid"], o["sid"]), tag=tag, roles=roles)
         return
-    p = await core.user(o["sid"])
-    lines = [style.kv("НАКАЗ", f"НП-{o['id']:04d} · про призначення на посаду", "white", True),
-             style.kv("СПІВРОБІТНИК", f"{p['name']} · №{p['sid']}" if p else f"№{o['sid']}", "white", True),
-             style.kv("БУЛО", f"{rank_name(o['from_rank'])} · {DEPTS[o['from_dept']]['s']}", "gray"),
-             style.kv("ПРИЗНАЧЕНО", f"{rank_name(o['to_rank'])} · {DEPTS[o['to_dept']]['s']}" + (f" + {DEPTS[o['extra']]['s']}" if o["extra"] else ""), "gold", True)]
-    if o["reason"]:
-        lines += [style.kv("ПІДСТАВА" if i == 0 else "", s, "white") for i, s in enumerate(style.wrap(o["reason"], 28))]
-    lines += [style.rule(), style.kv("ДІЯ", label, "green" if "Оголошено" in label else "cyan", True),
-              style.kv("ХТО", f"{u['name']} · №{u['sid']}", "white"), style.kv("ДАТА", style.when(), "gray")]
-    e = style.document("НАКАЗ ПРО ПРИЗНАЧЕННЯ НА ПОСАДУ", 0xC9A05A, desc=style.block(*lines), footer="Статут СБУ, р. V · п. 5.2: призначення наказом Голови СБУ")
-    try:
-        # згадується сам співробітник, якого призначають; підписаний наказ — ще й роль СБУ, проєкт — Голова й Заступник
-        who = [p["discord_id"]] if p and p.get("discord_id") else []
-        key = "order" if o["status"] == "active" and "підписано" in label else "order:draft" if o["status"] == "draft" else None
-        await ch.send(embed=e, **core.mention(key, who))
-    except discord.HTTPException as ex:
-        log.warning("Журнал наказів: %s", ex)
+    docpost.concerns_field(e, who, (await docpost._row("np", o["id"]))["tag"])
+    ping = {"active": "✅ Наказ підписано.", "rejected": "⛔ Проєкт наказу відхилено.", "deleted": "↩ Наказ скасовано."}.get(o["status"])
+    await docpost.update("np", o["id"], e, ping=ping, users=await docpost.people(o["sid"], o["by_sid"]),
+                         roles=docpost.key_roles("order") if o["status"] == "active" else None)
 
 
 async def listing() -> list[dict]:
@@ -204,26 +226,36 @@ async def create_free(u: dict, b: dict) -> dict:
     oid = await db.run("INSERT INTO orders(sid,kind,title,body,by_sid,t,status) VALUES(?,?,?,?,?,?,?)",
                        u["sid"], "free", title, text, u["sid"], now_ms(), "active")
     o = await get(oid)
-    await free_post(o, u)
+    await free_post(o, u, tag=b.get("tag"))
     await db.audit(u["sid"], "Наказ Голови СБУ", 0, f"НГ-{oid:04d} · {title[:80]}")
     return o
 
 
-async def free_post(o: dict, u: dict, cancelled: bool = False):
-    ch = await core.channel("orders")
-    if not ch:
-        return
+def ng_embed(o: dict, by: dict | None, cancelled_by: dict | None = None) -> discord.Embed:
+    """Картка наказу Голови: назва, початок тексту (повністю — на аркуші А4 у картці), хто підписав, стан."""
+    body = o["body"] if len(o["body"]) <= 700 else o["body"][:700].rsplit(" ", 1)[0] + "…"
+    desc = [f"### «{o['title']}»", body, "",
+            f"🖋️ Підписав: {rank_name(by['rank']) + ' ' + by['name'] if by else '—'} · {style.when(o['t'])}"]
+    if cancelled_by:
+        desc.insert(0, "## ↩ НАКАЗ СКАСОВАНО")
+        desc.append(f"↩ Скасував: {cancelled_by['name']} · {style.when()}")
+    return style.document(f"НАКАЗ ГОЛОВИ СБУ НГ-{o['id']:04d}", 0x5F6A7A if cancelled_by else 0xC9A05A, desc="\n".join(desc)[:4000],
+                          footer="Наказ обов'язковий до виконання всім особовим складом СБУ · повний текст — на аркуші")
+
+
+async def free_post(o: dict, u: dict, cancelled: bool = False, tag: str | None = None):
+    """Одне повідомлення на наказ Голови: при оголошенні — теги (автор, «order» з панелі, обрана роль/відділ), скасування — оновлення картки."""
+    by = await core.user(o["by_sid"])
+    e = ng_embed(o, by, u if cancelled else None)
     if cancelled:
-        e = style.document(f"НАКАЗ НГ-{o['id']:04d} СКАСОВАНО", 0x5F6A7A, desc=f"«{o['title']}»\nСкасував: {u['name']} · {style.when()}")
-        kw = {"allowed_mentions": discord.AllowedMentions.none()}
-    else:
-        e = style.document("НАКАЗ ГОЛОВИ СЛУЖБИ БЕЗПЕКИ", 0xC9A05A, desc=free_blank(o, u), no=f"НГ-{o['id']:04d}",
-                           footer="Наказ обов'язковий до виконання всім особовим складом СБУ")
-        kw = core.mention("order")
-    try:
-        await ch.send(embed=e, **kw)
-    except discord.HTTPException as ex:
-        log.warning("Наказ НГ: %s", ex)
+        row = await docpost._row("ng", o["id"])
+        docpost.concerns_field(e, [], row["tag"] if row else None)
+        if row:
+            await docpost.update("ng", o["id"], e, ping="↩ Наказ скасовано.", users=await docpost.people(o["by_sid"]))
+            return
+    docpost.concerns_field(e, [], tag)
+    await docpost.post("ng", o["id"], await core.channel("orders"), e, users=await docpost.people(o["by_sid"]),
+                       tag=tag, roles=docpost.key_roles(None if cancelled else "order"))
 
 
 def free_blank(o: dict, u: dict) -> str:

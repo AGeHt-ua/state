@@ -1,0 +1,31 @@
+/* Аркуш А4 для документів: однаковий для PDF і картинки в Discord.
+   794×1123 px = A4 при 96 dpi; довший документ переходить на наступні сторінки. */
+.a4-host{position:fixed;left:-10000px;top:0;width:794px;z-index:-1}
+.a4{--ink:#1d1810;--seal:rgba(28,62,128,.78);width:794px;min-height:1123px;box-sizing:border-box;position:relative;display:flex;flex-direction:column;
+  background:#f6f1e5;color:var(--ink);padding:56px 72px 44px;font:16px/1.65 "Times New Roman",Georgia,serif;text-align:left}
+.a4::before{content:"";position:absolute;inset:22px;border:1px solid rgba(29,24,16,.22);pointer-events:none}
+.a4-head{display:grid;grid-template-columns:76px 1fr 120px;gap:16px;align-items:center;padding-bottom:14px;border-bottom:3px double var(--ink)}
+.a4-head img{width:76px;height:76px;object-fit:contain}
+.a4-agency{font:700 20px/1.2 "Times New Roman",Georgia,serif;letter-spacing:.14em;text-align:center}
+.a4-sub{font:11px/1.4 "IBM Plex Mono",monospace;letter-spacing:.22em;text-transform:uppercase;text-align:center;margin-top:4px;color:#4a4234}
+.a4-no{text-align:right;font:600 13px/1.4 "IBM Plex Mono",monospace}
+.a4-no span{display:block;font-weight:400;font-size:11px;color:#4a4234}
+.a4-body{flex:1;padding-top:26px}
+.a4-foot{display:flex;justify-content:space-between;gap:12px;margin-top:28px;padding-top:8px;border-top:1px solid rgba(29,24,16,.35);
+  font:10.5px/1.4 "IBM Plex Mono",monospace;color:#4a4234;letter-spacing:.04em}
+
+/* старі бланки (.blank) усередині аркуша: без «паперу», тіней і поворотів — аркуш уже є */
+.a4 .blank{background:none!important;box-shadow:none!important;rotate:0deg!important;transform:none!important;padding:0!important;min-height:0!important;
+  width:auto!important;color:var(--ink);font-size:16px;margin:0}
+.a4 .blank::before{display:none}
+.a4 .blank p{margin:0 0 18px}
+.a4 .blank-title{font-size:22px;letter-spacing:.42em;margin:6px 0 10px}
+.a4 .blank-sign{margin-top:48px;font-size:15px;align-items:flex-end}
+.a4 .rap-no{display:none}
+.a4.no-to .blank-to{display:none}
+/* печатка: обертання через transform (генератор PDF не знає властивості rotate), не налазить на підпис */
+.a4 .blank-stamp{position:static!important;rotate:0deg!important;display:block;width:max-content;margin:26px 0 0 auto;transform:rotate(-9deg);
+  border:3px double var(--seal);color:var(--seal);padding:8px 16px;font:700 13px "IBM Plex Mono",monospace;letter-spacing:.16em}
+.a4 .kf-sign{font-size:26px}
+.a4 .ng-title{font-size:19px;margin:4px 0 18px}
+.a4 .ng-body{font-size:16px}

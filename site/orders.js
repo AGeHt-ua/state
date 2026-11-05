@@ -49,8 +49,17 @@ function apDoc(o) {
   </div>`;
 }
 
+// аркуш А4 наказу про призначення (PDF і картинка в Discord)
+const apA4 = (o) => S.a4(apDoc(o), no(o.id), { noTo: true, date: fmtDT(o.signed || o.t), sub: "Наказ про призначення на посаду" });
+// після створення чи підпису — свіжий бланк картинкою в картку наказу в Discord
+async function apImage(id) {
+  const list = await call("/api/orders").catch(() => []);
+  const o = list.find((x) => x.id === id);
+  if (o) await S.docImage("np", id, apA4(o));
+}
+
 async function view(head) {
-  const [staff, list] = await Promise.all([call("/api/structure"), call("/api/orders")]);
+  const [staff, list] = await Promise.all([call("/api/structure"), call("/api/orders"), S.loadTags()]);
   S.cache.apStaff = staff;
   S.cache.apList = Object.fromEntries(list.map((o) => [o.id, o]));
   const f = st.f, D = S.META().depts, R = S.META().ranks, me = S.ME().me;
@@ -68,6 +77,7 @@ async function view(head) {
           : `<select class="i" data-ap="dept">${r && r <= 4 ? `<option value="academy" ${d === "academy" ? "selected" : ""}>Академія СБУ</option>` : ""}${OPS().map((k) => `<option value="${k}" ${d === k ? "selected" : ""}>${esc(D[k].n)}</option>`).join("")}</select>`}</label>
         ${r === 12 ? `<label class="f wide"><span>Другий відділ (якщо начальник веде два, напр. ОРВ + ДЕБ)</span><select class="i" data-ap="extra"><option value="">— немає —</option>${OPS().filter((k) => k !== d).map((k) => `<option value="${k}" ${f.extra === k ? "selected" : ""}>${esc(D[k].n)}</option>`).join("")}</select></label>` : ""}
         <label class="f wide"><span>Підстава (необов'язково)</span><input class="i" data-ap="reason" maxlength="800" value="${esc(f.reason || "")}" placeholder="напр. за зразкове виконання службових обов'язків"></label>
+        ${S.tagSelect('data-ap="tag"', f.tag || "")}
       </div>
       ${p && r && r < p.rank ? '<p class="note warn">Нове звання нижче за поточне. Для пониження як стягнення краще використати «Дисципліну».</p>' : ""}
       <div class="acts">${S.ME().appoint.sign ? '<button class="btn" type="submit" data-sign="0">Зберегти як проєкт</button><button class="btn gold" type="submit" data-sign="1">Підписати наказ</button>'
@@ -107,21 +117,22 @@ S.forms.apsave = async (form, ev) => {
   btn.disabled = true;
   try {
     const p = (S.cache.apStaff || []).find((x) => String(x.sid) === String(st.f.sid));
-    await call("/api/orders", { json: { sid: st.f.sid, rank: st.f.rank, dept: deptFor(st.f, p), extra: st.f.extra || null, reason: st.f.reason || "", sign: signNow } });
+    const r = await call("/api/orders", { json: { sid: st.f.sid, rank: st.f.rank, dept: deptFor(st.f, p), extra: st.f.extra || null, reason: st.f.reason || "", sign: signNow, tag: st.f.tag || "" } });
     toast(signNow ? "Наказ підписано. Ролі в Discord оновлено" : "Проєкт наказу подано на підпис");
+    await apImage(r.id);
     st.f = {};
     await S.refreshMe();
     S.render();
   } catch (e) { toast(e.message, 1); btn.disabled = false; }
 };
-const act = async (b, url, body, ok) => {
+const act = async (b, url, body, ok, img) => {
   b.disabled = true;
-  try { await call(url, { json: body || {} }); toast(ok); await S.refreshMe(); S.render(); }
+  try { await call(url, { json: body || {} }); toast(ok); if (img) await apImage(img); await S.refreshMe(); S.render(); }
   catch (e) { toast(e.message, 1); b.disabled = false; }
 };
-S.actions.apsign = (b) => { if (confirm("Підписати наказ? Бот одразу змінить звання й ролі в Discord.")) act(b, `/api/orders/${b.dataset.id}/sign`, null, "Наказ підписано"); };
-S.actions.apreject = (b) => { const note = prompt("Причина відхилення (побачить ВКПП):", ""); if (note !== null) act(b, `/api/orders/${b.dataset.id}/reject`, { note }, "Проєкт відхилено"); };
-S.actions.appdf = (b) => { const o = (S.cache.apList || {})[b.dataset.id]; if (o) S.pdfBtn(b, apDoc(o), `${no(o.id)}_${o.name}`); };
+S.actions.apsign = (b) => { if (confirm("Підписати наказ? Бот одразу змінить звання й ролі в Discord.")) act(b, `/api/orders/${b.dataset.id}/sign`, null, "Наказ підписано", +b.dataset.id); };
+S.actions.apreject = (b) => { const note = prompt("Причина відхилення (побачить ВКПП):", ""); if (note !== null) act(b, `/api/orders/${b.dataset.id}/reject`, { note }, "Проєкт відхилено", +b.dataset.id); };
+S.actions.appdf = (b) => { const o = (S.cache.apList || {})[b.dataset.id]; if (o) S.pdfA4(b, apA4(o), `${no(o.id)}_${o.name}`); };
 S.actions.apdel = (b) => { if (confirm("Видалити проєкт наказу?")) act(b, `/api/orders/${b.dataset.id}/delete`, null, "Проєкт видалено"); };
 S.actions.apcancel = async (b) => {
   if (!confirm("Скасувати наказ? Якщо звання з того часу не змінювалось, бот поверне попереднє звання й підрозділ.")) return;
@@ -149,15 +160,18 @@ const paper = (o, draft) => `<article class="blank ng-doc" ${draft ? "" : `id="n
     <p class="ng-body">${esc(o.body || "Текст наказу…")}</p>
     <div class="blank-sign"><span>${esc(o.byRank || S.ME().me.rankName)}</span><span class="kf-sign">${esc(o.byName || S.ME().me.name)}</span></div>
     <div class="blank-stamp">ЄІС «СОВА»</div>
-    ${draft ? "" : `<div class="ng-act no-pdf"><button class="btn sm" data-a="pdfel" data-sel="#ng-${o.id}" data-name="${no(o.id)}_${esc(o.title || "")}">⬇ PDF</button>${o.by_sid === S.ME().me.sid || S.ME().me.rank === 15 ? `<button class="btn sm bad" data-a="ngdel" data-id="${o.id}">↩ Скасувати наказ</button>` : ""}</div>`}
+    ${draft ? "" : `<div class="ng-act no-pdf"><button class="btn sm" data-a="ngpdf" data-id="${o.id}">⬇ PDF</button>${o.by_sid === S.ME().me.sid || S.ME().me.rank === 15 ? `<button class="btn sm bad" data-a="ngdel" data-id="${o.id}">↩ Скасувати наказ</button>` : ""}</div>`}
   </article>`;
+const ngA4 = (o) => S.a4(paper(o, false), no(o.id), { noTo: true, date: fmtDT(o.t), sub: "Наказ Голови Служби безпеки" });
 S.freeOrdersView = async (head) => {
-  const list = await call("/api/orders/free");
+  const [list] = await Promise.all([call("/api/orders/free"), S.loadTags()]);
+  S.cache.ngList = Object.fromEntries(list.map((o) => [o.id, o]));
   const can = S.ME().me.rank >= 14;
   return head + (can ? `<div class="grid2 rap-wrap"><form class="card" data-f="ngsave"><header><h3>Новий наказ Голови СБУ</h3></header>
       <p class="note">Наказ одразу з'явиться в Discord у каналі наказів зі згадкою @СБУ і в цьому реєстрі для всього особового складу.</p>
       <div class="form-grid"><label class="f wide"><span>Назва наказу</span><input class="i" data-ng="title" maxlength="150" value="${esc(fs.title)}" placeholder="напр. Про посилення патрулювання в районі порту"></label>
-        <label class="f wide"><span>Текст наказу</span><textarea class="i kf-big" data-ng="body" maxlength="3500" placeholder="Керуючись… НАКАЗУЮ: 1. … 2. …">${esc(fs.body)}</textarea></label></div>
+        <label class="f wide"><span>Текст наказу</span><textarea class="i kf-big" data-ng="body" maxlength="3500" placeholder="Керуючись… НАКАЗУЮ: 1. … 2. …">${esc(fs.body)}</textarea></label>
+        ${S.tagSelect('data-ng="tag"', fs.tag || "")}</div>
       <div><button class="btn gold" type="submit">Підписати й оголосити</button></div></form>
       <div id="ng-prev">${paper(fs, true)}</div></div>` : "")
     + `<h3 class="bn-h" style="margin-top:18px">Реєстр наказів Голови СБУ</h3>`
@@ -173,9 +187,16 @@ S.forms.ngsave = async (f) => {
   const b = f.querySelector("button[type=submit]");
   if (!confirm("Підписати й оголосити наказ? Усі з роллю СБУ отримають сповіщення.")) return;
   b.disabled = true;
-  try { await call("/api/orders/free", { json: fs }); toast("Наказ оголошено"); fs.title = ""; fs.body = ""; S.render(); }
+  try {
+    const r = await call("/api/orders/free", { json: fs });
+    toast("Наказ оголошено");
+    const o = (await call("/api/orders/free").catch(() => [])).find((x) => x.id === r.id);
+    if (o) await S.docImage("ng", r.id, ngA4(o));
+    fs.title = ""; fs.body = ""; fs.tag = ""; S.render();
+  }
   catch (e) { toast(e.message, 1); b.disabled = false; }
 };
+S.actions.ngpdf = (b) => { const o = (S.cache.ngList || {})[b.dataset.id]; if (o) S.pdfA4(b, ngA4(o), `${no(o.id)}_${o.title || ""}`); };
 S.actions.ngdel = async (b) => {
   if (!confirm("Скасувати наказ? У Discord з'явиться повідомлення про скасування.")) return;
   b.disabled = true;

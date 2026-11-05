@@ -18,6 +18,7 @@ import bonus
 import cases
 import depts
 import discipline
+import docpost
 import kb
 import library
 import orders
@@ -715,6 +716,40 @@ async def insp_move(request):
     u = await auth(request)
     await discipline.insp_move(u, int(request.match_info["id"]), (await body(request)).get("to"))
     return web.json_response({"ok": True})
+
+
+# ---------------------------------------------------------------- документи в Discord: теги й картинка аркуша А4
+# хто може надіслати картинку аркуша для документа цього виду (бачить і веде такі документи)
+DOC_IMAGE_RIGHTS = {
+    "np": lambda u: orders.can_prepare(u),
+    "ng": lambda u: orders.can_sign(u),
+}
+
+
+@routes.get("/api/doc/tags")
+async def doc_tags(request):
+    """Кого можна тегнути в Discord: відділи й ролі (поле «Тегнути» у формах документів)."""
+    await auth(request)
+    return web.json_response(docpost.tag_options())
+
+
+@routes.post("/api/doc/{kind}/{id}/image")
+async def doc_image(request):
+    """Картинка аркуша А4, сформована сайтом після створення чи зміни документа, — у його картку в Discord."""
+    u = await auth(request)
+    kind = request.match_info["kind"]
+    if kind not in DOC_IMAGE_RIGHTS or not DOC_IMAGE_RIGHTS[kind](u):
+        raise Fail("Немає доступу до цього документа.", 403)
+    reader = await request.multipart()
+    data = bytearray()
+    while (part := await reader.next()) is not None:
+        if part.name == "img":
+            while chunk := await part.read_chunk(64 * 1024):
+                data.extend(chunk)
+                if len(data) > 9 * 1024 * 1024:
+                    raise Fail("Картинка документа завелика.", 413)
+    ok = await docpost.set_image(kind, int(request.match_info["id"]), bytes(data), f"{kind}-{request.match_info['id']}")
+    return web.json_response({"ok": ok})
 
 
 # ---------------------------------------------------------------- накази про призначення

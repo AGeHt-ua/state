@@ -256,6 +256,56 @@ S.pdfBtn = async (b, src, name) => {
   finally { b.disabled = false; b.textContent = old; }
 };
 
+/* ---------- аркуш А4: однаковий для PDF і картинки документа в Discord ---------- */
+// inner — HTML бланка; no — номер документа; opts.noTo — сховати рядок «СЛУЖБА БЕЗПЕКИ ШТАТУ NG» (він уже в шапці аркуша)
+S.a4 = (inner, no, opts = {}) => `<div class="a4 ${opts.noTo ? "no-to" : ""}">
+  <header class="a4-head"><img src="sbu-logo.webp" alt="" crossorigin="anonymous"><div><div class="a4-agency">СЛУЖБА БЕЗПЕКИ ШТАТУ NG</div><div class="a4-sub">${esc(opts.sub || "Єдина інформаційна система «Сова»")}</div></div>
+    <div class="a4-no">${esc(no || "")}<span>${esc(opts.date || new Date().toLocaleDateString("uk-UA"))}</span></div></header>
+  <div class="a4-body">${inner}</div>
+  <footer class="a4-foot"><span>ЄІС «Сова» · ${esc(no || "")}</span><span>${esc(opts.foot || "Документ сформовано автоматично")}</span></footer></div>`;
+async function a4Render(html, fn) {
+  await loadPdf();
+  const box = document.createElement("div");
+  box.className = "a4-host";
+  box.innerHTML = html;
+  box.querySelectorAll("button, .files, .no-pdf, input, iframe").forEach((n) => n.remove());
+  document.body.append(box);
+  try {
+    await document.fonts.ready;
+    await Promise.all([...box.querySelectorAll("img")].map((i) => i.complete ? 0 : new Promise((ok) => { i.onload = i.onerror = ok; })));
+    return await fn(box.firstElementChild);
+  } finally { box.remove(); }
+}
+const A4OPT = (scale) => ({ margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale, backgroundColor: "#f6f1e5", useCORS: true, windowWidth: 794 },
+  jsPDF: { unit: "px", format: [794, 1123], orientation: "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: ["css", "legacy"], avoid: ["p", "li", "tr", ".blank-sign", ".blank-stamp", "h3"] } });
+// PDF аркуша А4
+S.pdfA4 = async (b, html, name) => {
+  const old = b.textContent;
+  b.disabled = true; b.textContent = "Формую PDF…";
+  try { await a4Render(html, (el) => window.html2pdf().set({ ...A4OPT(2), filename: `${String(name || "документ").replace(/[^\p{L}\p{N}-]+/gu, "_").slice(0, 80)}.pdf` }).from(el).save()); }
+  catch (e) { S.toast(e.message, 1); }
+  finally { b.disabled = false; b.textContent = old; }
+};
+// Картинка аркуша (PNG) → картка документа в Discord. Тихо: якщо не вийшло, документ уже є в Discord карткою.
+S.docImage = async (kind, id, html) => {
+  try {
+    const canvas = await a4Render(html, (el) => window.html2pdf().set(A4OPT(1.5)).from(el).toCanvas().get("canvas"));
+    let blob = await new Promise((ok) => canvas.toBlob(ok, "image/png"));
+    if (blob.size > 7.5 * 1024 * 1024) blob = await new Promise((ok) => canvas.toBlob(ok, "image/jpeg", 0.9));
+    const fd = new FormData();
+    fd.append("img", blob, `${kind}-${id}.${blob.type === "image/png" ? "png" : "jpg"}`);
+    await S.call(`/api/doc/${kind}/${id}/image`, { method: "POST", body: fd });
+  } catch (e) { console.warn("Картинка документа", kind, id, e); }
+};
+// Поле «Тегнути в Discord»: відділ або роль (автор і той, кого стосується, тегаються завжди)
+S.loadTags = async () => S.cache.tags || (S.cache.tags = await S.call("/api/doc/tags").catch(() => ({ depts: [], roles: [] })));
+S.tagSelect = (attr, value) => {
+  const t = S.cache.tags || { depts: [], roles: [] };
+  const opt = (x) => `<option value="${esc(x.id)}" ${x.id === value ? "selected" : ""}>${esc(x.n)}</option>`;
+  return `<label class="f"><span>Тегнути в Discord <i class="muted">· автор і співробітник тегаються завжди</i></span><select class="i" ${attr}>
+    <option value="">— нікого додатково —</option><optgroup label="Відділ">${t.depts.map(opt).join("")}</optgroup><optgroup label="Роль">${t.roles.map(opt).join("")}</optgroup></select></label>`;
+};
+
 async function makePdf(c, asBlob = false) {
   return pdfFrom(docHtml(c, true), `${no(c.id)}_${(c.data.title || "").replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, [".kd-p", ".kd-ev li", ".kd-tl li", ".kd-approved"], asBlob);
 }

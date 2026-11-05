@@ -104,6 +104,11 @@ CREATE TABLE IF NOT EXISTS candidates (
   note       TEXT,
   vvb_ch TEXT, vvb_msg TEXT, vkpp_ch TEXT, vkpp_msg TEXT
 );
+CREATE TABLE IF NOT EXISTS doc_msgs (         -- повідомлення документа в Discord (картка + картинка А4)
+  kind TEXT NOT NULL, id INTEGER NOT NULL,     -- вид документа (np, ng, …) і номер
+  ch TEXT, msg TEXT, img TEXT, tag TEXT,       -- канал, повідомлення, ім'я картинки, обрана роль/відділ
+  PRIMARY KEY (kind, id)
+);
 CREATE TABLE IF NOT EXISTS cases (
   id       INTEGER PRIMARY KEY AUTOINCREMENT,
   dept     TEXT NOT NULL,                -- orv | deb | atc | alpha
