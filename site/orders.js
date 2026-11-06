@@ -119,7 +119,7 @@ S.forms.apsave = async (form, ev) => {
   try {
     const p = (S.cache.apStaff || []).find((x) => String(x.sid) === String(st.f.sid));
     const r = await call("/api/orders", { json: { sid: st.f.sid, rank: st.f.rank, dept: deptFor(st.f, p), extra: st.f.extra || null, reason: st.f.reason || "", sign: signNow, tag: st.f.tag || "" } });
-    toast(signNow ? "Наказ підписано. Ролі в Discord оновлено" : "Проєкт наказу подано на підпис");
+    if (r.rolesWarning) alert(r.rolesWarning); else toast(signNow ? "Наказ підписано. Ролі в Discord перевірено — збігаються з наказом" : "Проєкт наказу подано на підпис");
     await apImage(r.id);
     st.f = {};
     await S.refreshMe();
@@ -128,10 +128,10 @@ S.forms.apsave = async (form, ev) => {
 };
 const act = async (b, url, body, ok, img) => {
   b.disabled = true;
-  try { await call(url, { json: body || {} }); toast(ok); if (img) await apImage(img); await S.refreshMe(); S.render(); }
+  try { const r = await call(url, { json: body || {} }); if (r && r.rolesWarning) alert(r.rolesWarning); else toast(ok); if (img) await apImage(img); await S.refreshMe(); S.render(); }
   catch (e) { toast(e.message, 1); b.disabled = false; }
 };
-S.actions.apsign = (b) => { if (confirm("Підписати наказ? Бот одразу змінить звання й ролі в Discord.")) act(b, `/api/orders/${b.dataset.id}/sign`, null, "Наказ підписано", +b.dataset.id); };
+S.actions.apsign = (b) => { if (confirm("Підписати наказ? Бот одразу змінить звання й ролі в Discord.")) act(b, `/api/orders/${b.dataset.id}/sign`, null, "Наказ підписано. Ролі в Discord перевірено — збігаються з наказом", +b.dataset.id); };
 S.actions.apreject = (b) => { const note = prompt("Причина відхилення (побачить ВКПП):", ""); if (note !== null) act(b, `/api/orders/${b.dataset.id}/reject`, { note }, "Проєкт відхилено", +b.dataset.id); };
 S.actions.appdf = (b) => { const o = (S.cache.apList || {})[b.dataset.id]; if (o) S.pdfA4(b, apA4(o), `${no(o.id)}_${o.name}`); };
 S.actions.apdel = (b) => { if (confirm("Видалити проєкт наказу?")) act(b, `/api/orders/${b.dataset.id}/delete`, null, "Проєкт видалено"); };
@@ -140,7 +140,8 @@ S.actions.apcancel = async (b) => {
   b.disabled = true;
   try {
     const r = await call(`/api/orders/${b.dataset.id}/cancel`, { json: {} });
-    toast(r.reverted ? "Наказ скасовано, попереднє звання повернуто" : "Наказ скасовано (звання вже змінювалось — повертайте окремо)");
+    if (r.rolesWarning) alert(r.rolesWarning);
+    else toast(r.reverted ? "Наказ скасовано, попереднє звання й ролі повернуто" : "Наказ скасовано (звання вже змінювалось — повертайте окремо)");
     S.render();
   } catch (e) { toast(e.message, 1); b.disabled = false; }
 };

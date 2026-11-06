@@ -6,6 +6,7 @@ import json
 import logging
 import secrets
 import time
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import discord
@@ -234,7 +235,7 @@ async def set_nick(u: dict, member: discord.Member | None = None) -> bool:
     """Ставить нікнейм «Звання | Ім'я Прізвище | Static ID». Потрібне право бота «Керувати нікнеймами»."""
     if u.get("status") == "dismissed" or not u.get("discord_id") or u.get("dept") in ("prosecutor", "curator"):
         return False
-    m = member or await member_of(u["discord_id"])
+    m = member or await member_of(u["discord_id"], fresh=True)
     if not m:
         return False
     if "callsign" not in u:  # картку могли зібрати без позивного — беремо з бази
@@ -261,11 +262,18 @@ def roles_changed():
         asyncio.get_running_loop().create_task(cb())
 
 
-async def sync_roles(u: dict, reason: str):
-    """Приводить ролі в Discord до картки (після підвищення, переведення, звільнення)."""
-    m = await member_of(u["discord_id"]) if u.get("discord_id") else None
-    if not m:
-        return
+# Коли Сова востаннє сама змінила звання / відділ людини (наказ, рапорт, стягнення).
+# Поки свіже — фонова синхронізація НЕ бере звання з Discord назад у картку (інакше старі ролі «відкочували» щойно підписаний наказ).
+CARD_TOUCH: dict[int, float] = {}
+CARD_TRUST_S = 15 * 60
+
+
+def card_fresh(sid: int) -> bool:
+    return time.time() - CARD_TOUCH.get(sid, 0) < CARD_TRUST_S
+
+
+def _role_diff(u: dict, m: discord.Member) -> tuple[set[int], set[int]]:
+    """Яких ролей СБУ бракує (add) і які зайві (remove) — відносно картки."""
     have = {r.id for r in m.roles} & ALL_SBU_ROLES
     want = set() if u["status"] == "dismissed" else roles_for(u["rank"], u["dept"])
     # керівництво й начальники відділів (можуть вести два відділи) зберігають ролі відділів; прес-служба — позаштатна, роль не чіпаємо
@@ -273,17 +281,72 @@ async def sync_roles(u: dict, reason: str):
     remove = {r for r in have - want if not (keep_dept and r in {DEPTS[d]["role"] for d in OPS_DEPTS})}
     if u["status"] != "dismissed":
         remove.discard(PRESS_ROLE)
-    add = want - have
-    g = m.guild
-    try:
-        if add:
-            await m.add_roles(*[g.get_role(r) for r in add if g.get_role(r)], reason=reason)
-        if remove:
-            await m.remove_roles(*[g.get_role(r) for r in remove if g.get_role(r)], reason=reason)
-    except discord.Forbidden:
-        log.warning("Немає прав змінити ролі %s — роль бота має бути вище ролей СБУ", m)
+    return want - have, remove
+
+
+async def sync_roles(u: dict, reason: str, *, extra_add: set[int] | None = None, extra_remove: set[int] | None = None,
+                     notify: bool = True) -> dict:
+    """Приводить ролі в Discord до картки (після підвищення, переведення, звільнення) — із суворою перевіркою:
+    щоразу свіжі ролі з Discord (не кеш бота), після змін — повторне читання й до 3 спроб.
+    Повертає {"ok", "missing", "extra", "error"}: чого так і не вдалося досягти (назви ролей)."""
+    res = {"ok": True, "missing": [], "extra": [], "error": None}
+    if not u.get("discord_id"):
+        return res
+    CARD_TOUCH[u["sid"]] = time.time()
+    extra_add, extra_remove = set(extra_add or ()), set(extra_remove or ()) - set(extra_add or ())
+    m = None
+    for attempt in range(3):
+        m = await member_of(u["discord_id"], fresh=True)  # без Server Members Intent кеш учасника застаріває — лише свіжі дані
+        if not m:
+            res.update(ok=False, error="Людини немає на сервері Discord")
+            break
+        add, remove = _role_diff(u, m)
+        cur = {r.id for r in m.roles}
+        add |= extra_add - cur
+        remove = (remove | (extra_remove & cur)) - extra_add
+        if not add and not remove:
+            res.update(ok=True, missing=[], extra=[], error=None)
+            break
+        g = m.guild
+        names = lambda ids: [(g.get_role(r).name if g.get_role(r) else str(r)) for r in ids]
+        res.update(ok=False, missing=names(add), extra=names(remove))
+        if attempt == 2:
+            break
+        try:
+            if add:
+                await m.add_roles(*[g.get_role(r) for r in add if g.get_role(r)], reason=reason)
+            if remove:
+                await m.remove_roles(*[g.get_role(r) for r in remove if g.get_role(r)], reason=reason)
+        except discord.Forbidden:
+            res["error"] = "Боту бракує прав: його роль має стояти вище за ролі СБУ, і потрібне право «Керувати ролями»"
+            log.warning("Немає прав змінити ролі %s — роль бота має бути вище ролей СБУ", m)
+            break
+        except discord.HTTPException as ex:
+            res["error"] = f"Discord не прийняв зміну ролей: {ex}"
+            log.warning("Ролі %s: %s", m, ex)
+        await asyncio.sleep(1.5 * (attempt + 1))
+    if not res["ok"]:
+        log.warning("Ролі %s (№%s) не збігаються з карткою: бракує %s, зайві %s%s", u.get("name"), u["sid"],
+                    res["missing"], res["extra"], f" — {res['error']}" if res["error"] else "")
+    if m:
+        res["nick"] = await set_nick(u, await member_of(u["discord_id"], fresh=True))
     _roles_cache.pop(str(u["discord_id"]), None)
-    roles_changed()
+    CARD_TOUCH[u["sid"]] = time.time()
+    if notify:
+        roles_changed()
+    return res
+
+
+def roles_problem(res: dict | None) -> str | None:
+    """Текст для сайту, якщо ролі не вдалося привести до наказу."""
+    if not res or res.get("ok"):
+        return None
+    parts = [res["error"]] if res.get("error") else []
+    if res.get("missing"):
+        parts.append("не додано: " + ", ".join(res["missing"]))
+    if res.get("extra"):
+        parts.append("не знято: " + ", ".join(res["extra"]))
+    return "Звання в Сові змінено, але ролі в Discord не збігаються — " + "; ".join(parts) + ". Перевірте ролі вручну або натисніть ⟳ у адмін-панелі."
 
 
 # ---------------------------------------------------------------- права

@@ -673,7 +673,7 @@ async def disc_list(request):
 async def disc_issue(request):
     u = await auth(request)
     o = await discipline.issue(u, await body(request))
-    return web.json_response({"id": o["id"]}, status=201)
+    return web.json_response({"id": o["id"], "rolesWarning": o.get("rolesWarning")}, status=201)
 
 
 @routes.post("/api/discipline/{id}/appeal")
@@ -781,7 +781,7 @@ async def orders_create(request):
     u = await auth(request)
     o = await orders.appoint(u, await body(request))
     _structure_cache[0] = 0  # схема оновиться з новим званням
-    return web.json_response({"id": o["id"]}, status=201)
+    return web.json_response({"id": o["id"], "rolesWarning": o.get("rolesWarning")}, status=201)
 
 
 @routes.get("/api/orders/free")
@@ -794,7 +794,7 @@ async def orders_free_list(request):
 async def orders_free_create(request):
     u = await auth(request)
     o = await orders.create_free(u, await body(request))
-    return web.json_response({"id": o["id"]}, status=201)
+    return web.json_response({"id": o["id"], "rolesWarning": o.get("rolesWarning")}, status=201)
 
 
 @routes.post("/api/orders/free/{id}/delete")
@@ -807,9 +807,9 @@ async def orders_free_delete(request):
 @routes.post("/api/orders/{id}/sign")
 async def orders_sign(request):
     u = await auth(request)
-    await orders.sign(u, int(request.match_info["id"]))
+    o = await orders.sign(u, int(request.match_info["id"]))
     _structure_cache[0] = 0
-    return web.json_response({"ok": True})
+    return web.json_response({"ok": True, "rolesWarning": o.get("rolesWarning")})
 
 
 @routes.post("/api/orders/{id}/reject")
@@ -1031,7 +1031,14 @@ async def _build_structure() -> list:
         if rs is None or (rs is not False and not core.resolve(rs)["ok"]):
             continue  # вийшов із сервера або зняли ролі СБУ — у структурі не показуємо
         rs = rs or set()
-        if rs:
+        if rs and core.card_fresh(r["sid"]):
+            # Сова щойно сама змінила картку (наказ, рапорт) — правда в картці; якщо Discord ще не такий, доводимо ролі, а не навпаки
+            cur = await core.user(r["sid"])
+            a = core.resolve(rs)
+            if cur and a["ok"] and (a["rank"], a["dept"]) != (cur["rank"], cur["dept"]):
+                await core.sync_roles(cur, "Сова: повторна звірка ролей з карткою", notify=False)
+            r = cur or r
+        elif rs:
             await core.apply_roles(r, rs)  # звання й відділ — як у Discord, навіть якщо людина не заходила на сайт
         out.append({**public_user(r), "press": PRESS_ROLE in rs, "depts": [d for d in OPS_DEPTS if DEPTS[d]["role"] in rs]})
     out.sort(key=lambda x: (-x["rank"], x["sid"]))

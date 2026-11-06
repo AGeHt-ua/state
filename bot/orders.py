@@ -82,14 +82,16 @@ async def sign(u: dict, oid: int, tag: str | None = None) -> dict:
     await db.run("UPDATE orders SET status='active', from_rank=?, from_dept=?, signed_by=?, signed=? WHERE id=?", p["rank"], p["dept"], u["sid"], t, oid)
     await db.run("UPDATE users SET rank=?, dept=?, since=? WHERE sid=?", o["to_rank"], o["to_dept"], t if o["to_rank"] != p["rank"] else p["since"], p["sid"])
     old = p["dept"] if p["dept"] in OPS_DEPTS and p["dept"] not in (o["to_dept"], o["extra"]) else None
-    await apply_roles(p["sid"], o["extra"], f"Сова: наказ НП-{oid:04d}", drop_extra=old)
+    roles_res = await apply_roles(p["sid"], o["extra"], f"Сова: наказ НП-{oid:04d}", drop_extra=old)
     await db.audit(u["sid"], "Призначення на посаду", p["sid"],
                    f"{rank_name(p['rank'])} / {DEPTS[p['dept']]['s']} → {rank_name(o['to_rank'])} / {DEPTS[o['to_dept']]['s']}"
                    + (f" + {DEPTS[o['extra']]['s']}" if o["extra"] else "") + f" · НП-{oid:04d}")
     o = await get(oid)
     await journal(o, u, "Наказ підписано й оголошено", tag=tag)
     await core.send_audit(await core.user(p["sid"]), u)
-    return o
+    if warn := core.roles_problem(roles_res):
+        await db.audit(u["sid"], "⚠ Ролі не збігаються з наказом", p["sid"], f"НП-{oid:04d}: {warn}"[:500])
+    return {**o, "rolesWarning": warn}
 
 
 async def reject(u: dict, oid: int, note: str) -> dict:
@@ -114,24 +116,13 @@ async def delete_draft(u: dict, oid: int):
     await docpost.remove("np", oid)  # проєкт видалено — і його повідомлення в Discord
 
 
-async def apply_roles(sid: int, extra: str | None, reason: str, drop_extra: str | None = None):
+async def apply_roles(sid: int, extra: str | None, reason: str, drop_extra: str | None = None) -> dict:
+    """Ролі за наказом: звання й відділ з картки + другий відділ начальника (extra) / зняти колишній (drop_extra).
+    Одна сувора синхронізація з перевіркою після змін (core.sync_roles)."""
     p = await core.user(sid)
-    await core.sync_roles(p, reason)
-    await core.set_nick(p)
-    if not (extra or drop_extra) or not p.get("discord_id"):
-        return
-    m = await core.member_of(p["discord_id"], fresh=True)
-    if not m:
-        return
-    try:
-        if extra and (r := m.guild.get_role(DEPTS[extra]["role"])):
-            await m.add_roles(r, reason=reason)  # другий відділ начальника (напр. ОРВ + ДЕБ)
-        if drop_extra and (r := m.guild.get_role(DEPTS[drop_extra]["role"])):
-            await m.remove_roles(r, reason=reason)
-    except discord.Forbidden:
-        log.warning("Немає прав змінити ролі %s", m)
-    core._roles_cache.pop(str(p["discord_id"]), None)
-    core.roles_changed()
+    add = {DEPTS[extra]["role"]} if extra and DEPTS.get(extra, {}).get("role") else set()
+    drop = {DEPTS[drop_extra]["role"]} if drop_extra and DEPTS.get(drop_extra, {}).get("role") else set()
+    return await core.sync_roles(p, reason, extra_add=add, extra_remove=drop)
 
 
 async def get(oid: int) -> dict:
@@ -150,14 +141,15 @@ async def cancel(u: dict, oid: int) -> dict:
         raise Fail("Наказ уже скасовано.")
     p = await core.user(o["sid"])
     reverted = bool(p and p["rank"] == o["to_rank"] and p["dept"] == o["to_dept"] and p["status"] != "dismissed")
+    warn = None
     if reverted:
         await db.run("UPDATE users SET rank=?, dept=?, since=? WHERE sid=?", o["from_rank"], o["from_dept"], now_ms(), o["sid"])
-        await apply_roles(o["sid"], None, f"Сова: скасування наказу НП-{oid:04d}", drop_extra=o["extra"])
+        warn = core.roles_problem(await apply_roles(o["sid"], None, f"Сова: скасування наказу НП-{oid:04d}", drop_extra=o["extra"]))
     await db.run("UPDATE orders SET status='deleted', cancelled_by=?, cancelled=? WHERE id=?", u["sid"], now_ms(), oid)
     await db.audit(u["sid"], "Скасовано наказ про призначення", o["sid"],
                    f"НП-{oid:04d}" + (" · звання й підрозділ повернуто" if reverted else " · звання вже змінювалось, повернення не виконано"))
     await journal(o, u, "Наказ скасовано" + (" · попереднє звання повернуто" if reverted else ""))
-    return {"reverted": reverted}
+    return {"reverted": reverted, "rolesWarning": warn}
 
 
 NP_STATE = {"draft": ("🕓 ПРОЄКТ · НА ПІДПИСІ", 0xD9A23D), "active": ("✅ ПІДПИСАНО · ЧИННИЙ", 0x5FB37A),
