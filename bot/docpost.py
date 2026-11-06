@@ -161,7 +161,8 @@ async def post(kind: str, did: int, ch: discord.abc.Messageable | None, embed: d
 async def update(kind: str, did: int, embed: discord.Embed, *, view: discord.ui.View | None = None,
                  ping: str | None = None, users: list[str] | None = None, roles: list[int] | None = None) -> bool:
     """Оновлює картку документа (і копії), зберігаючи картинку аркуша й рядок «Стосується».
-    ping — коротка відповідь під повідомленням, щоб зміна (підпис, рішення) дійшла сповіщенням: редагування не пінгує."""
+    ping — коротка відповідь під повідомленням лише тоді, коли треба покликати нових людей (roles: наступний етап, напр. Мінфін чи виплата премій).
+    Рішення («Погоджено», «Відхилено», «Підписано») окремою відповіддю не дублюємо — картка й так оновлюється."""
     row = await _row(kind, did)
     msgs = await _messages(row) if row else []
     if not msgs:
@@ -172,8 +173,8 @@ async def update(kind: str, did: int, embed: discord.Embed, *, view: discord.ui.
     for i, msg in enumerate(msgs):
         try:
             await msg.edit(embed=embed, **({"view": view} if view is not None else {}))
-            if ping and i == 0:
-                m = mentions([*_who(row), *(users or [])], row["tag"], roles)
+            if ping and roles and i == 0:
+                m = mentions([], None, roles)
                 await msg.reply(" ".join(filter(None, [ping, m["content"]])), mention_author=False, allowed_mentions=m["allowed_mentions"])
         except discord.HTTPException as ex:
             log.warning("Оновлення документа %s-%s: %s", kind, did, ex)
