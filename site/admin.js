@@ -132,7 +132,8 @@ function sysView(d) {
       <div><b>${s.users}</b><span>в особовому складі · ${s.sessions} активних входів</span></div><div><b>${kb(s.dbSize)}</b><span>розмір бази</span></div></div>
     ${s.warnings.length ? `<div class="card"><header><h3>Попередження</h3></header>${s.warnings.map((w) => `<p class="note warn">${esc(w)}</p>`).join("")}</div>` : ""}
     <div class="card"><header><h3>Дії</h3></header><div class="acts" style="justify-content:flex-start">
-      <button class="btn gold" data-a="admsync">⟳ Синхронізувати ролі всіх зараз</button><button class="btn" data-a="admbackup">💾 Резервна копія бази зараз</button></div>
+      <button class="btn gold" data-a="admsync">⟳ Синхронізувати ролі всіх зараз</button><button class="btn" data-a="admbackup">💾 Резервна копія бази зараз</button>
+      <button class="btn" data-a="admdocimg" title="Заново намалювати аркуш А4 у картках усіх документів у Discord">🖼 Перемалювати картинки всіх документів</button></div>
       <p class="muted small">Ролі й так звіряються автоматично кожні 4 хвилини. Резервні копії робляться автоматично й надсилаються в канал бекапів.</p></div>
     <div class="grid2"><div class="card"><header><h3>Останні резервні копії</h3></header>
       ${s.backups.length ? `<ul class="adm-list">${s.backups.map((b) => `<li><span class="mono">${esc(b.name)}</span><span class="muted">${kb(b.size)} · ${fmtDT(b.t)}</span></li>`).join("")}</ul>` : '<p class="muted">Ще немає.</p>'}</div>
@@ -173,6 +174,23 @@ Object.assign(S.actions, {
     S.render();
   }),
   admsync: (b) => run(b, async () => { const r = await call("/api/admin/sync", { json: {} }); toast(`Ролі звірено: ${r.count} у штаті`); S.render(); }),
+  // усі картинки документів у Discord — заново (напр., після виправлення обрізаних аркушів); премії — з відкритої відомості
+  admdocimg: async (b) => {
+    if (b.disabled || !confirm("Перемалювати картинки всіх документів у Discord? Це може тривати кілька хвилин — не закривайте сторінку.")) return;
+    const fns = S.docImageFns || {}, old = b.textContent;
+    b.disabled = true;
+    try {
+      const all = await call("/api/admin/docimages");
+      const todo = all.filter((d) => d.kind !== "bn" && fns[d.kind]), skipBn = all.filter((d) => d.kind === "bn").length;
+      let ok = 0, bad = 0;
+      for (const [i, d] of todo.entries()) {
+        b.textContent = `Перемальовую ${i + 1} з ${todo.length}…`;
+        (await fns[d.kind](d.id).catch(() => false)) ? ok++ : bad++;
+      }
+      toast(`Перемальовано ${ok} з ${todo.length}${bad ? ` · ${bad} не вдалося (повідомлення в Discord видалено або документа вже немає)` : ""}${skipBn ? ` · відомості премій (${skipBn}) — кнопкою «🔄 Картинка в Discord» у самій відомості` : ""}`, bad > 0);
+    } catch (e) { toast(e.message, 1); }
+    finally { b.disabled = false; b.textContent = old; }
+  },
   admbackup: (b) => run(b, async () => { const r = await call("/api/admin/backup", { json: {} }); toast(`Копію ${r.name} збережено`); S.render(); }),
   admpermreset: (b) => run(b, async () => { if (!confirm("Повернути всі доступи до стандартних?")) return; await call("/api/admin/perms", { json: {} }); toast("Доступи стандартні"); await S.refreshMe(); S.render(); }),
   admcs: (b) => run(b, async () => {

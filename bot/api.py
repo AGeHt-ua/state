@@ -1392,6 +1392,13 @@ async def admin_promo_save(request):
     return web.json_response({"ok": True})
 
 
+@routes.get("/api/admin/docimages")
+async def admin_docimages(request):
+    """Усі документи, що мають картку в Discord, — щоб перемалювати їхні картинки А4 (адмін-панель → Система)."""
+    await admin_auth(request)
+    return web.json_response(await db.all("SELECT kind, id, img FROM doc_msgs ORDER BY kind, id"))
+
+
 @routes.post("/api/admin/backup")
 async def admin_backup(request):
     u = await admin_auth(request)
