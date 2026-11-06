@@ -218,7 +218,7 @@ async function pdfFrom(html, filename, avoid = [], asBlob = false) {
   document.body.append(box);
   try {
     const job = window.html2pdf().set({ margin: [8, 8, 10, 8], filename,
-      image: { type: "jpeg", quality: asBlob ? 0.85 : 0.96 }, html2canvas: { scale: 2, backgroundColor: "#f3eee2", useCORS: true },
+      image: { type: "jpeg", quality: asBlob ? 0.85 : 0.96 }, html2canvas: { scale: 2, backgroundColor: "#f3eee2", useCORS: true, scrollX: 0, scrollY: 0 },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }, pagebreak: { mode: ["css", "legacy"], avoid: [".kf-visa", ...avoid] } })
       .from(box.firstElementChild);
     return asBlob ? await job.outputPdf("blob") : await job.save();
@@ -237,7 +237,7 @@ S.pngBtn = async (b, html, name) => {
   document.body.append(box);
   try {
     await loadPdf();
-    const canvas = await window.html2pdf().set({ html2canvas: { scale: 2, backgroundColor: "#f3eee2", useCORS: true } }).from(box.firstElementChild).toCanvas().get("canvas");
+    const canvas = await window.html2pdf().set({ html2canvas: { scale: 2, backgroundColor: "#f3eee2", useCORS: true, scrollX: 0, scrollY: 0 } }).from(box.firstElementChild).toCanvas().get("canvas");
     const a = document.createElement("a");
     a.href = canvas.toDataURL("image/png");
     a.download = `${String(name || "документ").replace(/[^\p{L}\p{N}-]+/gu, "_").slice(0, 80)}.png`;
@@ -277,7 +277,7 @@ async function a4Render(html, fn) {
     return await fn(box.firstElementChild);
   } finally { box.remove(); }
 }
-const A4OPT = (scale) => ({ margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale, backgroundColor: "#f6f1e5", useCORS: true, windowWidth: 794 },
+const A4OPT = (scale) => ({ margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale, backgroundColor: "#f6f1e5", useCORS: true, windowWidth: 794, scrollX: 0, scrollY: 0 },
   jsPDF: { unit: "px", format: [794, 1123], orientation: "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: ["css", "legacy"], avoid: ["p", "li", "tr", ".blank-sign", ".blank-stamp", "h3"] } });
 // PDF аркуша А4
 S.pdfA4 = async (b, html, name) => {
