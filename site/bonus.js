@@ -68,7 +68,7 @@ S.docImageFns.bn = async (id) => { const html = bnSnapshot(); return html ? S.do
 function docView(s) {
   const me = S.ME().me.sid, edit = s.status === "draft", c = s.cfg, D = S.META().depts, r = S.ME().bonus;
   const pct = c.limit ? Math.min(1.2, s.total / c.limit) : 0;
-  const groups = Object.keys(D).map((k) => [k, s.rows.filter((x) => x.dept === k)]).filter(([, rows]) => rows.length);
+  const groups = Object.keys(D).map((k) => [k, s.rows.filter((x) => x.dept === k && (x.pts > 0 || x.amount > 0))  /* хто без балів — не показуємо */]).filter(([, rows]) => rows.length);
   let n = 0;
   const bar = `<div class="kd-bar"><button class="btn" data-a="bnback">← До відомостей</button><span class="sp"></span>
     ${edit ? '<button class="btn" data-a="bnrecalc">↻ Перерахувати з балів</button><button class="btn" data-a="bnsave">Зберегти зміни</button><button class="btn gold" data-a="bnmove" data-to="sent">Подати куратору</button><button class="btn bad" data-a="bndelete">🗑 Видалити</button>' : ""}

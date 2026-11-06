@@ -69,6 +69,8 @@ async def calc_rows(ws: int, c: dict) -> list[dict]:
     rows = []
     for p in staff:
         pt = by.get(p["sid"], 0)
+        if pt <= 0:
+            continue  # без жодного підтвердженого бала за тиждень — у відомість не потрапляє
         cap = c["caps"][tier(p["rank"])]
         auto = min(cap, pt * c["rate"]) if pt >= c["min_pts"] and p["sid"] not in blocked else 0
         rows.append({"sid": p["sid"], "name": p["name"], "rank": p["rank"], "dept": p["dept"], "tier": tier(p["rank"]),
