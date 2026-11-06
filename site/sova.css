@@ -294,5 +294,3 @@ body.viewer-on{overflow:hidden}
 .docgo .i{width:190px;padding:6px 10px;font-size:12px}
 @media (max-width:760px){.docgo .i{width:130px}}
 
-/* html2pdf центрує свій контейнер на широкому екрані — тоді аркуш у PDF/картинці зсувається й обрізається. Тримаємо його з лівого краю. */
-.html2pdf__container{margin:0!important;right:auto!important}

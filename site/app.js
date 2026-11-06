@@ -928,6 +928,21 @@ async function refreshMe() {
 }
 // Повернення у вкладку чи застосунок: свіжі бали (напр., поки людини не було, начальник підтвердив звіт).
 // Форму, яку людина заповнює, не чіпаємо; прокрутка лишається на місці.
+// Нова версія сайту: сторінка, відкрита давно (планшет, вкладка на весь день), сама перезавантажується —
+// інакше людина й далі працює старим кодом (напр., шле в Discord криві картинки документів). Форму, яку заповнюють, не перериваємо.
+const assetVer = (doc) => [...doc.querySelectorAll("script[src*=\"?v=\"], link[href*=\"?v=\"]")].map((n) => n.getAttribute("src") || n.getAttribute("href")).sort().join("|");
+let updTold = false;
+async function checkUpdate() {
+  try {
+    const html = await (await fetch(`index.html?u=${Date.now()}`, { cache: "no-store" })).text();
+    const live = assetVer(new DOMParser().parseFromString(html, "text/html")), mine = assetVer(document);
+    if (!live || !mine || live === mine) return;
+    if (!DIRTY) return location.reload();
+    if (!updTold) { updTold = true; toast("Вийшло оновлення сайту: збережіть форму — і сторінка оновиться сама", 1); }
+  } catch (e) {}
+}
+setInterval(checkUpdate, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
 document.addEventListener("visibilitychange", async () => {
   if (document.visibilityState !== "visible" || !TOKEN || !ME || DIRTY || Date.now() - meAt < ME_FRESH) return;
   const y = scrollY;

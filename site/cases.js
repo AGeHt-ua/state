@@ -194,56 +194,116 @@ async function save(then) {
   toast(then === "submit" ? "Кейс-файл подано на погодження" : "Чернетку збережено");
 }
 
-/* ---------- PDF ---------- */
-let pdfLib = null;
-function loadPdf() {
-  if (window.html2pdf) return Promise.resolve();
-  return pdfLib || (pdfLib = new Promise((ok, bad) => {
+/* ---------- PDF і картинки документів ----------
+   Власне малювання замість html2pdf: бланк кладемо в окремий невидимий кадр (iframe) рівно на ширину аркуша —
+   без прокрутки сторінки, без центрування, без залежності від розміру екрана — і знімаємо html2canvas
+   з чітко заданими межами. Тому аркуш не зсувається й не обрізається ні на широкому моніторі, ні на телефоні. */
+const LIBS = {};
+function loadLib(key, src) {
+  return LIBS[key] || (LIBS[key] = new Promise((ok, bad) => {
     const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
-    s.onload = ok; s.onerror = () => bad(new Error("Не вдалося завантажити модуль PDF"));
+    s.src = src;
+    s.onload = ok;
+    s.onerror = () => { delete LIBS[key]; bad(new Error("Не вдалося завантажити модуль PDF / картинок. Перевірте інтернет і спробуйте ще раз.")); };
     document.head.append(s);
   }));
 }
-// Спільний генератор PDF для документів на бланку (.kd): кейс-файли, відомості премій.
+const loadCanvas = () => window.html2canvas ? Promise.resolve() : loadLib("h2c", "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+const loadJsPdf = () => window.jspdf ? Promise.resolve() : loadLib("jspdf", "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+const MAX_PX = 16e6;  // найбільше полотно, яке тягнуть усі браузери (iPhone / iPad — ~16,7 млн пікселів)
+
+// Бланк → полотно. host — клас обгортки (a4-host — аркуш А4, pdf-host — бланк .kd), width — ширина аркуша, bg — колір паперу
+async function sheetCanvas(html, { host = "a4-host", width = 794, bg = "#f6f1e5", scale = 2, prep } = {}) {
+  await loadCanvas();
+  const fr = document.createElement("iframe");
+  fr.setAttribute("aria-hidden", "true");
+  fr.tabIndex = -1;
+  fr.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:1200px;border:0;margin:0;opacity:0;pointer-events:none;z-index:-1`;
+  document.body.append(fr);
+  try {
+    const d = fr.contentDocument;
+    const css = [...document.querySelectorAll('link[rel="stylesheet"], style')].map((n) => n.outerHTML).join("");
+    d.open();
+    d.write(`<!doctype html><html lang="uk"><head><meta charset="utf-8"><base href="${esc(document.baseURI)}">${css}
+<style>html,body{margin:0!important;padding:0!important;width:${width}px!important;min-width:0!important;height:auto!important;min-height:0!important;overflow:hidden!important;background:${bg}!important}
+.sheet-host{position:static!important;left:0!important;top:0!important;width:${width}px!important;margin:0!important;padding:0!important;z-index:auto!important;transform:none!important}</style></head>
+<body><div class="${host} sheet-host">${html}</div></body></html>`);
+    d.close();
+    await Promise.all([...d.querySelectorAll('link[rel="stylesheet"]')].map((l) => l.sheet ? 0 : new Promise((ok) => { l.onload = l.onerror = ok; setTimeout(ok, 6000); })));
+    const el = d.querySelector(".sheet-host").firstElementChild;
+    el.querySelectorAll("button, .files, .no-pdf, input, iframe").forEach((n) => n.remove());  // кнопки й посилання на екрані — не для паперу
+    if (prep) prep(el);
+    await d.fonts.ready;
+    await Promise.all([...d.images].map((i) => i.complete ? 0 : new Promise((ok) => { i.onload = i.onerror = ok; setTimeout(ok, 6000); })));
+    const h = Math.ceil(el.getBoundingClientRect().height);
+    fr.style.height = h + "px";
+    const k = Math.min(scale, Math.sqrt(MAX_PX / (width * h)));  // дуже довгий документ — трохи менша роздільність, але цілий
+    return await window.html2canvas(el, { scale: k, backgroundColor: bg, useCORS: true, logging: false,
+      x: 0, y: 0, width, height: h, windowWidth: width, windowHeight: h, scrollX: 0, scrollY: 0 });
+  } finally { fr.remove(); }
+}
+
+// Полотно → PDF сторінками А4 (794×1123 px). Сторінку розрізаємо по порожньому рядку, щоб не різати текст навпіл.
+async function canvasPdf(canvas, { margin = 0, bg = "#f6f1e5", quality = 0.95 } = {}) {
+  await loadJsPdf();
+  const PW = 794, PH = 1123, k = canvas.width / (PW - 2 * margin);  // пікселів полотна на 1 px сторінки
+  const pageH = Math.floor((PH - 2 * margin) * k), ctx = canvas.getContext("2d");
+  const pdf = new window.jspdf.jsPDF({ unit: "px", format: [PW, PH], orientation: "portrait", hotfixes: ["px_scaling"], compress: true });
+  for (let y = 0, first = true; y < canvas.height - 2; first = false) {
+    let cut = Math.min(canvas.height, y + pageH);
+    if (cut < canvas.height) cut = blankRow(ctx, canvas.width, y + Math.floor(pageH * 0.7), cut) || cut;
+    const part = document.createElement("canvas");
+    part.width = canvas.width;
+    part.height = cut - y;
+    const p = part.getContext("2d");
+    p.fillStyle = bg;
+    p.fillRect(0, 0, part.width, part.height);
+    p.drawImage(canvas, 0, y, canvas.width, cut - y, 0, 0, canvas.width, cut - y);
+    if (!first) pdf.addPage([PW, PH], "portrait");
+    pdf.setFillColor(bg);
+    pdf.rect(0, 0, PW, PH, "F");
+    pdf.addImage(part.toDataURL("image/jpeg", quality), "JPEG", margin, margin, PW - 2 * margin, (cut - y) / k);
+    y = cut;
+  }
+  return pdf;
+}
+// Найнижчий рядок між from і to, де в робочій частині аркуша немає тексту (лише папір)
+function blankRow(ctx, w, from, to) {
+  const x0 = Math.floor(w * 0.1), x1 = Math.ceil(w * 0.9);
+  for (let y = to - 1; y >= from; y--) {
+    const d = ctx.getImageData(x0, y, x1 - x0, 1).data;
+    let ok = true;
+    for (let i = 4; i < d.length; i += 4) {
+      if (Math.abs(d[i] - d[0]) + Math.abs(d[i + 1] - d[1]) + Math.abs(d[i + 2] - d[2]) > 30) { ok = false; break; }
+    }
+    if (ok) return y;
+  }
+  return 0;
+}
+const fileName = (name, ext) => `${String(name || "документ").replace(/[^\p{L}\p{N}-]+/gu, "_").slice(0, 80)}.${ext}`;
+const KD = (scale = 2) => ({ host: "pdf-host", width: 733, bg: "#f3eee2", scale,
+  prep: (el) => { el.classList.add("pdf"); el.querySelectorAll("details").forEach((n) => { n.open = true; }); } });  // згорнуті розділи — у PDF повністю
+
+// Спільний генератор PDF для документів на бланку (.kd): кейс-файли, витяги з законів.
 // asBlob — повернути файл (для відправки в Discord) замість завантаження
 async function pdfFrom(html, filename, avoid = [], asBlob = false) {
-  await loadPdf();
-  const box = document.createElement("div");
-  box.className = "pdf-host";
-  box.innerHTML = html;
-  box.firstElementChild.classList.add("pdf");
-  box.querySelectorAll("button, .files, .no-pdf, input, iframe").forEach((n) => n.remove());  // кнопки й посилання на екрані — не для паперу
-  box.querySelectorAll("details").forEach((n) => { n.open = true; });  // згорнуті розділи — у PDF повністю
-  document.body.append(box);
-  try {
-    const job = window.html2pdf().set({ margin: [8, 8, 10, 8], filename,
-      image: { type: "jpeg", quality: asBlob ? 0.85 : 0.96 }, html2canvas: { scale: 2, backgroundColor: "#f3eee2", useCORS: true, scrollX: 0, scrollY: 0 },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }, pagebreak: { mode: ["css", "legacy"], avoid: [".kf-visa", ...avoid] } })
-      .from(box.firstElementChild);
-    return asBlob ? await job.outputPdf("blob") : await job.save();
-  } finally { box.remove(); }
+  const canvas = await sheetCanvas(html, KD());
+  const pdf = await canvasPdf(canvas, { margin: 30.5, bg: "#f3eee2", quality: asBlob ? 0.85 : 0.96 });  // поля ~8 мм
+  return asBlob ? pdf.output("blob") : pdf.save(String(filename || "документ.pdf"));
 }
 S.pdf = pdfFrom;
 // Картинка PNG з бланка (для вставки на форум)
 S.pngBtn = async (b, html, name) => {
   const old = b.textContent;
   b.disabled = true; b.textContent = "Формую PNG…";
-  const box = document.createElement("div");
-  box.className = "pdf-host";
-  box.innerHTML = html;
-  box.firstElementChild.classList.add("pdf");
-  box.querySelectorAll("button, .files, .no-pdf, input").forEach((n) => n.remove());
-  document.body.append(box);
   try {
-    await loadPdf();
-    const canvas = await window.html2pdf().set({ html2canvas: { scale: 2, backgroundColor: "#f3eee2", useCORS: true, scrollX: 0, scrollY: 0 } }).from(box.firstElementChild).toCanvas().get("canvas");
+    const canvas = await sheetCanvas(html, KD());
     const a = document.createElement("a");
     a.href = canvas.toDataURL("image/png");
-    a.download = `${String(name || "документ").replace(/[^\p{L}\p{N}-]+/gu, "_").slice(0, 80)}.png`;
+    a.download = fileName(name, "png");
     a.click();
   } catch (e) { S.toast(e.message, 1); }
-  finally { box.remove(); b.disabled = false; b.textContent = old; }
+  finally { b.disabled = false; b.textContent = old; }
 };
 // Кнопка «⬇ PDF» для будь-якого документа: html бланка або селектор елемента на сторінці
 S.pdfBtn = async (b, src, name) => {
@@ -264,35 +324,21 @@ S.a4 = (inner, no, opts = {}) => `<div class="a4 ${opts.noTo ? "no-to" : ""} ${o
     <div class="a4-no">${esc(no || "")}<span>${esc(opts.date || new Date().toLocaleDateString("uk-UA"))}</span></div></header>`}
   <div class="a4-body">${inner}</div>
   <footer class="a4-foot"><span>ЄІС «Сова» · ${esc(no || "")}</span><span>${esc(opts.foot || "Документ сформовано автоматично")}</span></footer></div>`;
-async function a4Render(html, fn) {
-  await loadPdf();
-  const box = document.createElement("div");
-  box.className = "a4-host";
-  box.innerHTML = html;
-  box.querySelectorAll("button, .files, .no-pdf, input, iframe").forEach((n) => n.remove());
-  document.body.append(box);
-  try {
-    await document.fonts.ready;
-    await Promise.all([...box.querySelectorAll("img")].map((i) => i.complete ? 0 : new Promise((ok) => { i.onload = i.onerror = ok; })));
-    return await fn(box.firstElementChild);
-  } finally { box.remove(); }
-}
-const A4OPT = (scale) => ({ margin: 0, image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale, backgroundColor: "#f6f1e5", useCORS: true, windowWidth: 794, scrollX: 0, scrollY: 0 },
-  jsPDF: { unit: "px", format: [794, 1123], orientation: "portrait", hotfixes: ["px_scaling"] }, pagebreak: { mode: ["css", "legacy"], avoid: ["p", "li", "tr", ".blank-sign", ".blank-stamp", "h3"] } });
 // PDF аркуша А4
 S.pdfA4 = async (b, html, name) => {
   const old = b.textContent;
   b.disabled = true; b.textContent = "Формую PDF…";
-  try { await a4Render(html, (el) => window.html2pdf().set({ ...A4OPT(2), filename: `${String(name || "документ").replace(/[^\p{L}\p{N}-]+/gu, "_").slice(0, 80)}.pdf` }).from(el).save()); }
+  try { (await canvasPdf(await sheetCanvas(html, { scale: 2 }))).save(fileName(name, "pdf")); }
   catch (e) { S.toast(e.message, 1); }
   finally { b.disabled = false; b.textContent = old; }
 };
 // Картинка аркуша (PNG) → картка документа в Discord. Тихо: якщо не вийшло, документ уже є в Discord карткою.
 S.docImage = async (kind, id, html) => {
   try {
-    const canvas = await a4Render(html, (el) => window.html2pdf().set(A4OPT(1.5)).from(el).toCanvas().get("canvas"));
+    const canvas = await sheetCanvas(html, { scale: 1.5 });
+    if (canvas.width < 700 || canvas.height < 900) throw new Error(`аркуш вийшов неповним: ${canvas.width}×${canvas.height}`);
     let blob = await new Promise((ok) => canvas.toBlob(ok, "image/png"));
-    if (blob.size > 7.5 * 1024 * 1024) blob = await new Promise((ok) => canvas.toBlob(ok, "image/jpeg", 0.9));
+    if (!blob || blob.size > 7.5 * 1024 * 1024) blob = await new Promise((ok) => canvas.toBlob(ok, "image/jpeg", 0.9));
     const fd = new FormData();
     fd.append("img", blob, `${kind}-${id}.${blob.type === "image/png" ? "png" : "jpg"}`);
     const r = await S.call(`/api/doc/${kind}/${id}/image`, { method: "POST", body: fd });
