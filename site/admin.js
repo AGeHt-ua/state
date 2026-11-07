@@ -133,7 +133,8 @@ function sysView(d) {
     ${s.warnings.length ? `<div class="card"><header><h3>Попередження</h3></header>${s.warnings.map((w) => `<p class="note warn">${esc(w)}</p>`).join("")}</div>` : ""}
     <div class="card"><header><h3>Дії</h3></header><div class="acts" style="justify-content:flex-start">
       <button class="btn gold" data-a="admsync">⟳ Синхронізувати ролі всіх зараз</button><button class="btn" data-a="admbackup">💾 Резервна копія бази зараз</button>
-      <button class="btn" data-a="admdocimg" title="Заново намалювати аркуш А4 у картках усіх документів у Discord">🖼 Перемалювати картинки всіх документів</button></div>
+      <button class="btn" data-a="admdocimg" title="Заново намалювати аркуш А4 у картках усіх документів у Discord">🖼 Перемалювати картинки всіх документів</button>
+      <button class="btn" data-a="admdoccards" title="Привести картки всіх документів у Discord до єдиного зразка: без ANSI-бланків, з полями, тегами й картинкою аркуша. Без нових сповіщень">🗂 Перебудувати картки документів</button></div>
       <p class="muted small">Ролі й так звіряються автоматично кожні 4 хвилини. Резервні копії робляться автоматично й надсилаються в канал бекапів.</p></div>
     <div class="grid2"><div class="card"><header><h3>Останні резервні копії</h3></header>
       ${s.backups.length ? `<ul class="adm-list">${s.backups.map((b) => `<li><span class="mono">${esc(b.name)}</span><span class="muted">${kb(b.size)} · ${fmtDT(b.t)}</span></li>`).join("")}</ul>` : '<p class="muted">Ще немає.</p>'}</div>
@@ -191,6 +192,11 @@ Object.assign(S.actions, {
     } catch (e) { toast(e.message, 1); }
     finally { b.disabled = false; b.textContent = old; }
   },
+  admdoccards: (b) => run(b, async () => {
+    if (!confirm("Перебудувати картки всіх документів у Discord у новий єдиний вигляд? Сповіщень ніхто не отримає; картинки аркушів лишаються.")) return;
+    const r = await call("/api/admin/doccards", { json: {} });
+    toast(`Перебудова запущена: ${r.total} карток, приблизно ${Math.max(1, Math.ceil(r.total * 2 / 60))} хв. Результат — у журналі адмін-панелі.`);
+  }),
   admbackup: (b) => run(b, async () => { const r = await call("/api/admin/backup", { json: {} }); toast(`Копію ${r.name} збережено`); S.render(); }),
   admpermreset: (b) => run(b, async () => { if (!confirm("Повернути всі доступи до стандартних?")) return; await call("/api/admin/perms", { json: {} }); toast("Доступи стандартні"); await S.refreshMe(); S.render(); }),
   admcs: (b) => run(b, async () => {

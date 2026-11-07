@@ -179,9 +179,8 @@ async def move(u: dict, bid: int, to: str, tag: str | None = None) -> dict:
     return s
 
 
-async def journal(s: dict, u: dict, label: str, tag: str | None = None):
-    """Відомість премій — одне повідомлення: при поданні — картка з аркушем А4 і тегами, виплата оновлює її з відповіддю (роль СБУ)."""
-    ch = await core.channel("bonus")
+def bn_embed(s: dict, u: dict | None, label: str) -> discord.Embed:
+    """Картка відомості премій — єдиний зразок документа."""
     paid = [r for r in s["rows"] if r["amount"] > 0]
     by_dept = {}
     for r in paid:
@@ -195,6 +194,13 @@ async def journal(s: dict, u: dict, label: str, tag: str | None = None):
         ("За підрозділами", "\n".join(f"{DEPTS[d]['s']}: {money(v)}" for d, v in sorted(by_dept.items(), key=lambda x: -x[1])), False),
         ("Хто", style.person(u)),
     ])
+    return e
+
+
+async def journal(s: dict, u: dict, label: str, tag: str | None = None):
+    """Відомість премій — одне повідомлення: при поданні — картка з аркушем А4 і тегами, виплата оновлює її з відповіддю (роль СБУ)."""
+    ch = await core.channel("bonus")
+    e = bn_embed(s, u, label)
     paid_now = s["status"] == "paid"
     await docpost.journal("bn", s["id"], ch, e, users=await docpost.people(s.get("created_by")), tag=tag,
                           roles=docpost.key_roles("bonus:paid") if paid_now else None,

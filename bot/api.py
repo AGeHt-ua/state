@@ -1407,6 +1407,17 @@ async def admin_docimages(request):
     return web.json_response(await db.all("SELECT kind, id, img FROM doc_msgs ORDER BY kind, id"))
 
 
+@routes.post("/api/admin/doccards")
+async def admin_doccards(request):
+    """Перебудувати всі картки документів у Discord у єдиний зразок (у фоні; результат — у журналі адмін-панелі)."""
+    u = await admin_auth(request)
+    if admin.REBUILD["running"]:
+        raise Fail(f"Перебудова вже триває: {admin.REBUILD['done']} з {admin.REBUILD['total']}.", 409)
+    n = (await db.one("SELECT COUNT(*) AS n FROM doc_msgs"))["n"]
+    asyncio.create_task(admin.rebuild_cards(u))
+    return web.json_response({"total": n})
+
+
 @routes.post("/api/admin/backup")
 async def admin_backup(request):
     u = await admin_auth(request)

@@ -209,10 +209,8 @@ async def act(u: dict, pid: int, action: str, b: dict) -> dict:
     return p
 
 
-async def journal(p: dict, u: dict, label: str, tag: str | None = None):
-    """Протокол — одне повідомлення: картка з аркушем А4 і тегами (хто склав, обрана роль/відділ); анулювання й відновлення
-    оновлюють картку з короткою відповіддю."""
-    ch = await core.channel("prot") or await core.channel(p["dept"]) or await core.channel("log")
+def pz_embed(p: dict) -> discord.Embed:
+    """Картка протоколу затримання — єдиний зразок документа."""
     x = p["data"]
     void = p["status"] == "void"
     term = f" · {x['term']} р." if x.get("decision") == "short" and x.get("term") else ""
@@ -224,5 +222,13 @@ async def journal(p: dict, u: dict, label: str, tag: str | None = None):
         ("Місце", style.esc(x.get("place") or "—")),
         ("Рішення", f"{DECISION.get(x.get('decision'), '—')}{term}"),
     ])
+    return e
+
+
+async def journal(p: dict, u: dict, label: str, tag: str | None = None):
+    """Протокол — одне повідомлення: картка з аркушем А4 і тегами (хто склав, обрана роль/відділ); анулювання й відновлення
+    оновлюють картку з короткою відповіддю."""
+    ch = await core.channel("prot") or await core.channel(p["dept"]) or await core.channel("log")
+    e = pz_embed(p)
     await docpost.journal("pz", p["id"], ch, e, users=await docpost.people(p["author"]), tag=tag,
                           ping=None if label == "ЗАРЕЄСТРОВАНО" else f"🔔 Протокол {p['no']}: {label[:150]}")

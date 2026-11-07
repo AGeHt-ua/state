@@ -314,3 +314,64 @@ async def apply_one(u: dict, sid: int) -> dict:
         raise Fail("Співробітника не знайдено.", 404)
     ok = await core.set_nick(p)
     return {"applied": ok}
+
+
+# ---------------------------------------------------------------- перебудова карток документів у Discord (єдиний зразок)
+REBUILD = {"running": False, "done": 0, "total": 0}
+
+
+async def _card_for(kind: str, did: int):
+    """Свіжа картка документа за його поточним станом (без пінгів і записів у журнал)."""
+    import bonus, discipline, finance, orders, protocols
+    try:
+        if kind in ("act", "rap"):
+            r = await db.one(f"SELECT * FROM {'acts' if kind == 'act' else 'raps'} WHERE id=?", did)
+            return (await (core.act_embed(r) if kind == "act" else core.rap_embed(r))) if r else None
+        if kind in ("np", "ng"):
+            o = await db.one("SELECT * FROM orders WHERE id=?", did)
+            if not o:
+                return None
+            if kind == "np":
+                return await orders.np_embed(o, "")
+            cb = await core.user(o["cancelled_by"]) if o["status"] == "deleted" and o.get("cancelled_by") else None
+            return orders.ng_embed(o, await core.user(o["by_sid"]), cb)
+        if kind == "ns":
+            o = await db.one("SELECT * FROM discipline WHERE id=?", did)
+            return await discipline.ns_embed(o, await core.user(o["sid"])) if o else None
+        if kind == "pz":
+            return protocols.pz_embed(await protocols.get(did))
+        if kind == "fin":
+            return await finance.fin_embed(await finance.get(did))
+        if kind == "bn":
+            s = await bonus.get(did)
+            last = s["history"][-1] if s["history"] else {}
+            who = await core.user(last["sid"]) if last.get("sid") else None
+            return bonus.bn_embed(s, who, bonus.FLOW.get(s["status"], (None, None, "Відомість преміювання"))[2])
+    except Fail:
+        return None
+    return None
+
+
+async def rebuild_cards(u: dict):
+    """Усі картки документів, що вже висять у Discord, — у новий єдиний зразок. Картинка аркуша й «Стосується» лишаються."""
+    import asyncio
+    import docpost
+    rows = await db.all("SELECT kind, id FROM doc_msgs ORDER BY kind, id")
+    REBUILD.update(running=True, done=0, total=len(rows))
+    ok = skip = 0
+    try:
+        for r in rows:
+            try:
+                e = await _card_for(r["kind"], r["id"])
+                if e and await docpost.update(r["kind"], r["id"], e):
+                    ok += 1
+                else:
+                    skip += 1
+            except Exception:
+                log.exception("Перебудова картки %s-%s", r["kind"], r["id"])
+                skip += 1
+            REBUILD["done"] += 1
+            await asyncio.sleep(1.2)  # рівномірно, щоб не впертися в ліміти Discord
+    finally:
+        REBUILD["running"] = False
+    await note(u, "Перебудовано картки документів у Discord", 0, f"оновлено {ok}, пропущено {skip} (повідомлення видалено або документа немає)")

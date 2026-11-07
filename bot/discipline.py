@@ -253,10 +253,8 @@ async def delete(u: dict, oid: int):
 NS_STATE = {"active": "⚖️ Чинне", "lifted": "🕊️ Знято достроково", "cancelled": "↩ Скасовано за скаргою", "deleted": "🗑 Скасовано й видалено"}
 
 
-async def journal(o: dict, target: dict | None, u: dict, label: str, tag: str | None = None):
-    """Наказ про стягнення — одне повідомлення в каналі дисципліни: картка з аркушем А4, теги (хто наклав, на кого,
-    обрана роль/відділ, роль СБУ — якщо оголосив Голова чи заступник); скарга й рішення оновлюють картку з відповіддю."""
-    o = await db.one("SELECT * FROM discipline WHERE id=?", o["id"]) or o
+async def ns_embed(o: dict, target: dict | None) -> discord.Embed:
+    """Картка наказу НС — єдиний зразок документа."""
     issuer = await core.user(o["issued_by"])
     expired = o["status"] == "active" and o["expires"] and o["expires"] < now_ms()
     head = "⌛ Строк дії минув" if expired else NS_STATE.get(o["status"], "⚖️ Чинне")
@@ -271,6 +269,14 @@ async def journal(o: dict, target: dict | None, u: dict, label: str, tag: str | 
         ("Діє до", style.when(o["expires"]) if o["expires"] else None),
         ("Скарга", ({"cancel": "задоволено", "uphold": "відхилено"}.get(ap.get("decision")) or "на розгляді Голови СБУ") if ap else None),
     ])
+    return e
+
+
+async def journal(o: dict, target: dict | None, u: dict, label: str, tag: str | None = None):
+    """Наказ про стягнення — одне повідомлення в каналі дисципліни: картка з аркушем А4, теги (хто наклав, на кого,
+    обрана роль/відділ, роль СБУ — якщо оголосив Голова чи заступник); скарга й рішення оновлюють картку з відповіддю."""
+    o = await db.one("SELECT * FROM discipline WHERE id=?", o["id"]) or o
+    e = await ns_embed(o, target)
     first = label == "Оголошено наказ"
     await docpost.journal("ns", o["id"], await core.channel("disc"), e, users=await docpost.people(o["issued_by"], o["sid"]), tag=tag,
                           roles=docpost.key_roles("order") if first and u["rank"] >= 14 else None,

@@ -206,18 +206,25 @@ FIN_STATE = {"draft": ("📝 Повернуто на доопрацювання"
              "posted": ("📨 Подано на форум Мінфіну", 0x6F9FD6), "funded": ("💰 Мінфін схвалив", 0x5FB37A), "denied": ("⛔ Мінфін відмовив", 0xD4605A)}
 
 
-async def journal(d: dict, u: dict, label: str, mention: bool = False, tag: str | None = None):
-    """Клопотання чи звіт Мінфіну — одне повідомлення: при поданні — картка з аркушем А4 і тегами (автор, Голова й заступник,
-    обрана роль/відділ), далі кожне рішення оновлює картку з короткою відповіддю."""
+async def fin_embed(d: dict, label: str = "") -> discord.Embed:
+    """Картка клопотання / звіту Мінфіну — єдиний зразок документа."""
+    author = await core.user(d["author"]) if d.get("author") else None
     money = lambda v: f"${v:,}".replace(",", " ")
     state, color = FIN_STATE.get(d["status"], ("📄 " + label[:60], 0xC9A05A))
     e = style.card(d["no"], ("Клопотання про виділення цільових коштів" if d["kind"] == "petition" else "Звіт про цільове використання коштів"),
                    state, color, fields=[
         ("Сума", f"**{money(d['total'])}**"),
         ("Отримано", money(d["funded_amount"]) if d.get("funded_amount") else None),
-        ("Підготував", style.esc((d.get("authorUser") or {}).get("name", "—"))),
+        ("Підготував", style.person(author)),
         ("Форум Мінфіну", f"[Тема на форумі]({d['forum_url']})" if d.get("forum_url") else None),
     ])
+    return e
+
+
+async def journal(d: dict, u: dict, label: str, mention: bool = False, tag: str | None = None):
+    """Клопотання чи звіт Мінфіну — одне повідомлення: при поданні — картка з аркушем А4 і тегами (автор, Голова й заступник,
+    обрана роль/відділ), далі кожне рішення оновлює картку з короткою відповіддю."""
+    e = await fin_embed(d, label)
     await docpost.journal("fin", d["id"], await core.channel("fin") or await core.channel("deb"), e,
                           users=await docpost.people(d["author"]), tag=tag, roles=docpost.key_roles("fin:wait" if mention else None),
                           ping=None if mention else f"🔔 {d['no']}: {label[:150]}", ping_roles=docpost.key_roles("fin:wait") if mention else None)
