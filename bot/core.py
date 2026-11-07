@@ -230,16 +230,14 @@ async def member_roles(discord_id: str, fresh: bool = False) -> set[int] | None:
     hit = _roles_cache.get(discord_id)
     if hit and not fresh and time.time() - hit[0] < 60:
         return hit[1]
-    g = guild()
-    if not fresh and g and getattr(bot, "members_intent", False) and g.chunked:
-        # з Server Members Intent Discord сам надсилає зміни ролей — кеш бота живий, запит до API не потрібен
-        # (фонова звірка всього складу інакше робила по запиту на кожного кожні 3 хв)
-        m = g.get_member(int(discord_id))
-        if m:
-            roles = {r.id for r in m.roles}
-            _roles_cache[discord_id] = (time.time(), roles)
-            return roles
-    m = await member_of(discord_id, fresh=True)  # немає в кеші — перепитуємо Discord, перш ніж вважати, що людини немає
+    try:
+        m = await member_of(discord_id, fresh=True)
+    except discord.HTTPException as ex:
+        # Discord перевантажений (503) чи обмежив запити: працюємо з останніми відомими ролями, а не валимо сайт помилкою 500
+        if hit:
+            log.warning("Discord не відповів (%s) — ролі %s з кешу", getattr(ex, "status", ex), discord_id)
+            return hit[1]
+        raise Fail("Discord тимчасово не відповідає. Спробуйте за хвилину.", 503)
     roles = {r.id for r in m.roles} if m else None
     _roles_cache[discord_id] = (time.time(), roles)
     return roles

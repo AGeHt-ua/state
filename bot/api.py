@@ -1048,7 +1048,7 @@ async def _build_structure() -> list:
 
 
 async def structure_loop():
-    """Фонове оновлення штатної структури кожні 3 хв (і одразу після змін ролей ботом) — сторінка відкривається миттєво."""
+    """Фонове оновлення штатної структури кожні 10 хв (без Server Members Intent — по запиту до Discord на кожного, тож не частіше) (і одразу після змін ролей ботом) — сторінка відкривається миттєво."""
     await asyncio.sleep(20)
     while True:
         try:
@@ -1057,7 +1057,7 @@ async def structure_loop():
             pass  # бот ще не на зв'язку з Discord
         except Exception:
             log.exception("Оновлення штатної структури")
-        await asyncio.sleep(180)
+        await asyncio.sleep(600)
 
 
 @routes.get("/api/structure")
@@ -1066,7 +1066,7 @@ async def structure(request):
     await auth(request)
     if _structure_cache[1] is None:
         await build_structure()
-    elif time.time() - _structure_cache[0] > 240:
+    elif time.time() - _structure_cache[0] > 660:
         asyncio.create_task(build_structure())  # віддаємо збережене, оновлюємо у фоні
     return web.json_response(_structure_cache[1])
 
