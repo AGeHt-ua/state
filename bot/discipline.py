@@ -210,6 +210,7 @@ async def appeal(u: dict, oid: int, text: str) -> dict:
     return o
 
 
+@core.serialized("ns")
 async def decide(u: dict, oid: int, action: str, note: str = "") -> dict:
     """Голова СБУ: розгляд скарги (uphold/cancel) або дострокове зняття догани (lift)."""
     if u["rank"] < 15:

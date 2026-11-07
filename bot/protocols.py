@@ -150,6 +150,7 @@ async def save(u: dict, b: dict) -> dict:
     return await get(pid, u)
 
 
+@core.serialized("pz")
 async def act(u: dict, pid: int, action: str, b: dict) -> dict:
     p = await get(pid, u)
     note = str(b.get("note") or "").strip()

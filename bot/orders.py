@@ -40,7 +40,12 @@ async def appoint(u: dict, b: dict) -> dict:
         raise Fail("Співробітника не знайдено.")
     if p["sid"] == u["sid"]:
         raise Fail("Призначити самого себе не можна.")
-    to_rank = int(b.get("rank") or 0)
+    if p["rank"] == 15:
+        raise Fail("Звання Голови СБУ наказом про призначення не змінюється.", 403)
+    try:
+        to_rank = int(b.get("rank") or 0)
+    except (TypeError, ValueError):
+        to_rank = 0
     if not 1 <= to_rank <= 14:
         raise Fail("Оберіть звання від 1 до 14 (звання Голови наказом не присвоюється).")
     to_dept = b.get("dept") or p["dept"]
@@ -65,6 +70,7 @@ async def appoint(u: dict, b: dict) -> dict:
     return o
 
 
+@core.serialized("np")
 async def sign(u: dict, oid: int, tag: str | None = None) -> dict:
     """Підпис наказу Головою або заступником: звання, підрозділ, ролі й нікнейм змінюються одразу."""
     if not can_sign(u):
@@ -77,6 +83,9 @@ async def sign(u: dict, oid: int, tag: str | None = None) -> dict:
         raise Fail("Співробітника вже немає у складі.")
     if p["sid"] == u["sid"]:
         raise Fail("Підписати наказ щодо себе не можна.")
+    if u["rank"] != 15 and (p["rank"] >= u["rank"] or o["to_rank"] >= u["rank"]):
+        # Заступник Голови не змінює звання рівних і старших і не призначає на звання, рівне своєму
+        raise Fail("Цей наказ (щодо рівного чи старшого за званням або на звання не нижче вашого) підписує Голова СБУ.", 403)
     t = now_ms()
     # «Було» фіксуємо на момент підпису — з проєкту звання могло змінитися
     await db.run("UPDATE orders SET status='active', from_rank=?, from_dept=?, signed_by=?, signed=? WHERE id=?", p["rank"], p["dept"], u["sid"], t, oid)
@@ -94,6 +103,7 @@ async def sign(u: dict, oid: int, tag: str | None = None) -> dict:
     return {**o, "rolesWarning": warn}
 
 
+@core.serialized("np")
 async def reject(u: dict, oid: int, note: str) -> dict:
     if not can_sign(u):
         raise Fail("Відхиляють проєкти Голова СБУ та Заступник Голови.", 403)
@@ -106,6 +116,7 @@ async def reject(u: dict, oid: int, note: str) -> dict:
     return o
 
 
+@core.serialized("np")
 async def delete_draft(u: dict, oid: int):
     o = await get(oid)
     if o["status"] not in ("draft", "rejected"):
@@ -132,6 +143,7 @@ async def get(oid: int) -> dict:
     return o
 
 
+@core.serialized("np")
 async def cancel(u: dict, oid: int) -> dict:
     """Скасування наказу: повертає попереднє звання/підрозділ, якщо поточні ще такі, як призначив наказ."""
     if not can_sign(u):
@@ -140,6 +152,8 @@ async def cancel(u: dict, oid: int) -> dict:
     if o["status"] != "active":
         raise Fail("Наказ уже скасовано.")
     p = await core.user(o["sid"])
+    if u["rank"] != 15 and p and (p["rank"] >= u["rank"] or (o["from_rank"] or 0) >= u["rank"]):
+        raise Fail("Скасувати наказ щодо рівного чи старшого за званням може лише Голова СБУ.", 403)
     reverted = bool(p and p["rank"] == o["to_rank"] and p["dept"] == o["to_dept"] and p["status"] != "dismissed")
     warn = None
     if reverted:

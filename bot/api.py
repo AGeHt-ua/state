@@ -111,6 +111,9 @@ def limit_login(key: str):
         raise Fail("Забагато спроб входу. Зачекайте 10 хвилин.", 429)
     hits.append(now)
     _attempts[key] = hits
+    if len(_attempts) > 2000:  # старі ключі не накопичуються в памʼяті
+        for k in [k for k, v in _attempts.items() if now - v[-1] >= 600]:
+            _attempts.pop(k, None)
 
 
 # ---------------------------------------------------------------- вхід
@@ -431,10 +434,8 @@ async def staff(request):
         rows = [{**r, "rank": live[r["sid"]]["rank"], "dept": live[r["sid"]]["dept"]} for r in rows if r["sid"] in live]
     if u["dept"] != "lead" and not u.get("curator"):
         rows = [r for r in rows if r["dept"] == u["dept"]]
-    out = []
-    for r in rows:
-        out.append({**public_user(r), "points": await core.week_points(r["sid"])})
-    return web.json_response(out)
+    pts = await core.week_points_all()
+    return web.json_response([{**public_user(r), "points": pts.get(r["sid"], 0)} for r in rows])
 
 
 # ---------------------------------------------------------------- кейс-файли
@@ -876,8 +877,8 @@ async def kb_changes(request):
 @routes.post("/api/kb/sync")
 async def kb_sync(request):
     u = await kb_auth(request)
-    if u["rank"] != 15:
-        raise Fail("Оновлювати законодавчу базу може лише Голова СБУ.", 403)
+    if u["rank"] < ov.P("kb_sync") or u.get("curator_ro"):  # поріг — як у кнопці на сайті (адмін-панель → Права)
+        raise Fail("Недостатньо повноважень для оновлення законодавчої бази.", 403)
     if kb._sync_lock.locked():
         raise Fail("Оновлення вже триває.", 409)
 

@@ -51,8 +51,10 @@ class Sova(commands.Bot):
             await core.ensure_channels(g)
         except discord.Forbidden:
             log.error("Боту бракує права «Керувати каналами» — канали не створено.")
-        self.tree.copy_global_to(guild=g)
-        await self.tree.sync(guild=g)
+        if not getattr(self, "_synced", False):  # on_ready приходить і після кожного перепідключення — команди синхронізуємо раз
+            self.tree.copy_global_to(guild=g)
+            await self.tree.sync(guild=g)
+            self._synced = True
         await slash.ensure_panel()
         if not getattr(self, "_panel_loop", None):
             self._panel_loop = asyncio.create_task(slash.panel_loop())

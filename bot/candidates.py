@@ -295,6 +295,7 @@ async def _dm(member: discord.Member | None, **kw):
         return False
 
 
+@core.serialized("cand", 0)
 async def decide(cid: int, reviewer: discord.Member, decision: str, note: str = "") -> str:
     c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
     if not c or c["status"] not in ("vvb", "vkpp"):

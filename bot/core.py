@@ -81,6 +81,31 @@ class Fail(Exception):
         self.status = status
 
 
+# Одне рішення щодо документа за раз: кнопка в Discord і сайт (або два кліки) інакше обидва проходили перевірку
+# «ще на розгляді» й застосовували наслідки двічі (подвійне списання балів, «відхилено» після «погоджено» тощо).
+import functools
+import weakref
+_doc_locks: "weakref.WeakValueDictionary[tuple, asyncio.Lock]" = weakref.WeakValueDictionary()
+
+
+def doc_lock(kind: str, rid) -> asyncio.Lock:
+    lock = _doc_locks.get((kind, rid))
+    if lock is None:
+        lock = _doc_locks[(kind, rid)] = asyncio.Lock()
+    return lock
+
+
+def serialized(kind: str, pos: int = 1):
+    """Декоратор: виклики з тим самим номером документа (позиційний аргумент pos) виконуються по черзі."""
+    def deco(fn):
+        @functools.wraps(fn)
+        async def wrapper(*a, **k):
+            async with doc_lock(kind, a[pos]):
+                return await fn(*a, **k)
+        return wrapper
+    return deco
+
+
 def week_start(offset: int = 0) -> int:
     now = datetime.now(TZ) if TZ else datetime.now(timezone.utc)
     monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -117,6 +142,18 @@ async def week_points(sid: int, offset: int = 0) -> int:
     rows = await db.all("SELECT type, qty FROM acts WHERE by_sid=? AND status='ok' AND t>=? AND t<?", sid, ws, ws + 7 * DAY)
     c = await coef()
     return sum(c.get(r["type"], 0) * (r["qty"] or 1) for r in rows)
+
+
+async def week_points_all(offset: int = 0) -> dict[int, int]:
+    """Бали тижня всіх одразу (один запит замість запиту на кожного співробітника)."""
+    ws = week_start(offset)
+    rows = await db.all("SELECT by_sid, type, SUM(COALESCE(qty,1)) AS n FROM acts WHERE status='ok' AND t>=? AND t<? GROUP BY by_sid, type",
+                        ws, ws + 7 * DAY)
+    c = await coef()
+    out: dict[int, int] = {}
+    for r in rows:
+        out[r["by_sid"]] = out.get(r["by_sid"], 0) + c.get(r["type"], 0) * r["n"]
+    return out
 
 
 # ---------------------------------------------------------------- паролі й сесії
@@ -193,7 +230,16 @@ async def member_roles(discord_id: str, fresh: bool = False) -> set[int] | None:
     hit = _roles_cache.get(discord_id)
     if hit and not fresh and time.time() - hit[0] < 60:
         return hit[1]
-    m = await member_of(discord_id, fresh=True)
+    g = guild()
+    if not fresh and g and getattr(bot, "members_intent", False) and g.chunked:
+        # з Server Members Intent Discord сам надсилає зміни ролей — кеш бота живий, запит до API не потрібен
+        # (фонова звірка всього складу інакше робила по запиту на кожного кожні 3 хв)
+        m = g.get_member(int(discord_id))
+        if m:
+            roles = {r.id for r in m.roles}
+            _roles_cache[discord_id] = (time.time(), roles)
+            return roles
+    m = await member_of(discord_id, fresh=True)  # немає в кеші — перепитуємо Discord, перш ніж вважати, що людини немає
     roles = {r.id for r in m.roles} if m else None
     _roles_cache[discord_id] = (time.time(), roles)
     return roles
@@ -826,6 +872,11 @@ async def refresh_card(kind: str, row: dict):
 
 
 async def delete_doc(u: dict, kind: str, rid: int) -> dict:
+    async with doc_lock(kind, rid):
+        return await _delete_doc(u, kind, rid)
+
+
+async def _delete_doc(u: dict, kind: str, rid: int) -> dict:
     """Видалення звіту чи рапорту: автор — свій нерозглянутий/відхилений/відкликаний; Голова й заступник — будь-який (анулювання)."""
     table = "acts" if kind == "act" else "raps"
     row = await db.one(f"SELECT * FROM {table} WHERE id=?", rid)
@@ -865,6 +916,11 @@ async def delete_file(u: dict, fid: str, force: bool = False):
 
 
 async def withdraw(u: dict, kind: str, rid: int) -> dict:
+    async with doc_lock(kind, rid):
+        return await _withdraw(u, kind, rid)
+
+
+async def _withdraw(u: dict, kind: str, rid: int) -> dict:
     """Виконавець відкликає власний звіт чи рапорт, поки його ще не розглянули."""
     table = "acts" if kind == "act" else "raps"
     row = await db.one(f"SELECT * FROM {table} WHERE id=?", rid)
@@ -904,6 +960,8 @@ async def post_log(ch_id, msg_id, no: str, what: str, subject: str, status: str,
 # ---------------------------------------------------------------- звіти
 async def create_act(u: dict, body: dict) -> dict:
     t = body.get("type")
+    if u["dept"] in ("prosecutor", "curator"):
+        raise Fail("Службові звіти подає особовий склад СБУ.", 403)
     if t not in ACTS or not act_allowed(u, t):
         raise Fail("Цей тип дії недоступний для вашої посади або відділу.")
     ev = str(body.get("evidence", "")).strip()[:500]
@@ -916,7 +974,12 @@ async def create_act(u: dict, body: dict) -> dict:
     if ACTS[t][3] and not arts:
         raise Fail("Для затримання вкажіть статті, які оголошено затриманому.")
     qty = max(1, min(12, int(body.get("qty") or 1))) if t == "patrol" else 1  # кількість — лише блоки патрулювання по 30 хв
-    when = int(body.get("t") or now_ms())
+    try:
+        when = int(body.get("t") or now_ms())
+    except (TypeError, ValueError):
+        when = now_ms()
+    if when < now_ms() - 7 * DAY:  # звіт «заднім числом» потрапив би в уже закритий тиждень (бали, премії)
+        raise Fail("Звіт подається не пізніше ніж через 7 діб після події.")
     dept = "press" if ACTS[t][2] == ["press"] else u["dept"]
     if u.get("status") == "vacation":
         await back_from_vacation(u["sid"], "подав службовий звіт — вийшов на службу раніше")
@@ -952,6 +1015,7 @@ async def vacation_loop():
     while True:
         try:
             now = now_ms()
+            await db.run("DELETE FROM sessions WHERE expires < ?", now)  # прострочені входи
             for u in await db.all("SELECT sid, vac_until FROM users WHERE status='vacation'"):
                 until = u["vac_until"]
                 if not until:
@@ -965,6 +1029,7 @@ async def vacation_loop():
         await asyncio.sleep(1800)
 
 
+@serialized("act")
 async def decide_act(actor: dict, act_id: int, decision: str) -> dict:
     a = await db.one("SELECT * FROM acts WHERE id=?", act_id)
     if not a:
@@ -986,6 +1051,8 @@ async def decide_act(actor: dict, act_id: int, decision: str) -> dict:
 # ---------------------------------------------------------------- рапорти
 async def create_rap(u: dict, body: dict) -> dict:
     t = body.get("type")
+    if u["dept"] in ("prosecutor", "curator"):
+        raise Fail("Рапорти подає особовий склад СБУ.", 403)
     if t not in RAP_TYPES:
         raise Fail("Невідомий тип рапорту.")
     if t != "refund" and await db.one("SELECT id FROM raps WHERE by_sid=? AND type=? AND status='wait'", u["sid"], t):
@@ -1049,6 +1116,7 @@ async def create_rap(u: dict, body: dict) -> dict:
     return row
 
 
+@serialized("rap")
 async def decide_rap(actor: dict, rap_id: int, decision: str) -> dict:
     r = await db.one("SELECT * FROM raps WHERE id=?", rap_id)
     if not r:
@@ -1346,6 +1414,7 @@ def access_view(req_id: int) -> discord.ui.View:
     return v
 
 
+@serialized("acc", 0)
 async def decide_access(req_id: int, reviewer: discord.Member, decision: str) -> str:
     if not isinstance(reviewer, discord.Member) or not can_approve_access(reviewer):
         raise Fail("Підтверджувати заявки на допуск може лише ВКПП або керівництво СБУ.")

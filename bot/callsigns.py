@@ -62,6 +62,7 @@ async def withdraw(u: dict, rid: int):
     await db.run("UPDATE callsigns SET status='cancel', reviewed=? WHERE id=?", now_ms(), rid)
 
 
+@core.serialized("cs")
 async def decide(actor: dict, rid: int, ok: bool, note: str = "") -> dict:
     r = await db.one("SELECT * FROM callsigns WHERE id=?", rid)
     if not r or not can_decide(actor, r):

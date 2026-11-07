@@ -204,6 +204,14 @@ CREATE INDEX IF NOT EXISTS disc_sid ON discipline(sid);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);
 CREATE INDEX IF NOT EXISTS acts_status ON acts(status);
 CREATE INDEX IF NOT EXISTS raps_status ON raps(status);
+CREATE INDEX IF NOT EXISTS raps_by ON raps(by_sid, type, status);
+CREATE INDEX IF NOT EXISTS acts_week ON acts(status, t);
+CREATE INDEX IF NOT EXISTS sessions_sid ON sessions(sid);
+CREATE INDEX IF NOT EXISTS cand_status ON candidates(status);
+CREATE INDEX IF NOT EXISTS access_status ON access_requests(status, discord_id);
+CREATE INDEX IF NOT EXISTS callsigns_sid ON callsigns(sid, status);
+CREATE INDEX IF NOT EXISTS attempts_status ON attempts(status);
+CREATE INDEX IF NOT EXISTS orders_sid ON orders(sid, status);
 """
 
 
@@ -220,6 +228,7 @@ class DB:
         self.conn.row_factory = aiosqlite.Row
         await self.conn.execute("PRAGMA journal_mode=WAL")
         await self.conn.execute("PRAGMA foreign_keys=ON")
+        await self.conn.execute("PRAGMA synchronous=NORMAL")  # з WAL це надійно й помітно швидше на запис
         await self.conn.executescript(SCHEMA)
         for sql in ("ALTER TABLE candidates ADD COLUMN discord_name TEXT", "ALTER TABLE candidates ADD COLUMN extra TEXT",
                     "ALTER TABLE candidates ADD COLUMN photo TEXT",
@@ -235,6 +244,7 @@ class DB:
                 await self.conn.execute(sql)
             except Exception:
                 pass  # колонка вже є
+        await self.conn.execute("DELETE FROM sessions WHERE expires < ?", (now_ms(),))  # прострочені входи не накопичуються
         await self.conn.commit()
 
     async def close(self):

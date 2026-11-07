@@ -202,6 +202,7 @@ async def delete(u: dict, cid: int):
     await journal(c, u, "Справу видалено")
 
 
+@core.serialized("case")
 async def decide(u: dict, cid: int, decision: str, note: str = "") -> dict:
     c = await get(cid)
     if not can_decide(u, c):

@@ -160,6 +160,7 @@ FLOW = {"sent": ("draft", can_manage, "Подано куратору на схв
         "approved": ("sent", can_finalize, "Схвалено куратором"), "paid": ("approved", can_finalize, "Премії виплачено")}
 
 
+@core.serialized("bn")
 async def move(u: dict, bid: int, to: str, tag: str | None = None) -> dict:
     s = await get(bid)
     if to not in FLOW or s["status"] != FLOW[to][0]:

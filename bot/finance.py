@@ -127,6 +127,7 @@ async def _set(d: dict, u: dict, status: str, action: str, note: str = "", **ext
     return await get(d["id"])
 
 
+@core.serialized("fin")
 async def act(u: dict, did: int, action: str, b: dict) -> dict:
     d = await get(did)
     note = str(b.get("note") or "").strip()
