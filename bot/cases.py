@@ -230,14 +230,14 @@ async def journal(c: dict, u: dict, label: str):
     if not ch:
         return
     st = c["status"]
-    col = {"approved": ("green", 0x5FB37A), "rejected": ("red", 0xD4605A), "draft": ("gold", 0xD9A23D)}.get(st, ("cyan", 0x6F9FD6))
-    lines = [style.kv("СПРАВА", f"КФ-{c['id']:04d} · «{c['data'].get('title', '')}»", "white", True),
-             style.kv("ГРИФ", GRIF[c["data"].get("grif", "secret")], "red", True),
-             style.kv("ДІЯ", label, col[0], True),
-             style.kv("ХТО", f"{u['name']} · №{u['sid']}" if u["dept"] != "prosecutor" else f"{u['name']} · Генеральний прокурор", "white"),
-             style.kv("ЕТАП", STAGE_NAME[st], "white"),
-             style.kv("ДАТА", style.when(), "gray")]
-    e = style.document("КЕЙС-ФАЙЛ · ЖУРНАЛ РУХУ", col[1], desc=style.block(*lines), footer="Зміст справи доступний лише в ЄІС «Сова»")
+    color = {"approved": style.GREEN, "rejected": style.RED, "draft": style.GOLD}.get(st, style.BLUE)
+    who_ = f"{style.esc(u['name'])} · №{u['sid']}" if u["dept"] != "prosecutor" else f"{style.esc(u['name'])} · Генеральний прокурор"
+    e = style.card(f"КФ-{c['id']:04d}", "Кейс-файл · журнал руху", label, color, fields=[
+        ("Справа", f"«{style.esc(c['data'].get('title', ''))}»"),
+        ("Гриф", GRIF[c["data"].get("grif", "secret")]),
+        ("Етап", STAGE_NAME[st]),
+        ("Хто", who_),
+    ], note="Зміст справи доступний лише в ЄІС «Сова»")
     try:
         await ch.send(embed=e, allowed_mentions=discord.AllowedMentions.none())
     except discord.HTTPException as ex:

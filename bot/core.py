@@ -479,30 +479,6 @@ async def promo_check(u: dict) -> dict | None:
     return await promo.check(u)
 
 
-async def _promo_check_old(u: dict) -> dict | None:
-    if u["dept"] in ("prosecutor", "curator"):
-        return None
-    nxt = u["rank"] + 1
-    if nxt > 15:
-        return None
-    name, _, days = RANKS[nxt - 1]
-    items = []
-    if days is None:
-        items.append({"ok": False, "soft": True, "t": "Посада з 8-го щабля: призначення наказом Голови СБУ за наявності вакансії"})
-    else:
-        have = (now_ms() - (u["since"] or now_ms())) / DAY
-        items.append({"ok": have >= days, "t": f"Вислуга на поточному званні: {have:.1f} з {days} календарних діб",
-                      "pct": min(1, have / days) if days else 1})
-    blocked = await db.one("SELECT id FROM discipline WHERE sid=? AND status='active' AND kind IN ('reprimand','severe') AND expires>? ORDER BY expires DESC",
-                           u["sid"], now_ms())
-    if blocked:
-        items.append({"ok": False, "t": f"Активна догана НС-{blocked['id']:04d}: підвищення заблоковано (п. 1.2 Регламенту стягнень)"})
-    pending = await db.one("SELECT id FROM raps WHERE by_sid=? AND type='promo' AND status='wait'", u["sid"])
-    if pending:
-        items.append({"ok": False, "t": f"Рапорт №{pending['id']} уже на розгляді"})
-    return {"next": nxt, "name": name, "items": items, "eligible": all(i["ok"] for i in items)}
-
-
 # ---------------------------------------------------------------- канали
 CHANNEL_KEYS = [k for k in DEPTS if DEPTS[k]["channel"]] + ["audit", "files", "backups", "log"]
 
@@ -580,58 +556,56 @@ def who(u: dict | None) -> str:
     return f"{u['name']} · №{u['sid']}" if u else "—"
 
 
-async def resolution(status: str, reviewer_sid: int | None, reviewed: int | None, ok_word: str = "ПОГОДЖЕНО") -> list[str]:
-    """Рядки резолюції під документом."""
+async def state_line(status: str, reviewer_sid: int | None, reviewed: int | None, ok_word: str = "Погоджено",
+                     wait_word: str = "На розгляді") -> tuple[str, int]:
+    """Рядок стану документа для картки і її колір: хто й коли ухвалив рішення."""
     if status == "wait":
-        return [style.kv("РЕЗОЛЮЦІЯ", "очікує розгляду", "gold", True)]
-    if status == "cancel":
-        return [style.kv("РЕЗОЛЮЦІЯ", "ВІДКЛИКАНО ВИКОНАВЦЕМ", "gray", True), style.kv("", style.when(reviewed), "gray")]
-    if status == "deleted":
-        rev = await user(reviewer_sid) if reviewer_sid else None
-        return [style.kv("РЕЗОЛЮЦІЯ", "ДОКУМЕНТ ВИДАЛЕНО", "gray", True)] + ([style.kv("", rev["name"], "white")] if rev else []) + [style.kv("", style.when(reviewed), "gray")]
+        return f"🕓 {wait_word}", style.GOLD
     rev = await user(reviewer_sid) if reviewer_sid else None
-    word, color = (ok_word, "green") if status == "ok" else ("ВІДМОВЛЕНО", "red")
-    lines = [style.kv("РЕЗОЛЮЦІЯ", word, color, True)]
-    if rev:
-        lines.append(style.kv("", f"{rank_name(rev['rank'])} {rev['name']}", "white"))
-    lines.append(style.kv("", style.when(reviewed), "gray"))
-    return lines
+    tail = (f" · {style.esc(rev['name'])}" if rev and status != "cancel" else "") + f" · {style.when(reviewed)}"
+    if status == "ok":
+        return f"✅ {ok_word}{tail}", style.GREEN
+    if status == "rej":
+        return f"⛔ Відмовлено{tail}", style.RED
+    if status == "cancel":
+        return f"↩ Відкликано виконавцем{tail}", style.GRAY
+    if status == "deleted":
+        return f"🗑 Документ видалено{tail}", style.DARK
+    return status, style.GRAY
+
+
+def dept_name(d: str | None) -> str:
+    return DEPTS.get(d or "", DEPTS["lead"])["n"]
+
+
+async def file_links(fids: list) -> str:
+    """Посилання на файли-докази у сховищі «Сови» (Discord)."""
+    g, out = guild(), []
+    for i, fid in enumerate(fids or [], 1):
+        f = await db.one("SELECT ch_id, msg_id, filename FROM files WHERE id=?", fid)
+        if f and g:
+            out.append(f"[📎 {style.esc((f['filename'] or f'Файл {i}')[:40])}](https://discord.com/channels/{g.id}/{f['ch_id']}/{f['msg_id']})")
+    return "\n".join(out)
 
 
 async def act_embed(a: dict) -> discord.Embed:
     author = await user(a["by_sid"]) or {"name": "—", "sid": a["by_sid"], "rank": 1}
-    pts = (await coef()).get(a["type"], 0) * a["qty"]
-    _, _, color = style.STATUS[a["status"]]
-    dept = DEPTS.get(a["dept"], DEPTS["lead"])
+    pts = (await coef()).get(a["type"], 0) * (a["qty"] or 1)
     arts = json.loads(a["arts"] or "[]")
-    lines = [
-        style.kv("ПІДРОЗДІЛ", f"{dept['s']} · {dept['n']}", "gold"),
-        style.kv("СПІВРОБІТНИК", f"{rank_name(author['rank'])} {author['name']}", "white", True),
-        style.kv("ЖЕТОН", f"№{author['sid']}", "cyan"),
-        style.rule(),
-        style.kv("ДІЯ", ACTS[a["type"]][0] + (f" ×{a['qty']}" if a["qty"] > 1 else ""), "white", True),
-        style.kv("ЧАС", style.when(a["t"]), "white"),
-    ]
-    if arts:
-        lines.append(style.kv("СТАТТІ КК", ", ".join(arts), "red", True))
-    if a["subj"]:
-        lines.append(style.kv("ФІГУРАНТ", a["subj"][:60], "white"))
-    lines.append(style.kv("БАЛИ", f"{pts}", "gold", True))
-    lines.append(style.rule())
-    lines += await resolution(a["status"], a["reviewer"], a["reviewed"], "ПІДТВЕРДЖЕНО")
-    desc = style.block(*lines)
-    extra = []
-    if a["evidence"]:
-        extra.append(f"📎 **Відкат:** [відкрити запис]({a['evidence']})")
-    files = json.loads(a["files"] or "[]")
-    if files:
-        extra.append(f"🗂 **Додано файлів:** {len(files)} — у кабінеті ЄІС")
-    if a["note"]:
-        extra.append("> " + a["note"][:900].replace("\n", "\n> "))
-    if extra:
-        desc += "\n" + "\n".join(extra)
-    return style.document(f"СЛУЖБОВИЙ ЗВІТ · {ACTS[a['type']][0]}", color if a["status"] != "wait" else dept["color"],
-                          desc=desc, no=style.doc_no("ЗВТ", a["id"]), footer=style.STATUS[a["status"]][0])
+    state, color = await state_line(a["status"], a["reviewer"], a["reviewed"], "Підтверджено", "На перевірці")
+    ev = [f"[▶ Відкат]({a['evidence']})"] if a["evidence"] else []
+    if links := await file_links(json.loads(a["files"] or "[]")):
+        ev.append(links)
+    return style.card(style.doc_no("ЗВТ", a["id"]), "Службовий звіт", state, color, t=a["t"], fields=[
+        ("Від", style.person(author)),
+        ("Підрозділ", dept_name(a["dept"])),
+        ("Дія", ACTS[a["type"]][0] + (f" ×{a['qty']}" if (a["qty"] or 1) > 1 else "")),
+        ("Час події", style.when(a["t"])),
+        ("Бали", str(pts)),
+        ("Статті КК", style.esc(", ".join(arts))),
+        ("Фігурант", style.esc(a["subj"][:100]) if a["subj"] else None),
+        ("Докази", "\n".join(ev), False),
+    ])
 
 
 RAP_HEAD = {"promo": "на підвищення у званні", "vac": "на відпустку", "dismiss": "на звільнення зі служби", "transfer": "на переведення",
@@ -675,61 +649,47 @@ def transfer_label(r: dict, st: str) -> str:
             "chief": "Голова СБУ або заступник"}[st]
 
 
-def transfer_visas(r: dict) -> list[str]:
+def transfer_visas(r: dict) -> str:
+    """Візи погодження переведення / розподілу — рядками для поля картки."""
     data = json.loads(r["data"] or "{}")
     cur = data.get("stage", "from")
     visas = {v["stage"]: v for v in data.get("visas", [])}
-    out = [style.c("ВІЗИ ПОГОДЖЕННЯ", "gold", True)]
+    out = []
     for st in STAGES[r["type"]]:
-        label = transfer_label(r, st).upper()[:16]
+        label = transfer_label(r, st)
+        label = label[:1].upper() + label[1:]
         v = visas.get(st)
         if v:
-            out.append(style.kv(label, f"{'ПОГОДЖЕНО' if v.get('ok', True) else 'ВІДМОВЛЕНО'} · {v['name']}", "green" if v.get("ok", True) else "red"))
+            out.append(f"{'✅' if v.get('ok', True) else '⛔'} {label}: {style.esc(v['name'])}")
         elif r["status"] == "wait" and st == cur:
-            out.append(style.kv(label, "очікує візи", "gold", True))
+            out.append(f"🕓 {label}: очікує візи")
         else:
-            out.append(style.kv(label, "—", "gray"))
-    return out + [style.rule()]
+            out.append(f"▫️ {label}: —")
+    return "\n".join(out)
 
 
 async def rap_embed(r: dict) -> discord.Embed:
     author = await user(r["by_sid"]) or {"name": "—", "sid": r["by_sid"], "rank": 1}
     data = json.loads(r["data"] or "{}")
-    _, _, color = style.STATUS[r["status"]]
-    dept = DEPTS.get(r["dept"], DEPTS["lead"])
-    pad = " " * 18
-    lines = [
-        pad + style.c("Голові Служби безпеки", "white"),
-        pad + style.c("штату NG", "white"),
-        pad + style.c(f"від: {rank_name(author['rank'])}", "gray"),
-        pad + style.c(f"{dept['s']} {author['name']}", "white", True),
-        pad + style.c(f"жетон №{author['sid']}", "cyan"),
-        "",
-        " " * 17 + style.c("Р А П О Р Т", "gold", True),
-        style.c(f"{RAP_HEAD.get(r['type'], ''):^44}", "gray"),
-        "",
-        *[style.c(line, "white") for line in style.wrap(rap_text(r, data))],
-        "",
-        style.c(f"{style.when(r['t'])}", "gray") + " " * 14 + style.c(f"/{author['name']}/", "white"),
-        style.rule(),
-        *(transfer_visas(r) if r["type"] in STAGES else []),
-        *await resolution(r["status"], r["reviewer"], r["reviewed"]),
-    ]
-    e = style.document(f"РАПОРТ · {RAP_TYPES[r['type']].replace('Рапорт ', '')}", color if r["status"] != "wait" else 0xC9A05A,
-                       desc=style.block(*lines), no=style.doc_no("РАП", r["id"]), footer=style.STATUS[r["status"]][0])
-    e.add_field(name="Подав", value=(f"<@{author['discord_id']}> · " if author.get("discord_id") else "") + f"{author['name']} · №{author['sid']}", inline=True)
-    if r["type"] == "refund":
-        e.add_field(name="Сума", value=f"**${data.get('amount', 0):,}**".replace(",", " "), inline=True)
-    ev = []
-    if data.get("evidence"):
-        ev.append(f"▶ [Відео / посилання]({data['evidence']})")
-    for i, fid in enumerate(data.get("files") or []):
-        f = await db.one("SELECT ch_id, msg_id, filename FROM files WHERE id=?", fid)
-        if f and guild():
-            ev.append(f"📎 [{(f['filename'] or f'Файл {i + 1}')[:40]}](https://discord.com/channels/{guild().id}/{f['ch_id']}/{f['msg_id']})")
-    if ev:
-        e.add_field(name="Докази", value="\n".join(ev)[:1024], inline=False)
-    return e
+    state, color = await state_line(r["status"], r["reviewer"], r["reviewed"])
+    t = r["type"]
+    fields = [("Від", style.person(author)), ("Підрозділ", dept_name(r["dept"]))]
+    if t == "promo":
+        fields.append(("Звання", f"{rank_name(int(data.get('to') or 1) - 1)} → {rank_name(int(data.get('to') or 0))}"))
+        if "need" in data:
+            fields.append(("Бали", f"{data.get('balance')} з {data.get('need')}"))
+    elif t == "vac":
+        fields.append(("Відпустка", f"{data.get('days')} діб · з {style.esc(data.get('from') or 'дати погодження')}"))
+    elif t in STAGES:
+        fields.append(("Напрямок", f"{DEPTS.get(r['dept'], DEPTS['lead'])['s']} → {DEPTS.get(data.get('to'), DEPTS['lead'])['s']}"))
+        fields.append(("Візи", transfer_visas(r), False))
+    elif t == "refund":
+        fields.append(("Сума", f"**${data.get('amount', 0):,}**".replace(",", " ")))
+    ev = [f"[▶ Відео / посилання]({data['evidence']})"] if data.get("evidence") else []
+    if links := await file_links(data.get("files") or []):
+        ev.append(links)
+    fields.append(("Докази", "\n".join(ev), False))
+    return style.card(style.doc_no("РАП", r["id"]), RAP_TYPES.get(t, "Рапорт"), state, color, t=r["t"], fields=fields)
 
 
 class ActButton(discord.ui.DynamicItem[discord.ui.Button], template=r"sova:act:(?P<id>\d+):(?P<d>ok|rej)"):

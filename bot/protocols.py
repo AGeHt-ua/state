@@ -216,13 +216,13 @@ async def journal(p: dict, u: dict, label: str, tag: str | None = None):
     x = p["data"]
     void = p["status"] == "void"
     term = f" · {x['term']} р." if x.get("decision") == "short" and x.get("term") else ""
-    desc = [f"### {'⛔ АНУЛЬОВАНО' if void else '✅ ЗАРЕЄСТРОВАНО'}",
-            f"🚔 Затриманий: **{x.get('who') or '—'}**",
-            f"⚖️ Статті КК: {', '.join(x.get('arts', [])) or '—'}",
-            f"📍 Місце: {x.get('place') or '—'}",
-            f"🧾 Рішення: {DECISION.get(x.get('decision'), '—')}{term}",
-            "", f"🖋️ Склав: {(p.get('authorUser') or {}).get('name', '—')}"]
-    e = style.document(f"ПРОТОКОЛ ЗАТРИМАННЯ {p['no']} · ст. 41 ПК", 0x5F6A7A if void else 0xC9A24D, desc="\n".join(desc),
-                       footer=f"Остання дія: {label[:80]} · {style.when()}")
+    e = style.card(p["no"], "Протокол затримання · ст. 41 ПК", "⛔ Анульовано" if void else "✅ Зареєстровано",
+                   style.GRAY if void else style.GREEN, t=x.get("when"), fields=[
+        ("Затриманий", f"**{style.esc(x.get('who') or '—')}**"),
+        ("Статті КК", style.esc(", ".join(x.get("arts", [])) or "—")),
+        ("Склав", style.esc((p.get("authorUser") or {}).get("name", "—"))),
+        ("Місце", style.esc(x.get("place") or "—")),
+        ("Рішення", f"{DECISION.get(x.get('decision'), '—')}{term}"),
+    ])
     await docpost.journal("pz", p["id"], ch, e, users=await docpost.people(p["author"]), tag=tag,
                           ping=None if label == "ЗАРЕЄСТРОВАНО" else f"🔔 Протокол {p['no']}: {label[:150]}")

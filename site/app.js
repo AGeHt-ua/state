@@ -1023,7 +1023,7 @@ const A = {
   wd: async (b) => {
     if (!confirm(b.dataset.k === "acts" ? "Відкликати звіт з перевірки?" : "Відкликати рапорт з розгляду?")) return;
     b.disabled = true;
-    try { await call(`/api/${b.dataset.k}/${b.dataset.id}/withdraw`, { json: {} }); toast("Документ відкликано"); await refreshMe(); render(); }
+    try { await call(`/api/${b.dataset.k}/${b.dataset.id}/withdraw`, { json: {} }); toast("Документ відкликано"); await (b.dataset.k === "acts" ? actImage : rapImage)(+b.dataset.id); await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
   rapd: async (b) => {

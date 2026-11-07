@@ -187,15 +187,14 @@ async def journal(s: dict, u: dict, label: str, tag: str | None = None):
     for r in paid:
         by_dept[r["dept"]] = by_dept.get(r["dept"], 0) + r["amount"]
     money = lambda v: f"${v:,}".replace(",", " ")
-    lines = [style.kv("ВІДОМІСТЬ", f"ВП-{s['id']:04d} · тиждень {s['label']}", "white", True),
-             style.kv("ДІЯ", label, "green" if s["status"] == "paid" else "cyan", True),
-             style.kv("ПРЕМІЙОВАНО", f"{len(paid)} осіб", "white"),
-             style.kv("РАЗОМ", money(s["total"]), "gold", True),
-             style.kv("ЛІМІТ", money(s["cfg"].get("limit", 0)), "gray"), style.rule()]
-    lines += [style.kv(DEPTS[d]["s"].upper(), money(v), "white") for d, v in sorted(by_dept.items(), key=lambda x: -x[1])]
-    lines += [style.rule(), style.kv("ХТО", f"{u['name']} · №{u['sid']}", "white"), style.kv("ДАТА", style.when(), "gray")]
-    e = style.document(f"ВІДОМІСТЬ ПРЕМІЮВАННЯ ВП-{s['id']:04d}", 0x5FB37A if s["status"] == "paid" else 0xC9A05A, desc=style.block(*lines),
-                       footer="П. 1.55 Загальних правил держорганізацій · деталі в ЄІС «Сова»")
+    e = style.card(f"ВП-{s['id']:04d}", f"Відомість преміювання · тиждень {s['label']}",
+                   "💰 Премії виплачено" if s["status"] == "paid" else f"📨 {label}", style.GREEN if s["status"] == "paid" else style.GOLD, fields=[
+        ("Преміювано", f"{len(paid)} осіб"),
+        ("Разом", f"**{money(s['total'])}**"),
+        ("Ліміт", money(s["cfg"].get("limit", 0))),
+        ("За підрозділами", "\n".join(f"{DEPTS[d]['s']}: {money(v)}" for d, v in sorted(by_dept.items(), key=lambda x: -x[1])), False),
+        ("Хто", style.person(u)),
+    ])
     paid_now = s["status"] == "paid"
     await docpost.journal("bn", s["id"], ch, e, users=await docpost.people(s.get("created_by")), tag=tag,
                           roles=docpost.key_roles("bonus:paid") if paid_now else None,

@@ -250,7 +250,7 @@ async def delete(u: dict, oid: int):
     await journal(o, await core.user(o["sid"]), u, "Наказ скасовано й видалено")
 
 
-NS_STATE = {"active": "⚖️ ЧИННЕ", "lifted": "🕊️ ЗНЯТО ДОСТРОКОВО", "cancelled": "↩ СКАСОВАНО ЗА СКАРГОЮ", "deleted": "🗑 СКАСОВАНО Й ВИДАЛЕНО"}
+NS_STATE = {"active": "⚖️ Чинне", "lifted": "🕊️ Знято достроково", "cancelled": "↩ Скасовано за скаргою", "deleted": "🗑 Скасовано й видалено"}
 
 
 async def journal(o: dict, target: dict | None, u: dict, label: str, tag: str | None = None):
@@ -259,21 +259,18 @@ async def journal(o: dict, target: dict | None, u: dict, label: str, tag: str | 
     o = await db.one("SELECT * FROM discipline WHERE id=?", o["id"]) or o
     issuer = await core.user(o["issued_by"])
     expired = o["status"] == "active" and o["expires"] and o["expires"] < now_ms()
-    head = "⌛ СТРОК ДІЇ МИНУВ" if expired else NS_STATE.get(o["status"], "⚖️ ЧИННЕ")
-    desc = [f"### {head} · {KINDS[o['kind']][0]}",
-            f"👤 **{target['name'] if target else '—'}** · жетон №{o['sid']}",
-            f"📕 Порушення: {VMAP.get(o['violation'], VMAP['other'])[1]}"]
-    if o["fine"]:
-        desc.append(f"💵 Штраф: **${o['fine']:,}**".replace(",", " "))
-    if o["expires"]:
-        desc.append(f"⏳ Діє до: {style.when(o['expires'])}")
-    desc += ["", f"🖋️ Наклав: {issuer['name'] if issuer else '—'} · {style.when(o['issued'])}"]
+    head = "⌛ Строк дії минув" if expired else NS_STATE.get(o["status"], "⚖️ Чинне")
     ap = json.loads(o["appeal"]) if isinstance(o.get("appeal"), str) else o.get("appeal")
-    if ap:
-        desc.append("📨 Скарга: " + ({"cancel": "задоволено", "uphold": "відхилено"}.get(ap.get("decision")) or "на розгляді Голови СБУ"))
-    e = style.document(f"НАКАЗ НС-{o['id']:04d} · ПРО ДИСЦИПЛІНАРНЕ СТЯГНЕННЯ",
-                       0x5F6A7A if o["status"] in ("deleted", "cancelled", "lifted") else 0xD4605A if o["kind"] in ("dismiss", "blacklist", "severe") else 0xD9A23D,
-                       desc="\n".join(desc), footer=f"Остання дія: {label} · {style.when()}")
+    color = style.GRAY if o["status"] in ("deleted", "cancelled", "lifted") or expired else style.RED if o["kind"] in ("dismiss", "blacklist", "severe") else style.GOLD
+    e = style.card(f"НС-{o['id']:04d}", "Наказ про дисциплінарне стягнення", head, color, t=o["issued"], fields=[
+        ("Співробітник", style.person(target) if target else f"№{o['sid']}"),
+        ("Стягнення", KINDS[o["kind"]][0]),
+        ("Наклав", style.person(issuer)),
+        ("Порушення", style.esc(VMAP.get(o["violation"], VMAP["other"])[1]), False),
+        ("Штраф", f"**${o['fine']:,}**".replace(",", " ") if o["fine"] else None),
+        ("Діє до", style.when(o["expires"]) if o["expires"] else None),
+        ("Скарга", ({"cancel": "задоволено", "uphold": "відхилено"}.get(ap.get("decision")) or "на розгляді Голови СБУ") if ap else None),
+    ])
     first = label == "Оголошено наказ"
     await docpost.journal("ns", o["id"], await core.channel("disc"), e, users=await docpost.people(o["issued_by"], o["sid"]), tag=tag,
                           roles=docpost.key_roles("order") if first and u["rank"] >= 14 else None,

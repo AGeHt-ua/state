@@ -166,30 +166,26 @@ async def cancel(u: dict, oid: int) -> dict:
     return {"reverted": reverted, "rolesWarning": warn}
 
 
-NP_STATE = {"draft": ("🕓 ПРОЄКТ · НА ПІДПИСІ", 0xD9A23D), "active": ("✅ ПІДПИСАНО · ЧИННИЙ", 0x5FB37A),
-            "rejected": ("⛔ ВІДХИЛЕНО", 0xD4605A), "deleted": ("↩ СКАСОВАНО", 0x5F6A7A)}
+NP_STATE = {"draft": ("🕓 Проєкт · на підписі", style.GOLD), "active": ("✅ Підписано · чинний", style.GREEN),
+            "rejected": ("⛔ Проєкт відхилено", style.RED), "deleted": ("↩ Наказ скасовано", style.GRAY)}
 
 
 async def np_embed(o: dict, label: str) -> discord.Embed:
-    """Картка наказу про призначення: стан, співробітник, було → стало, підстава, хто готував і підписав."""
+    """Картка наказу про призначення — єдиний зразок документа (style.card)."""
     p, by = await core.user(o["sid"]), await core.user(o["by_sid"])
     sg = await core.user(o["signed_by"]) if o.get("signed_by") else None
     state, color = NP_STATE.get(o["status"], NP_STATE["draft"])
-    to = f"{rank_name(o['to_rank'])} · {DEPTS[o['to_dept']]['n']}" + (f" + {DEPTS[o['extra']]['n']}" if o.get("extra") else "")
-    desc = [f"### {state}",
-            f"👤 **{p['name'] if p else '—'}** · жетон №{o['sid']}",
-            f"⬅️ Було: {rank_name(o['from_rank'])} · {DEPTS[o['from_dept']]['n']}",
-            f"➡️ **Призначено: {to}**"]
-    if o.get("reason"):
-        desc.append(f"📄 Підстава: {o['reason'][:500]}")
-    desc += ["", f"✍️ Проєкт: {by['name'] if by else '—'}"]
     if sg:
-        desc.append(f"🖋️ {'Відхилив' if o['status'] == 'rejected' else 'Підписав'}: {sg['name']} · {style.when(o.get('signed'))}")
-    if o["status"] == "rejected" and o.get("note"):
-        desc.append(f"💬 Причина: {o['note']}")
-    e = style.document(f"НАКАЗ НП-{o['id']:04d} · ПРО ПРИЗНАЧЕННЯ НА ПОСАДУ", color, desc="\n".join(desc),
-                       footer=f"Остання дія: {label} · {style.when()}")
-    return e
+        state += f" · {style.esc(sg['name'])} · {style.when(o.get('signed'))}"
+    to = f"{rank_name(o['to_rank'])} · {DEPTS[o['to_dept']]['s']}" + (f" + {DEPTS[o['extra']]['s']}" if o.get("extra") else "")
+    return style.card(f"НП-{o['id']:04d}", "Наказ про призначення на посаду", state, color, t=o.get("signed") or o["t"],
+                      note=f"Причина: {style.esc(o['note'])}" if o["status"] == "rejected" and o.get("note") else None, fields=[
+        ("Співробітник", style.person(p) if p else f"№{o['sid']}"),
+        ("Було", f"{rank_name(o['from_rank'])} · {DEPTS[o['from_dept']]['s']}"),
+        ("Призначено", f"**{to}**"),
+        ("Підготував", style.person(by)),
+        ("Підстава", style.esc(o["reason"][:300]) if o.get("reason") else None, False),
+    ])
 
 
 async def journal(o: dict, u: dict, label: str, tag: str | None = None):
@@ -233,15 +229,15 @@ async def create_free(u: dict, b: dict) -> dict:
 
 
 def ng_embed(o: dict, by: dict | None, cancelled_by: dict | None = None) -> discord.Embed:
-    """Картка наказу Голови: назва, початок тексту (повністю — на аркуші А4 у картці), хто підписав, стан."""
-    body = o["body"] if len(o["body"]) <= 700 else o["body"][:700].rsplit(" ", 1)[0] + "…"
-    desc = [f"### «{o['title']}»", body, "",
-            f"🖋️ Підписав: {rank_name(by['rank']) + ' ' + by['name'] if by else '—'} · {style.when(o['t'])}"]
+    """Картка наказу Голови — єдиний зразок документа; повний текст — на аркуші А4 у картці."""
+    state, color = ("↩ Наказ скасовано", style.GRAY) if cancelled_by else ("✅ Підписано · обов'язковий до виконання", style.GREEN)
     if cancelled_by:
-        desc.insert(0, "## ↩ НАКАЗ СКАСОВАНО")
-        desc.append(f"↩ Скасував: {cancelled_by['name']} · {style.when()}")
-    return style.document(f"НАКАЗ ГОЛОВИ СБУ НГ-{o['id']:04d}", 0x5F6A7A if cancelled_by else 0xC9A05A, desc="\n".join(desc)[:4000],
-                          footer="Наказ обов'язковий до виконання всім особовим складом СБУ · повний текст — на аркуші")
+        state += f" · {style.esc(cancelled_by['name'])} · {style.when()}"
+    return style.card(f"НГ-{o['id']:04d}", "Наказ Голови СБУ", state, color, t=o["t"], fields=[
+        ("Назва", f"**«{style.esc(o['title'])}»**", False),
+        ("Підписав", style.person(by)),
+        ("Дата", style.when(o["t"])),
+    ])
 
 
 async def free_post(o: dict, u: dict, cancelled: bool = False, tag: str | None = None):
@@ -250,33 +246,6 @@ async def free_post(o: dict, u: dict, cancelled: bool = False, tag: str | None =
     await docpost.journal("ng", o["id"], await core.channel("orders"), ng_embed(o, by, u if cancelled else None),
                           users=await docpost.people(o["by_sid"]), tag=tag, roles=docpost.key_roles(None if cancelled else "order"),
                           ping="↩ Наказ скасовано." if cancelled else None)
-
-
-def free_blank(o: dict, u: dict) -> str:
-    """Бланк наказу кольоровим ANSI: шапка, номер і дата, назва, текст з переносами, підпис."""
-    W = 44
-    mid = lambda s: f"{s:^{W}}"
-    lines = [style.c(mid("СЛУЖБА БЕЗПЕКИ ШТАТУ NG"), "gold", True),
-             style.c(mid("Н А К А З"), "white", True),
-             style.c(mid(f"№ НГ-{o['id']:04d}  ·  {style.when(o['t'])}"), "gray"),
-             style.rule(W), ""]
-    lines += [style.c(mid(s), "gold", True) for s in style.wrap(o["title"].upper(), W)]
-    lines.append("")
-    for para in o["body"].split("\n"):
-        if not para.strip():
-            lines.append("")
-            continue
-        bold = para.strip().upper().startswith(("НАКАЗУЮ", "ЗОБОВ'ЯЗУЮ", "ПОСТАНОВЛЯЮ"))
-        lines += [style.c(s, "white", bold) if bold else s for s in style.wrap(para, W)]
-    lines += ["", style.rule(W),
-              style.kv("ПІДПИСАВ", f"{rank_name(u['rank'])}", "gray", width=12),
-              style.kv("", u["name"], "white", True, width=12),
-              style.kv("ДАТА", style.when(o["t"]), "gray", width=12),
-              style.c(f"{'[ М.П. ]':>{W}}", "red", True)]
-    text = style.block(*lines)
-    if len(text) > 4000:  # ліміт опису Discord — коротимо текст, повний наказ є в ЄІС «Сова»
-        text = style.block(*lines[:60], "…", style.c("Повний текст — у ЄІС «Сова» → Особовий склад → Накази", "gray"))
-    return text
 
 
 async def delete_free(u: dict, oid: int):
