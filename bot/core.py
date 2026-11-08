@@ -589,14 +589,32 @@ async def file_links(fids: list) -> str:
     return "\n".join(out)
 
 
+async def materials(urls: list | str | None = None, fids: list | None = None) -> str:
+    """Матеріали документа для поля картки: веб-посилання (відео, відкат) і файли зі сховища «Сови» — клікабельно.
+    Ліміт поля Discord — 1024 символи: що не влізло, підсумовується рядком «…ще N»."""
+    urls = [urls] if isinstance(urls, str) else list(urls or [])
+    lines = []
+    for u in urls:
+        u = str(u or "").strip()
+        if u.startswith(("http://", "https://")):
+            host = u.split("/")[2].removeprefix("www.")[:40]
+            lines.append(f"[▶ {host}]({u})")
+    if links := await file_links(fids or []):
+        lines += links.split("\n")
+    out = ""
+    for i, ln in enumerate(lines):
+        if len(out) + len(ln) + 12 > 1024:
+            return out + f"\n…ще {len(lines) - i}"
+        out += ("\n" if out else "") + ln
+    return out
+
+
 async def act_embed(a: dict) -> discord.Embed:
     author = await user(a["by_sid"]) or {"name": "—", "sid": a["by_sid"], "rank": 1}
     pts = (await coef()).get(a["type"], 0) * (a["qty"] or 1)
     arts = json.loads(a["arts"] or "[]")
     state, color = await state_line(a["status"], a["reviewer"], a["reviewed"], "Підтверджено", "На перевірці")
-    ev = [f"[▶ Відкат]({a['evidence']})"] if a["evidence"] else []
-    if links := await file_links(json.loads(a["files"] or "[]")):
-        ev.append(links)
+    ev = await materials(a["evidence"], json.loads(a["files"] or "[]"))
     return style.card(style.doc_no("ЗВТ", a["id"]), "Службовий звіт", state, color, t=a["t"], fields=[
         ("Від", style.person(author)),
         ("Підрозділ", dept_name(a["dept"])),
@@ -605,7 +623,7 @@ async def act_embed(a: dict) -> discord.Embed:
         ("Бали", str(pts)),
         ("Статті КК", style.esc(", ".join(arts))),
         ("Фігурант", style.esc(a["subj"][:100]) if a["subj"] else None),
-        ("Докази", "\n".join(ev), False),
+        ("Матеріали", ev, False),
     ])
 
 
@@ -686,10 +704,7 @@ async def rap_embed(r: dict) -> discord.Embed:
         fields.append(("Візи", transfer_visas(r), False))
     elif t == "refund":
         fields.append(("Сума", f"**${data.get('amount', 0):,}**".replace(",", " ")))
-    ev = [f"[▶ Відео / посилання]({data['evidence']})"] if data.get("evidence") else []
-    if links := await file_links(data.get("files") or []):
-        ev.append(links)
-    fields.append(("Докази", "\n".join(ev), False))
+    fields.append(("Матеріали", await materials(data.get("evidence"), data.get("files")), False))
     return style.card(style.doc_no("РАП", r["id"]), RAP_TYPES.get(t, "Рапорт"), state, color, t=r["t"], fields=fields)
 
 

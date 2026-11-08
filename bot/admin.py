@@ -339,7 +339,7 @@ async def _card_for(kind: str, did: int):
             o = await db.one("SELECT * FROM discipline WHERE id=?", did)
             return await discipline.ns_embed(o, await core.user(o["sid"])) if o else None
         if kind == "pz":
-            return protocols.pz_embed(await protocols.get(did))
+            return await protocols.pz_embed(await protocols.get(did))
         if kind == "fin":
             return await finance.fin_embed(await finance.get(did))
         if kind == "bn":

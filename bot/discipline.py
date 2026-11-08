@@ -260,6 +260,7 @@ async def ns_embed(o: dict, target: dict | None) -> discord.Embed:
     head = "⌛ Строк дії минув" if expired else NS_STATE.get(o["status"], "⚖️ Чинне")
     ap = json.loads(o["appeal"]) if isinstance(o.get("appeal"), str) else o.get("appeal")
     color = style.GRAY if o["status"] in ("deleted", "cancelled", "lifted") or expired else style.RED if o["kind"] in ("dismiss", "blacklist", "severe") else style.GOLD
+    insp = await db.one("SELECT id, files FROM inspections WHERE id=?", o["inspection"]) if o.get("inspection") else None
     e = style.card(f"НС-{o['id']:04d}", "Наказ про дисциплінарне стягнення", head, color, t=o["issued"], fields=[
         ("Співробітник", style.person(target) if target else f"№{o['sid']}"),
         ("Стягнення", KINDS[o["kind"]][0]),
@@ -268,6 +269,8 @@ async def ns_embed(o: dict, target: dict | None) -> discord.Embed:
         ("Штраф", f"**${o['fine']:,}**".replace(",", " ") if o["fine"] else None),
         ("Діє до", style.when(o["expires"]) if o["expires"] else None),
         ("Скарга", ({"cancel": "задоволено", "uphold": "відхилено"}.get(ap.get("decision")) or "на розгляді Голови СБУ") if ap else None),
+        ("Підстава", f"Службова перевірка СП-{insp['id']:04d}" if insp else None),
+        ("Матеріали", await core.materials(None, json.loads(insp["files"] or "[]")) if insp else None, False),
     ])
     return e
 

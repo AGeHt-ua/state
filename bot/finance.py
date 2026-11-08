@@ -217,6 +217,7 @@ async def fin_embed(d: dict, label: str = "") -> discord.Embed:
         ("Отримано", money(d["funded_amount"]) if d.get("funded_amount") else None),
         ("Підготував", style.person(author)),
         ("Форум Мінфіну", f"[Тема на форумі]({d['forum_url']})" if d.get("forum_url") else None),
+        ("Матеріали", await core.materials(d["data"].get("evidence"), d["data"].get("files")), False),
     ])
     return e
 
