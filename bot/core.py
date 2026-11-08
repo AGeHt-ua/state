@@ -584,7 +584,8 @@ async def file_links(fids: list) -> str:
     for i, fid in enumerate(fids or [], 1):
         f = await db.one("SELECT ch_id, msg_id, filename FROM files WHERE id=?", fid)
         if f and g:
-            out.append(f"[📎 {style.esc((f['filename'] or f'Файл {i}')[:40])}](https://discord.com/channels/{g.id}/{f['ch_id']}/{f['msg_id']})")
+            name = (f["filename"] or f"Файл {i}")[:40].replace("[", "(").replace("]", ")")  # у тексті посилання екранування видно як «\_»
+            out.append(f"[📎 {name}](https://discord.com/channels/{g.id}/{f['ch_id']}/{f['msg_id']})")
     return "\n".join(out)
 
 
