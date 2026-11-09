@@ -1600,7 +1600,28 @@ async def remove_account(u: dict):
 
 
 # ---------------------------------------------------------------- файли
-_url_cache: dict[str, tuple[float, str]] = {}
+# Посилання Discord на вкладення підписане й діє ~добу (параметр ex= у посиланні — час закінчення, hex-секунди).
+# Тримаємо його в пам'яті й у базі до закінчення терміну — після перезапуску бот не перепитує Discord про кожен файл.
+_url_cache: dict[str, tuple[float, str]] = {}  # fid → (діє до, unix-секунди; посилання)
+_url_gate = asyncio.Semaphore(3)  # не більше 3 запитів до каналу файлів одночасно — інакше ліміт Discord (429)
+
+
+def _url_until(url: str) -> float:
+    """До якого моменту посилання можна віддавати: за пів години до ex=, інакше — 6 годин."""
+    now = time.time()
+    try:
+        ex = int(url.split("ex=", 1)[1].split("&", 1)[0], 16)
+        if now < ex < now + 30 * 86400:
+            return ex - 1800
+    except (IndexError, ValueError):
+        pass
+    return now + 6 * 3600
+
+
+async def _remember_url(fid: str, url: str):
+    until = _url_until(url)
+    _url_cache[fid] = (until, url)
+    await db.run("UPDATE files SET url=?, url_exp=? WHERE id=?", url, int(until), fid)
 
 
 async def store_file(data: bytes, filename: str, ctype: str, uploader: int) -> str:
@@ -1613,20 +1634,29 @@ async def store_file(data: bytes, filename: str, ctype: str, uploader: int) -> s
     fid = secrets.token_urlsafe(12)
     await db.run("INSERT INTO files(id,ch_id,msg_id,filename,ctype,size,uploader,t) VALUES(?,?,?,?,?,?,?,?)",
                  fid, str(ch.id), str(msg.id), filename[:100], ctype[:100], len(data), uploader, now_ms())
+    if msg.attachments:
+        await _remember_url(fid, msg.attachments[0].url)
     return fid
 
 
 async def file_url(fid: str) -> str:
-    """Посилання Discord на файл живе ~доба, тож щоразу беремо свіже з повідомлення."""
+    """Посилання Discord на файл живе ~доба: чинне беремо з пам'яті чи бази, прострочене — свіже з повідомлення."""
     hit = _url_cache.get(fid)
-    if hit and time.time() - hit[0] < 6 * 3600:
+    if hit and time.time() < hit[0]:
         return hit[1]
     row = await db.one("SELECT * FROM files WHERE id=?", fid)
     if not row:
         raise Fail("Файл не знайдено.", 404)
-    ch = bot.get_channel(int(row["ch_id"])) or await bot.fetch_channel(int(row["ch_id"]))
-    msg = await ch.fetch_message(int(row["msg_id"]))
-    if not msg.attachments:
-        raise Fail("Файл видалено з Discord.", 410)
-    _url_cache[fid] = (time.time(), msg.attachments[0].url)
+    if row.get("url") and time.time() < (row.get("url_exp") or 0):
+        _url_cache[fid] = (row["url_exp"], row["url"])
+        return row["url"]
+    async with _url_gate:
+        hit = _url_cache.get(fid)  # поки чекали в черзі, інший запит міг уже взяти це посилання
+        if hit and time.time() < hit[0]:
+            return hit[1]
+        ch = bot.get_channel(int(row["ch_id"])) or await bot.fetch_channel(int(row["ch_id"]))
+        msg = await ch.fetch_message(int(row["msg_id"]))
+        if not msg.attachments:
+            raise Fail("Файл видалено з Discord.", 410)
+        await _remember_url(fid, msg.attachments[0].url)
     return msg.attachments[0].url
