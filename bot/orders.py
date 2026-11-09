@@ -31,6 +31,23 @@ def can_appoint(u: dict) -> bool:
     return can_prepare(u)
 
 
+MGMT_MAX = 3  # скільки відділів може вести один начальник управління
+
+
+def extra_list(extra) -> list[str]:
+    """Відділи з поля extra наказу: «deb» (другий відділ начальника відділу) або «atc,alpha» (відділи начальника управління)."""
+    raw = extra if isinstance(extra, (list, tuple)) else str(extra or "").split(",")
+    return list(dict.fromkeys(k.strip() for k in raw if str(k).strip() in OPS_DEPTS))
+
+
+def to_label(o: dict) -> str:
+    """«Начальник управління · ЦСО «А», АТЦ» / «Начальник відділу · ОРВ + ДЕБ»."""
+    xs = [DEPTS[k]["s"] for k in extra_list(o.get("extra"))]
+    if o["to_dept"] == "lead":
+        return f"{rank_name(o['to_rank'])} · {DEPTS['lead']['s']}" + (f" ({', '.join(xs)})" if xs else "")
+    return f"{rank_name(o['to_rank'])} · {DEPTS[o['to_dept']]['s']}" + "".join(f" + {x}" for x in xs)
+
+
 async def appoint(u: dict, b: dict) -> dict:
     """Проєкт наказу. Якщо готує Голова чи заступник і просить підписати одразу — наказ одразу набирає чинності."""
     if not can_prepare(u):
@@ -55,7 +72,13 @@ async def appoint(u: dict, b: dict) -> dict:
         to_dept = "academy"
     elif to_dept not in OPS_DEPTS:
         raise Fail("Оберіть підрозділ.")
-    extra = b.get("extra") if to_rank == 12 and b.get("extra") in OPS_DEPTS and b.get("extra") != to_dept else None
+    if to_rank == 13:
+        # Начальник управління веде свої відділи (напр. ЦСО «А» + АТЦ або ОРВ + ДЕБ): бот видасть ролі саме цих відділів
+        extra = ",".join(extra_list(b.get("extra"))[:MGMT_MAX]) or None
+        if not extra:
+            raise Fail("Оберіть відділи, якими керуватиме начальник управління.")
+    else:
+        extra = b.get("extra") if to_rank == 12 and b.get("extra") in OPS_DEPTS and b.get("extra") != to_dept else None
     if to_rank == p["rank"] and to_dept == p["dept"] and not extra:
         raise Fail("Звання й підрозділ не змінюються.")
     if await db.one("SELECT id FROM orders WHERE sid=? AND status='draft'", p["sid"]):
@@ -90,11 +113,14 @@ async def sign(u: dict, oid: int, tag: str | None = None) -> dict:
     # «Було» фіксуємо на момент підпису — з проєкту звання могло змінитися
     await db.run("UPDATE orders SET status='active', from_rank=?, from_dept=?, signed_by=?, signed=? WHERE id=?", p["rank"], p["dept"], u["sid"], t, oid)
     await db.run("UPDATE users SET rank=?, dept=?, since=? WHERE sid=?", o["to_rank"], o["to_dept"], t if o["to_rank"] != p["rank"] else p["since"], p["sid"])
-    old = p["dept"] if p["dept"] in OPS_DEPTS and p["dept"] not in (o["to_dept"], o["extra"]) else None
-    roles_res = await apply_roles(p["sid"], o["extra"], f"Сова: наказ НП-{oid:04d}", drop_extra=old)
+    keep = {o["to_dept"], *extra_list(o["extra"])}
+    if o["to_rank"] == 13 and o["extra"]:
+        drop = [k for k in OPS_DEPTS if k not in keep]  # начальник управління — ролі лише своїх відділів, інші знімаємо
+    else:
+        drop = [p["dept"]] if p["dept"] in OPS_DEPTS and p["dept"] not in keep else []
+    roles_res = await apply_roles(p["sid"], o["extra"], f"Сова: наказ НП-{oid:04d}", drop_extra=drop)
     await db.audit(u["sid"], "Призначення на посаду", p["sid"],
-                   f"{rank_name(p['rank'])} / {DEPTS[p['dept']]['s']} → {rank_name(o['to_rank'])} / {DEPTS[o['to_dept']]['s']}"
-                   + (f" + {DEPTS[o['extra']]['s']}" if o["extra"] else "") + f" · НП-{oid:04d}")
+                   f"{rank_name(p['rank'])} / {DEPTS[p['dept']]['s']} → {to_label(o).replace(' · ', ' / ', 1)} · НП-{oid:04d}")
     o = await get(oid)
     await journal(o, u, "Наказ підписано й оголошено", tag=tag)
     await core.send_audit(await core.user(p["sid"]), u)
@@ -127,12 +153,14 @@ async def delete_draft(u: dict, oid: int):
     await docpost.remove("np", oid)  # проєкт видалено — і його повідомлення в Discord
 
 
-async def apply_roles(sid: int, extra: str | None, reason: str, drop_extra: str | None = None) -> dict:
-    """Ролі за наказом: звання й відділ з картки + другий відділ начальника (extra) / зняти колишній (drop_extra).
+async def apply_roles(sid: int, extra, reason: str, drop_extra=None) -> dict:
+    """Ролі за наказом: звання й відділ з картки + додаткові відділи (extra: другий відділ начальника відділу
+    або відділи начальника управління) / зняти колишні (drop_extra). Ролі, потрібні за карткою, не знімаються ніколи.
     Одна сувора синхронізація з перевіркою після змін (core.sync_roles)."""
     p = await core.user(sid)
-    add = {DEPTS[extra]["role"]} if extra and DEPTS.get(extra, {}).get("role") else set()
-    drop = {DEPTS[drop_extra]["role"]} if drop_extra and DEPTS.get(drop_extra, {}).get("role") else set()
+    role = lambda ks: {DEPTS[k]["role"] for k in extra_list(ks) if DEPTS[k].get("role")}
+    add = role(extra)
+    drop = role(drop_extra) - add - core.roles_for(p["rank"], p["dept"])
     return await core.sync_roles(p, reason, extra_add=add, extra_remove=drop)
 
 
@@ -177,7 +205,7 @@ async def np_embed(o: dict, label: str) -> discord.Embed:
     state, color = NP_STATE.get(o["status"], NP_STATE["draft"])
     if sg:
         state += f" · {style.esc(sg['name'])} · {style.when(o.get('signed'))}"
-    to = f"{rank_name(o['to_rank'])} · {DEPTS[o['to_dept']]['s']}" + (f" + {DEPTS[o['extra']]['s']}" if o.get("extra") else "")
+    to = to_label(o)
     return style.card(f"НП-{o['id']:04d}", "Наказ про призначення на посаду", state, color, t=o.get("signed") or o["t"],
                       note=f"Причина: {style.esc(o['note'])}" if o["status"] == "rejected" and o.get("note") else None, fields=[
         ("Співробітник", style.person(p) if p else f"№{o['sid']}"),
@@ -208,7 +236,7 @@ async def listing() -> list[dict]:
         sg = await core.user(o["signed_by"]) if o.get("signed_by") else None
         out.append({**o, "name": p["name"] if p else f"№{o['sid']}", "byName": by["name"] if by else "—", "signedName": sg["name"] if sg else None,
                     "curRank": rank_name(p["rank"]) if p else "",
-                    "fromRank": rank_name(o["from_rank"]), "toRank": rank_name(o["to_rank"])})
+                    "fromRank": rank_name(o["from_rank"]), "toRank": rank_name(o["to_rank"]), "extras": extra_list(o.get("extra"))})
     return out
 
 

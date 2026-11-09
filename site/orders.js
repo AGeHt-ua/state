@@ -5,6 +5,11 @@ const { esc, call, toast, fmtDT } = S;
 const st = { f: {} };
 const no = (id) => `НП-${String(id).padStart(4, "0")}`;
 const OPS = () => S.META().opsDepts;
+// Типові управління: начальник управління веде два відділи (ролі обох видає бот)
+const PAIRS = [["alpha", "atc"], ["orv", "deb"]];
+const mgmt = (f) => [...new Set([f.m0, f.m1].filter((k) => OPS().includes(k)))];
+const extras = (o) => (o.extras || String(o.extra || "").split(",")).filter((k) => S.META().depts[k]);
+const dnames = (ks, key) => ks.map((k) => esc(S.META().depts[k][key])).join(", ");
 
 function deptFor(f, p) {
   const r = +f.rank || (p && p.rank) || 0;
@@ -23,7 +28,7 @@ function blank(staff) {
     <div style="text-align:center;margin:-8px 0 18px">№ НП-нов. · ${new Date().toLocaleDateString("uk-UA")} · Про призначення на посаду</div>
     <p>${f.reason ? `${esc(f.reason)}. ` : ""}Керуючись Внутрішнім статутом Служби безпеки штату NG (р. V, п. 5.2),</p>
     <p style="text-indent:0"><b>НАКАЗУЮ:</b> ${p ? `${esc(p.rankName.toLowerCase())} ${esc(p.name)}, жетон №${p.sid},` : "________________,"}
-      призначити на посаду <b>${r ? esc(R[r - 1].n.toLowerCase()) : "________"}</b>${d && D[d] && d !== "lead" ? ` (${esc(D[d].n)}${r === 12 && f.extra && f.extra !== d ? `, ${esc(D[f.extra].n)}` : ""})` : ""}.</p>
+      призначити на посаду <b>${r ? esc(R[r - 1].n.toLowerCase()) : "________"}</b>${r === 13 && mgmt(f).length ? ` (${dnames(mgmt(f), "n")})` : d && D[d] && d !== "lead" ? ` (${esc(D[d].n)}${r === 12 && f.extra && f.extra !== d ? `, ${esc(D[f.extra].n)}` : ""})` : ""}.</p>
     <p style="text-indent:0">Відділу кадрів та підготовки персоналу внести зміни до особової справи.</p>
     <div class="blank-sign"><span>Голова Служби безпеки штату NG</span><span>${S.ME().appoint.sign ? `<span class="kf-sign">${esc(me.name)}</span>` : "__________ (підпис)"}</span></div>
     ${S.ME().appoint.sign ? "" : `<div class="small" style="margin-top:8px">Проєкт підготував: ${esc(me.rankName)} ${esc(me.name)} (ВКПП)</div>`}
@@ -41,7 +46,7 @@ function apDoc(o) {
     <div style="text-align:center;margin:-8px 0 18px">№ ${no(o.id)} · ${fmtDT(o.signed || o.t)} · Про призначення на посаду</div>
     <p>${o.reason ? `${esc(o.reason)}. ` : ""}Керуючись Внутрішнім статутом Служби безпеки штату NG (р. V, п. 5.2),</p>
     <p style="text-indent:0"><b>НАКАЗУЮ:</b> ${esc((o.fromRank || "").toLowerCase())} ${esc(o.name)}, жетон №${o.sid},
-      призначити на посаду <b>${esc((o.toRank || "").toLowerCase())}</b>${D[o.to_dept] && o.to_dept !== "lead" ? ` (${esc(D[o.to_dept].n)}${o.extra && D[o.extra] ? `, ${esc(D[o.extra].n)}` : ""})` : ""}.</p>
+      призначити на посаду <b>${esc((o.toRank || "").toLowerCase())}</b>${o.to_dept === "lead" ? (extras(o).length ? ` (${dnames(extras(o), "n")})` : "") : D[o.to_dept] ? ` (${[o.to_dept, ...extras(o)].map((k) => esc(D[k].n)).join(", ")})` : ""}.</p>
     <p style="text-indent:0">Відділу кадрів та підготовки персоналу внести зміни до особової справи.</p>
     <div class="blank-sign"><span>Голова Служби безпеки штату NG</span><span>${signed && o.signedName ? `<span class="kf-sign">${esc(o.signedName)}</span>` : "__________ (підпис)"}</span></div>
     <div class="small" style="margin-top:8px">Проєкт підготував: ${esc(o.byName || "")}${o.status === "rejected" ? ` · ВІДХИЛЕНО${o.note ? ": " + esc(o.note) : ""}` : o.status === "draft" ? " · ПРОЄКТ, не підписано" : ""}</div>
@@ -76,6 +81,9 @@ async function view(head) {
         <label class="f"><span>Нове звання</span><select class="i" data-ap="rank"><option value="">—</option>${R.slice(0, 14).map((x, i) => `<option value="${i + 1}" ${r === i + 1 ? "selected" : ""}>${i + 1}. ${esc(x.n)}</option>`).join("")}</select></label>
         <label class="f"><span>Підрозділ</span>${r >= 13 ? '<input class="i" value="Керівництво СБУ" disabled>'
           : `<select class="i" data-ap="dept">${r && r <= 4 ? `<option value="academy" ${d === "academy" ? "selected" : ""}>Академія СБУ</option>` : ""}${OPS().map((k) => `<option value="${k}" ${d === k ? "selected" : ""}>${esc(D[k].n)}</option>`).join("")}</select>`}</label>
+        ${r === 13 ? `<div class="f wide"><span>Відділи управління · бот видасть ролі саме цих відділів, інші ролі відділів зніме</span>
+          <div class="ap-pairs">${PAIRS.map((pr) => `<button type="button" class="btn sm ${mgmt(f).join() === pr.join() ? "gold" : ""}" data-a="appair" data-v="${pr.join()}">${dnames(pr, "s").replace(", ", " + ")}</button>`).join("")}</div>
+          <div class="ap-pairs">${["m0", "m1"].map((m, i) => `<select class="i" data-ap="${m}"><option value="">— ${i ? "другий" : "перший"} відділ —</option>${OPS().map((k) => `<option value="${k}" ${f[m] === k ? "selected" : ""}>${esc(D[k].n)}</option>`).join("")}</select>`).join("")}</div></div>` : ""}
         ${r === 12 ? `<label class="f wide"><span>Другий відділ (якщо начальник веде два, напр. ОРВ + ДЕБ)</span><select class="i" data-ap="extra"><option value="">— немає —</option>${OPS().filter((k) => k !== d).map((k) => `<option value="${k}" ${f.extra === k ? "selected" : ""}>${esc(D[k].n)}</option>`).join("")}</select></label>` : ""}
         <label class="f wide"><span>Підстава (необов'язково)</span><input class="i" data-ap="reason" maxlength="800" value="${esc(f.reason || "")}" placeholder="напр. за зразкове виконання службових обов'язків"></label>
         ${S.tagSelect('data-ap="tag"', f.tag || "")}
@@ -88,7 +96,7 @@ async function view(head) {
       ${list.length ? `<div class="docs">${list.map((o) => `<article class="doc st-${{ draft: "wait", active: "ok", rejected: "rej" }[o.status]}">
         <div class="doc-no"><b>${no(o.id)}</b><span>${fmtDT(o.t)}</span></div>
         <div class="doc-main"><div class="doc-title">${esc(o.name)}</div>
-          <div class="doc-line">${esc(o.fromRank)} · ${esc((D[o.from_dept] || {}).s || "")} → <b>${esc(o.toRank)}</b> · ${esc((D[o.to_dept] || {}).s || "")}${o.extra ? ` + ${esc(D[o.extra].s)}` : ""}</div>
+          <div class="doc-line">${esc(o.fromRank)} · ${esc((D[o.from_dept] || {}).s || "")} → <b>${esc(o.toRank)}</b> · ${esc((D[o.to_dept] || {}).s || "")}${o.to_dept === "lead" ? (extras(o).length ? ` (${dnames(extras(o), "s")})` : "") : extras(o).map((k) => ` + ${esc(D[k].s)}`).join("")}</div>
           ${o.reason ? `<div class="doc-note">${esc(o.reason)}</div>` : ""}
           ${o.status === "rejected" && o.note ? `<div class="doc-note"><b>Відхилено:</b> ${esc(o.note)}</div>` : ""}
           <div class="small muted">Проєкт: ${esc(o.byName)}${o.signedName ? ` · ${o.status === "rejected" ? "відхилив" : "підписав"} ${esc(o.signedName)}` : ""}</div></div>
@@ -114,11 +122,12 @@ S.forms.apsave = async (form, ev) => {
   const btn = (ev && ev.submitter) || form.querySelector("button[type=submit]");
   const signNow = btn.dataset.sign === "1";
   if (!st.f.sid || !st.f.rank) return toast("Оберіть співробітника й нове звання.", 1);
+  if (+st.f.rank === 13 && !mgmt(st.f).length) return toast("Оберіть відділи, якими керуватиме начальник управління.", 1);
   if (!confirm(signNow ? "Підписати наказ? Бот одразу змінить звання й ролі в Discord." : "Подати проєкт наказу на підпис?")) return;
   btn.disabled = true;
   try {
     const p = (S.cache.apStaff || []).find((x) => String(x.sid) === String(st.f.sid));
-    const r = await call("/api/orders", { json: { sid: st.f.sid, rank: st.f.rank, dept: deptFor(st.f, p), extra: st.f.extra || null, reason: st.f.reason || "", sign: signNow, tag: st.f.tag || "" } });
+    const r = await call("/api/orders", { json: { sid: st.f.sid, rank: st.f.rank, dept: deptFor(st.f, p), extra: +st.f.rank === 13 ? mgmt(st.f).join(",") : st.f.extra || null, reason: st.f.reason || "", sign: signNow, tag: st.f.tag || "" } });
     if (r.rolesWarning) alert(r.rolesWarning); else toast(signNow ? "Наказ підписано. Ролі в Discord перевірено — збігаються з наказом" : "Проєкт наказу подано на підпис");
     await apImage(r.id);
     st.f = {};
@@ -131,6 +140,7 @@ const act = async (b, url, body, ok, img) => {
   try { const r = await call(url, { json: body || {} }); if (r && r.rolesWarning) alert(r.rolesWarning); else toast(ok); if (img) await apImage(img); await S.refreshMe(); S.render(); }
   catch (e) { toast(e.message, 1); b.disabled = false; }
 };
+S.actions.appair = (b) => { read(); [st.f.m0, st.f.m1] = b.dataset.v.split(","); S.render(); };
 S.actions.apsign = (b) => { if (confirm("Підписати наказ? Бот одразу змінить звання й ролі в Discord.")) act(b, `/api/orders/${b.dataset.id}/sign`, null, "Наказ підписано. Ролі в Discord перевірено — збігаються з наказом", +b.dataset.id); };
 S.actions.apreject = (b) => { const note = prompt("Причина відхилення (побачить ВКПП):", ""); if (note !== null) act(b, `/api/orders/${b.dataset.id}/reject`, { note }, "Проєкт відхилено", +b.dataset.id); };
 S.actions.appdf = (b) => { const o = (S.cache.apList || {})[b.dataset.id]; if (o) S.pdfA4(b, apA4(o), `${no(o.id)}_${o.name}`); };

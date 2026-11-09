@@ -303,3 +303,6 @@
 .prot-blank.void .prot-t{opacity:.6}
 @media (max-width:1100px){.prot-wrap{grid-template-columns:1fr}.prot-side{position:static}}
 @media (max-width:640px){.prot-blank{padding:24px 14px}.prot-t th{width:38%}}
+/* наказ: відділи начальника управління */
+.ap-pairs{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.ap-pairs select{flex:1 1 200px;min-width:0}

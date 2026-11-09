@@ -587,6 +587,7 @@ async function vStaff() {
     const d = D[k], ps = all.filter((p) => inDept(p, k) && p.rank < 13);
     return `<section class="org-dept" style="--dc:${d.color}">
       <header><span class="org-abbr">${esc(d.s)}</span><div><b>${esc(d.n)}</b><span>${ps.length} ос.</span></div></header>
+      ${tier("Начальник управління · курує відділ", all.filter((p) => p.rank === 13 && p.depts.includes(k)))}
       ${tier("Управління", ps.filter((p) => p.rank >= 11), "начальник відділу")}
       ${tier("Особовий склад", ps.filter((p) => p.rank >= 5 && p.rank <= 10))}
       ${tier("Старші агенти · випускники Академії", ps.filter((p) => p.rank === 4))}
@@ -608,7 +609,7 @@ async function vStaff() {
     <div class="org-band">УПРАВЛІННЯ</div>
     <div class="org-top">
       ${node("Голова Служби безпеки", of(15), "Голова СБУ")}
-      <div class="org-row">${node("Заступник Голови", of(14), "заступник")}${node("Начальник управління", of(13), "начальник управління")}</div>
+      <div class="org-row">${node("Заступник Голови", of(14), "заступник")}${of(13).length ? of(13).map((p) => node(`Начальник управління${p.depts.length ? ` (${p.depts.map((k) => esc(D[k].s)).join(", ")})` : ""}`, [p])).join("") : node("Начальник управління", [], "начальник управління")}</div>
       ${dualHeads.length ? `<div class="org-row">${dualHeads.map((p) => node(`Начальник відділу (${p.depts.map((k) => esc(D[k].s)).join(", ")})`, [p])).join("")}</div>` : ""}
     </div>
     ${press.length ? `<section class="org-press"><div class="org-press-h"><b>ПРЕС-СЛУЖБА</b><span>позаштатна служба · усі з роллю прес-секретаря</span></div>

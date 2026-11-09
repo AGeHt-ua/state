@@ -7,8 +7,8 @@ const GRIF = { dsk: "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ", secr
 const REQ = { search: "Ордер на обшук", arrest: "Ордер на арешт (затримання)", op: "Санкція на проведення спецоперації",
   surv: "Санкція на негласне стеження та прослуховування", suspect: "Повідомлення про підозру", other: "Інше клопотання" };
 const ROLES = ["підозрюваний", "фігурант", "свідок", "потерпілий", "джерело"];
-const ROUTE = [["draft", "Виконавець"], ["head", "Начальник відділу"], ["chief", "Голова СБУ"], ["prosecutor", "Генеральний прокурор"]];
-const ORDER = { draft: 0, head: 1, chief: 2, prosecutor: 3, approved: 4, rejected: -1 };
+const ROUTE = [["draft", "Виконавець"], ["head", "Начальник відділу"], ["mgmt", "Начальник управління"], ["chief", "Голова СБУ"], ["prosecutor", "Генеральний прокурор"]];
+const ORDER = { draft: 0, head: 1, mgmt: 2, chief: 3, prosecutor: 4, approved: 5, rejected: -1 };
 const no = (id) => `КФ-${String(id).padStart(4, "0")}`;
 const dept = (k) => S.META().depts[k] || { s: k, n: k, color: "#c9a05a" };
 const UIc = { id: null, edit: null, tab: null };
@@ -112,8 +112,8 @@ async function vCase(id) {
     ${c.canDelete && c.status !== "deleted" ? '<button class="btn bad" data-a="kfdelete">🗑 Видалити справу</button>' : ""}</div>`;
   // автор не може погоджувати власну справу (навіть якщо пізніше отримав роль прокурора чи керівника)
   const me = S.ME().me;
-  const self = !c.canDecide && c.author === me.sid && ["head", "chief", "prosecutor"].includes(c.status)
-    && ((c.status === "prosecutor" && me.dept === "prosecutor") || (c.status === "chief" && me.rank >= 14) || c.status === "head");
+  const self = !c.canDecide && c.author === me.sid && ["head", "mgmt", "chief", "prosecutor"].includes(c.status)
+    && ((c.status === "prosecutor" && me.dept === "prosecutor") || (c.status === "chief" && me.rank >= 14) || c.status === "head" || c.status === "mgmt");
   const note = self ? `<p class="note warn">Ви — автор цієї справи, тому погодити чи затвердити її не можете (конфлікт інтересів). Справу має розглянути інша посадова особа${c.status === "prosecutor" ? " — Генеральний прокурор або його заступник" : ""}.</p>` : "";
   return bar + note + `<div class="kd-wrap">${docHtml(c, false)}</div>` + history(c);
 }
