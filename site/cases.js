@@ -244,14 +244,15 @@ async function sheetCanvas(html, { host = "a4-host", width = 794, bg = "#f6f1e5"
 }
 
 // Полотно → PDF сторінками А4 (794×1123 px). Сторінку розрізаємо по порожньому рядку, щоб не різати текст навпіл.
-async function canvasPdf(canvas, { margin = 0, bg = "#f6f1e5", quality = 0.95 } = {}) {
-  await loadJsPdf();
-  const PW = 794, PH = 1123, k = canvas.width / (PW - 2 * margin);  // пікселів полотна на 1 px сторінки
-  const pageH = Math.floor((PH - 2 * margin) * k), ctx = canvas.getContext("2d");
-  const pdf = new window.jspdf.jsPDF({ unit: "px", format: [PW, PH], orientation: "portrait", hotfixes: ["px_scaling"], compress: true });
-  for (let y = 0, first = true; y < canvas.height - 2; first = false) {
+const PW = 794, PH = 1123;  // сторінка А4 у px
+// Полотно → сторінки А4 (окремі полотна). Розрізаємо по порожньому рядку, щоб не різати текст навпіл.
+function canvasPages(canvas, { margin = 0, bg = "#f6f1e5", merge = false } = {}) {  // merge — короткий хвіст приклеїти до останньої сторінки (для картинок)
+  const k = canvas.width / (PW - 2 * margin);  // пікселів полотна на 1 px сторінки
+  const pageH = Math.floor((PH - 2 * margin) * k), ctx = canvas.getContext("2d"), out = [];
+  for (let y = 0; y < canvas.height - 2;) {
     let cut = Math.min(canvas.height, y + pageH);
     if (cut < canvas.height) cut = blankRow(ctx, canvas.width, y + Math.floor(pageH * 0.7), cut) || cut;
+    if (merge && canvas.height - cut < pageH * 0.15) cut = canvas.height;
     const part = document.createElement("canvas");
     part.width = canvas.width;
     part.height = cut - y;
@@ -259,12 +260,21 @@ async function canvasPdf(canvas, { margin = 0, bg = "#f6f1e5", quality = 0.95 } 
     p.fillStyle = bg;
     p.fillRect(0, 0, part.width, part.height);
     p.drawImage(canvas, 0, y, canvas.width, cut - y, 0, 0, canvas.width, cut - y);
-    if (!first) pdf.addPage([PW, PH], "portrait");
-    pdf.setFillColor(bg);
-    pdf.rect(0, 0, PW, PH, "F");
-    pdf.addImage(part.toDataURL("image/jpeg", quality), "JPEG", margin, margin, PW - 2 * margin, (cut - y) / k);
+    out.push({ canvas: part, h: (cut - y) / k });
     y = cut;
   }
+  return out;
+}
+// Полотно → PDF сторінками А4 (794×1123 px)
+async function canvasPdf(canvas, { margin = 0, bg = "#f6f1e5", quality = 0.95 } = {}) {
+  await loadJsPdf();
+  const pdf = new window.jspdf.jsPDF({ unit: "px", format: [PW, PH], orientation: "portrait", hotfixes: ["px_scaling"], compress: true });
+  canvasPages(canvas, { margin, bg }).forEach((pg, i) => {
+    if (i) pdf.addPage([PW, PH], "portrait");
+    pdf.setFillColor(bg);
+    pdf.rect(0, 0, PW, PH, "F");
+    pdf.addImage(pg.canvas.toDataURL("image/jpeg", quality), "JPEG", margin, margin, PW - 2 * margin, pg.h);
+  });
   return pdf;
 }
 // Найнижчий рядок між from і to, де в робочій частині аркуша немає тексту (лише папір)
@@ -332,15 +342,28 @@ S.pdfA4 = async (b, html, name) => {
   catch (e) { S.toast(e.message, 1); }
   finally { b.disabled = false; b.textContent = old; }
 };
-// Картинка аркуша (PNG) → картка документа в Discord. Тихо: якщо не вийшло, документ уже є в Discord карткою.
+// Картинка аркуша → картка документа в Discord. Довгий документ — по картинці на кожну сторінку А4, як у PDF
+// (до 10 сторінок: стільки картинок Discord показує в одному повідомленні). Тихо: якщо не вийшло, документ уже є в Discord карткою.
+const DOC_PAGES = 10, DOC_BYTES = 8.5 * 1024 * 1024;
+const toBlob = (c, type, q) => new Promise((ok) => c.toBlob(ok, type, q));
 S.docImage = async (kind, id, html) => {
   try {
     const canvas = await sheetCanvas(html, { scale: 1.5 });
     if (canvas.width < 700 || canvas.height < 900) throw new Error(`аркуш вийшов неповним: ${canvas.width}×${canvas.height}`);
-    let blob = await new Promise((ok) => canvas.toBlob(ok, "image/png"));
-    if (!blob || blob.size > 7.5 * 1024 * 1024) blob = await new Promise((ok) => canvas.toBlob(ok, "image/jpeg", 0.9));
+    const pages = canvasPages(canvas, { merge: true }).slice(0, DOC_PAGES);
+    let blobs = null;
+    if (pages.length === 1) {
+      const png = await toBlob(pages[0].canvas, "image/png");
+      if (png && png.size <= DOC_BYTES) blobs = [png];
+    }
+    for (const q of [0.9, 0.78, 0.62]) {  // усі сторінки разом мають влізти в ліміт вкладень Discord
+      if (blobs) break;
+      const b = await Promise.all(pages.map((p) => toBlob(p.canvas, "image/jpeg", q)));
+      if (b.every(Boolean) && b.reduce((n, x) => n + x.size, 0) <= DOC_BYTES) blobs = b;
+    }
+    if (!blobs) throw new Error("картинки сторінок завеликі");
     const fd = new FormData();
-    fd.append("img", blob, `${kind}-${id}.${blob.type === "image/png" ? "png" : "jpg"}`);
+    blobs.forEach((blob, i) => fd.append("img", blob, `${kind}-${id}-${i + 1}.${blob.type === "image/png" ? "png" : "jpg"}`));
     const r = await S.call(`/api/doc/${kind}/${id}/image`, { method: "POST", body: fd });
     return !!(r && r.ok);
   } catch (e) { console.warn("Картинка документа", kind, id, e); return false; }

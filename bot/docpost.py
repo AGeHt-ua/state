@@ -105,7 +105,7 @@ def link_view(kind: str, did: int) -> discord.ui.View | None:
 
 # ---------------------------------------------------------------- повідомлення документа
 # doc_msgs: основне повідомлення (ch, msg), копії в інших каналах (extra: [[ch, msg], …]),
-# ім'я картинки аркуша (img), обрана в формі роль/відділ (tag), кого стосується (who: Discord ID через кому)
+# імена картинок аркуша (img: сторінки А4 через «|»), обрана в формі роль/відділ (tag), кого стосується (who: Discord ID через кому)
 async def _row(kind: str, did: int) -> dict | None:
     return await db.one("SELECT * FROM doc_msgs WHERE kind=? AND id=?", kind, did)
 
@@ -168,12 +168,13 @@ EDIT_DELAY = 6.0          # с: зачекати картинку від сай�
 RETRY_SOON = 60.0         # с: звичайне «You are being rate limited»
 RETRY_OLD = 15 * 60.0     # с: 30046 — ліміт правок старих повідомлень у каналі (скидається приблизно за годину)
 RETRY_MAX = 12            # спроб на одну правку (для 30046 — близько трьох годин)
-_pending: dict[tuple[str, int], dict] = {}   # (вид, номер) → {"embed", "view", "img": (байти, ім'я) | None, "left", "tries"}
+_pending: dict[tuple[str, int], dict] = {}   # (вид, номер) → {"embed", "view", "img": [(байти, ім'я), …] | None, "left", "tries"}
+MAX_PAGES = 10   # сторінок-картинок у картці: Discord показує до 10 вкладень і 10 вбудувань в одному повідомленні
 _tasks: dict[tuple[str, int], asyncio.Task] = {}
 
 
 def _queue(kind: str, did: int, *, embed: discord.Embed | None = None, view: discord.ui.View | None = None,
-           img: tuple[bytes, str] | None = None):
+           img: list[tuple[bytes, str]] | None = None):
     """Додати зміну картки до черги; зміни, що прийшли до внесення, зливаються в одну правку."""
     key = (kind, did)
     p = _pending.setdefault(key, {"embed": None, "view": None, "img": None, "left": None, "tries": 0})
@@ -214,14 +215,16 @@ async def _apply(key: tuple[str, int], p: dict) -> float | None:
         else:
             continue
         extra = {"view": p["view"]} if p["view"] is not None else {}
+        # сторінки аркуша: перша — у самій картці, решта — окремими вбудуваннями під нею (кожна сторінка на всю ширину)
+        names = [f for _, f in p["img"]] if p["img"] else [n for n in (row["img"] or "").split("|") if n]
+        embeds = [e]
+        if names:
+            e.set_image(url=f"attachment://{names[0]}")
+            embeds += [discord.Embed(color=e.color).set_image(url=f"attachment://{n}") for n in names[1:MAX_PAGES]]
         if p["img"]:
-            data, fname = p["img"]
-            e.set_image(url=f"attachment://{fname}")
-            extra["attachments"] = [discord.File(io.BytesIO(data), filename=fname)]
-        elif row["img"]:
-            e.set_image(url=f"attachment://{row['img']}")
+            extra["attachments"] = [discord.File(io.BytesIO(data), filename=fname) for data, fname in p["img"]]
         try:
-            await msg.edit(embed=e, **extra)
+            await msg.edit(embeds=embeds, **extra)
             img_done = img_done or bool(p["img"])
         except discord.HTTPException as ex:
             after = _retry_after(ex)
@@ -233,7 +236,7 @@ async def _apply(key: tuple[str, int], p: dict) -> float | None:
             left.add(msg.id)
             wait = max(wait or 0, after)
     if img_done:
-        await db.run("UPDATE doc_msgs SET img=? WHERE kind=? AND id=?", p["img"][1], kind, did)
+        await db.run("UPDATE doc_msgs SET img=? WHERE kind=? AND id=?", "|".join(f for _, f in p["img"]), kind, did)
     p["left"] = left
     return wait
 
@@ -308,22 +311,32 @@ async def journal(kind: str, did: int, ch: discord.abc.Messageable | None, embed
     await post(kind, did, ch, embed, users=users, tag=tag, roles=roles)
 
 
-async def set_image(kind: str, did: int, data: bytes, name: str) -> bool:
-    """Картинка аркуша А4 (PNG/JPEG, сформована сайтом) — у картку документа та її копії (через чергу правок, разом зі зміною картки)."""
-    if data.startswith(b"\x89PNG"):
-        ext = "png"
-    elif data.startswith(b"\xff\xd8\xff"):
-        ext = "jpg"
-    else:
-        raise Fail("Картинка документа має бути PNG або JPEG.")
-    if len(data) > 9 * 1024 * 1024:
-        raise Fail("Картинка документа завелика.")
+async def set_image(kind: str, did: int, pages: list[bytes], name: str) -> bool:
+    """Картинки аркуша А4 (PNG/JPEG, сформовані сайтом; довгий документ — по картинці на сторінку, як у PDF) —
+    у картку документа та її копії (через чергу правок, разом зі зміною картки)."""
+    if isinstance(pages, (bytes, bytearray)):
+        pages = [pages]
+    if not pages:
+        raise Fail("Немає картинки документа.")
+    if len(pages) > MAX_PAGES:
+        raise Fail(f"Картинок документа більше {MAX_PAGES}.")
+    if sum(map(len, pages)) > 9 * 1024 * 1024:
+        raise Fail("Картинки документа завеликі.")
+    base = ''.join(ch for ch in name if ch.isalnum() or ch in '-_')[:60] or 'doc'
+    files = []
+    for i, data in enumerate(pages, 1):
+        if data.startswith(b"\x89PNG"):
+            ext = "png"
+        elif data.startswith(b"\xff\xd8\xff"):
+            ext = "jpg"
+        else:
+            raise Fail("Картинка документа має бути PNG або JPEG.")
+        files.append((bytes(data), f"{base}-{i}.{ext}" if len(pages) > 1 else f"{base}.{ext}"))
     row = await _row(kind, did)
     msgs = [m for m in (await _messages(row) if row else []) if m.embeds]
     if not msgs:
         return False
-    fname = f"{''.join(ch for ch in name if ch.isalnum() or ch in '-_')[:60] or 'doc'}.{ext}"
-    _queue(kind, did, img=(data, fname))
+    _queue(kind, did, img=files)
     return True
 
 
