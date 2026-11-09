@@ -1,4 +1,4 @@
-/* База даних → Пам'ятка (статті кодексів таблицею, будується з законодавчої бази й оновлюється разом із нею)
+/* База даних → Пам'ятка (коротка підказка: порядок затримання й найчастіші статті; повний перелік статей таблицею, будується з законодавчої бази й оновлюється разом із нею)
    і Порядок затримання (процесуальні дії крок за кроком з посиланнями на статті). Підключається після kb.js. */
 (() => {
 const S = window.SOVA;
@@ -46,7 +46,9 @@ function rowHtml(r, first) {
       ${r.lawNote ? `<p class="mm-lawnote">${esc(r.lawNote)}</p>` : ""}${r.stale && r.auto ? `<p class="mm-auto"><b>Зараз у законі:</b> ${esc(r.auto.desc)} — <b>${esc(r.auto.pen)}</b></p>` : ""}</div>
     <div class="mm-det-btns"><button class="btn sm" data-a="kbopen" data-tab="law" data-v="${esc(MEMO.code)}" ${r.anchor ? `data-go="${esc(r.anchor)}"` : `data-find="${esc(r.find || "")}"`}>📖 Відкрити в законі</button>
       <button class="btn sm" data-a="mmcopy" data-k="${esc(id)}" title="Скопіювати для протоколу чи чату">⧉ Копіювати</button>
-      ${MEMO.canEdit && !f ? `<button class="btn sm" data-a="mmedit" data-k="${esc(id)}">✎ Поправити рядок</button>` : ""}</div>
+      ${MEMO.canEdit && !f ? `<button class="btn sm" data-a="mmedit" data-k="${esc(id)}">✎ Поправити рядок</button>` : ""}
+      ${MEMO.canEdit && QUICK ? ((k) => { const on = QUICK.arts.some((a) => a.key === k);
+        return `<button class="btn sm ${on ? "gold" : ""}" data-a="mqtoggle" data-k="${esc(k)}" ${on ? 'data-on="1"' : ""} title="Коротка пам'ятка: найчастіші статті">${on ? "★ У пам'ятці" : "☆ До пам'ятки"}</button>`; })(`${A} ${r.art}`) : ""}</div>
     ${editor}</div></td></tr>`;
 }
 
@@ -62,7 +64,7 @@ function tableHtml() {
     : `<div class="empty">Нічого не знайдено${st.q ? ` за «${esc(st.q)}»` : ""}.</div>`;
 }
 
-S.memoView = async () => {
+const fullView = async () => {
   try { MEMO = await call(`/api/memo?code=${encodeURIComponent(st.code)}`); }
   catch (e) { return `<div class="empty">${esc(e.message)}</div>`; }
   const all = MEMO.sections.flatMap((s) => s.rows);
@@ -147,6 +149,89 @@ Object.assign(S.actions, {
   },
   mmprint: () => { document.body.classList.add("mm-printing"); window.print(); setTimeout(() => document.body.classList.remove("mm-printing"), 500); },
 });
+
+/* ---------------------------------------------------------------- підказка: порядок затримання + найчастіші статті */
+let QUICK = null;
+const qs = { full: false, edit: false, steps: null };
+
+function quickHtml() {
+  const Q = QUICK, E = qs.edit && Q.canEdit;
+  const steps = qs.steps ? `<form class="mq-sform" data-f="mqsteps">
+      <p class="muted small">Кожен крок — з нового рядка: «Назва — пояснення».</p>
+      <textarea class="i" name="steps" rows="14">${esc(qs.steps)}</textarea>
+      <div class="mm-form-row"><button class="btn gold sm" type="submit">Зберегти</button><button class="btn sm" type="button" data-a="mqstepsoff">Скасувати</button>
+        <span class="sp"></span>${Q.customSteps ? `<button class="btn sm bad" type="button" data-a="mqstepsdef">↺ Стандартні кроки</button>` : ""}</div></form>`
+    : `<ol class="mq-ol">${Q.steps.map((s) => `<li><b>${esc(s.t)}</b>${s.d ? `<span>${esc(s.d)}</span>` : ""}</li>`).join("")}</ol>`;
+  const card = (a) => `<article class="mq-art" data-a="kbopen" data-tab="law" data-v="${esc(a.code)}" ${a.anchor ? `data-go="${esc(a.anchor)}"` : `data-find="${esc(a.find)}"`} title="Відкрити статтю в законі">
+      <header><span class="mq-no">${esc(a.abbr)} ${esc(a.art)}</span><span class="mq-tt">${esc(a.title)}</span>
+        ${E ? `<button class="mq-x" data-a="mqunpin" data-k="${esc(a.key)}" title="Прибрати з пам'ятки">✕</button>` : a.pinned ? `<span class="mq-pin" title="Закріплено керівництвом">★</span>` : ""}</header>
+      ${a.parts.map((p) => `<div class="mq-p">${p.part ? `<i>ч.${esc(p.part)}</i>` : "<i>—</i>"}<span class="mq-d" title="${esc(p.desc)}">${esc(p.desc)}</span>
+        <b class="mq-pen">${esc(p.pen)}${p.lic ? `<em title="Анулювання ліцензії на зброю">ліц.</em>` : ""}</b></div>`).join("")}</article>`;
+  return `<div class="mq">
+    <header class="mq-head">
+      <img src="sbu-logo.webp" alt="" class="mq-logo">
+      <div class="mq-ttl"><div class="eyebrow">Служба безпеки України</div><h2>Пам'ятка співробітника</h2>
+        <span class="muted small">Порядок затримання і статті, які найчастіше застосовують співробітники</span></div>
+      <div class="mm-codes">
+        ${Q.canEdit ? `<button class="btn sm ${E ? "gold" : ""}" data-a="mqedit">✎ ${E ? "Готово" : "Редагувати"}</button>` : ""}
+        <button class="btn sm" data-a="mqfull" title="Усі статті кодексів таблицею">☰ Повний перелік</button>
+        <button class="btn sm" data-a="mmprint">⎙ Друк</button></div></header>
+    <div class="mq-grid">
+      <section class="mq-box mq-steps">
+        <div class="mq-h"><span class="mq-tag">I</span><h3>Порядок затримання</h3><span class="sp"></span>
+          ${E && !qs.steps ? `<button class="btn sm" data-a="mqstepson">✎ Кроки</button>` : ""}<button class="btn sm" data-a="kbtab" data-v="detain" title="Кожен крок зі статтями закону">Детально →</button></div>
+        ${steps}
+        <div class="mq-mir"><div class="mq-mir-h"><b>Права затриманого</b><button class="btn sm" data-a="mqmir" title="Скопіювати текст">⧉ Копіювати</button></div>
+          <q>${esc(Q.miranda)}</q></div>
+      </section>
+      <section class="mq-box mq-arts">
+        <div class="mq-h"><span class="mq-tag">II</span><h3>Найчастіші статті</h3><span class="sp"></span>
+          <span class="muted small" title="Рахується за звітами співробітників; керівництво може закріпити чи прибрати статтю">за звітами за ${Q.days} днів</span></div>
+        ${E ? `<form class="mq-add" data-f="mqpin"><input class="i" name="key" placeholder="Додати статтю: КК 115, КУпАП 12…" autocomplete="off"><button class="btn sm gold" type="submit">★ Закріпити</button></form>
+          ${Q.drops.length ? `<div class="mq-drops muted small">Прибрані: ${Q.drops.map((d) => `<button class="mq-chip" data-a="mqrestore" data-k="${esc(d)}" title="Повернути">${esc(d)} ↺</button>`).join("")}</div>` : ""}` : ""}
+        <div class="mq-cards">${Q.arts.map(card).join("") || `<div class="empty">Ще немає звітів зі статтями — відкрийте «Повний перелік».</div>`}</div>
+        <p class="muted small mq-foot">Натисніть статтю — відкриється текст закону. «ліц.» — анулювання ліцензії на зброю.</p>
+      </section>
+    </div></div>`;
+}
+
+const parseSteps = (txt) => txt.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
+  const m = l.match(/^(.+?)\s+[—–-]\s+(.+)$/);
+  return m ? { t: m[1].trim(), d: m[2].trim() } : { t: l, d: "" };
+});
+const saveQuick = (b, json, msg) => run(b, async () => { await call("/api/memo/quick", { json }); if (msg) toast(msg); S.render(); });
+
+S.forms.mqsteps = (f) => run(f.querySelector("button[type=submit]"), async () => {
+  await call("/api/memo/quick", { json: { steps: parseSteps(f.steps.value) } }); qs.steps = null; toast("Порядок затримання збережено"); S.render(); });
+S.forms.mqpin = (f) => {
+  const v = f.key.value.trim().replace(/\s+/g, " ").replace(/^(кк|купап|дк)\s*(?:ст\.?\s*)?/i, (m, c) => ({ кк: "КК", купап: "КУпАП", дк: "ДК" })[c.toLowerCase()] + " ");
+  if (!/^(КК|КУпАП|ДК) \d+([.-]\d+)*$/.test(v)) return toast("Формат: «КК 115» або «КУпАП 12»", 1);
+  return saveQuick(f.querySelector("button"), { pin: true, key: v }, `${v} закріплено в пам'ятці`);
+};
+
+Object.assign(S.actions, {
+  mqfull: () => { qs.full = true; S.render(); },
+  mqback: () => { qs.full = false; S.render(); },
+  mqedit: () => { qs.edit = !qs.edit; qs.steps = null; S.render(); },
+  mqstepson: () => { qs.steps = QUICK.steps.map((s) => s.d ? `${s.t} — ${s.d}` : s.t).join("\n"); S.render(); },
+  mqstepsoff: () => { qs.steps = null; S.render(); },
+  mqstepsdef: (b) => { if (!confirm("Повернути стандартні кроки?")) return;
+    run(b, async () => { await call("/api/memo/quick", { json: { steps: null } }); qs.steps = null; toast("Повернуто стандартні кроки"); S.render(); }); },
+  mqunpin: (b, e) => { if (e) e.stopPropagation(); saveQuick(b, { unpin: true, key: b.dataset.k }, `${b.dataset.k} прибрано з пам'ятки`); },
+  mqrestore: (b) => saveQuick(b, { restore: true, key: b.dataset.k }),
+  mqtoggle: (b) => saveQuick(b, { [b.dataset.on ? "unpin" : "pin"]: true, key: b.dataset.k }, b.dataset.on ? "Прибрано з пам'ятки" : "Додано в пам'ятку"),
+  mqmir: async () => { try { await navigator.clipboard.writeText(QUICK.miranda); toast("Текст прав скопійовано"); } catch (e) { prompt("Скопіюйте:", QUICK.miranda); } },
+});
+
+S.memoView = async () => {
+  if (qs.full) {
+    QUICK = await call("/api/memo/quick").catch(() => QUICK);  // щоб у рядках таблиці показати «★ у пам'ятці»
+    return `<div class="kd-bar"><button class="btn sm" data-a="mqback">← До пам'ятки</button></div>` + await fullView();
+  }
+  try { QUICK = await call("/api/memo/quick"); }
+  catch (e) { return `<div class="empty">${esc(e.message)}</div>`; }
+  return quickHtml();
+};
 
 /* ---------------------------------------------------------------- порядок затримання */
 let DET = null;

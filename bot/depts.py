@@ -54,7 +54,7 @@ async def overview(u: dict, d: str) -> dict:
         day = [a for a in acts if start <= a["t"] < start + DAY]
         days.append({"t": start, "pts": sum(pts(a) for a in day if a["status"] == "ok"), "n": len(day)})
     types = Counter(a["type"] for a in week)
-    pending_acts = await db.all("SELECT id, by_sid, type, t FROM acts WHERE dept=? AND status='wait' ORDER BY t", d)
+    pending_acts = await db.all("SELECT id, by_sid, type, custom, t FROM acts WHERE dept=? AND status='wait' ORDER BY t", d)
     pending_raps = await db.all("SELECT id, by_sid, type, t FROM raps WHERE dept=? AND status='wait' ORDER BY t", d)
     cases = await db.all("SELECT id, status, data, updated FROM cases WHERE dept=? AND status NOT IN ('approved','rejected','deleted') ORDER BY updated DESC", d) \
         if d in ("orv", "deb", "atc", "alpha") else []
@@ -75,7 +75,7 @@ async def overview(u: dict, d: str) -> dict:
         "days": days,
         "types": [{"type": k, "n": n, "name": ACTS[k][0] if k in ACTS else k} for k, n in types.most_common(6)],
         "queue": {
-            "acts": [{**a, "name": names.get(a["by_sid"], f"№{a['by_sid']}"), "what": ACTS[a["type"]][0] if a["type"] in ACTS else a["type"]} for a in pending_acts[:20]],
+            "acts": [{**a, "name": names.get(a["by_sid"], f"№{a['by_sid']}"), "what": core.act_name(a)} for a in pending_acts[:20]],
             "raps": [{**r, "name": names.get(r["by_sid"], f"№{r['by_sid']}")} for r in pending_raps[:20]],
             "cases": [{"id": x["id"], "status": x["status"], "title": json.loads(x["data"] or "{}").get("title", ""), "updated": x["updated"]} for x in cases[:20]],
         },

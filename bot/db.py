@@ -240,7 +240,8 @@ class DB:
                     "ALTER TABLE cases ADD COLUMN arch_ch TEXT", "ALTER TABLE cases ADD COLUMN arch_msg TEXT",
                     "ALTER TABLE doc_msgs ADD COLUMN who TEXT", "ALTER TABLE doc_msgs ADD COLUMN extra TEXT",
                     "ALTER TABLE users ADD COLUMN vac_until INTEGER",
-                    "ALTER TABLE files ADD COLUMN url TEXT", "ALTER TABLE files ADD COLUMN url_exp INTEGER"):
+                    "ALTER TABLE files ADD COLUMN url TEXT", "ALTER TABLE files ADD COLUMN url_exp INTEGER",
+                    "ALTER TABLE acts ADD COLUMN custom TEXT"):
             try:
                 await self.conn.execute(sql)
             except Exception:

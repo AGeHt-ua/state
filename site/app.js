@@ -303,6 +303,13 @@ async function vHome() {
 
 /* ---------------- звіти ---------------- */
 const stLabel = { ok: "Підтверджено", wait: "На перевірці", rej: "Відхилено", cancel: "Відкликано" };
+// «Інше»: свій тип дії від виконавця, бали 1–6 ставить перевіряючий
+const OTHER_MAX = 6;
+const actName = (a) => (a.type === "other" && a.custom) ? a.custom : (META.acts[a.type] || { n: a.type }).n;
+const actPts = (a) => a.type === "other" ? (a.status === "ok" ? `${a.qty} б.` : a.status === "wait" ? `оцінка 1–${OTHER_MAX}` : "—")
+  : `${(META.acts[a.type] || { p: 0 }).p * (a.qty || 1)} б.`;
+const scoreSel = (a) => a.type === "other" ? `<select class="i act-score" id="act-score-${a.id}" title="Оцінка за звіт «Інше»"><option value="">Оцінка…</option>${
+  Array.from({ length: OTHER_MAX }, (_, i) => `<option value="${i + 1}">${i + 1} б.</option>`).join("")}</select>` : "";
 const ACT_STAMP = { ok: ["ПІДТВЕРДЖЕНО", "ok"], rej: ["ВІДХИЛЕНО", "bad"], wait: ["НА ПЕРЕВІРЦІ", "wait"], cancel: ["ВІДКЛИКАНО", "mute"] };
 // Повний бланк службового звіту (той самий для перегляду й PDF)
 function actDoc(a) {
@@ -314,9 +321,9 @@ function actDoc(a) {
     <header class="kd-head"><img src="sbu-logo.webp" alt="" width="84" height="84">
       <div><div class="kd-agency">Служба безпеки штату NG</div><div class="kd-dept">${esc(dp.n || "")}</div></div>
       <div class="kd-no"><span>Службовий звіт</span><b>${docNo("ЗВТ", a.id)}</b><span>${fmtDT(a.t)}</span></div></header>
-    <div class="kd-title"><span>Звіт про виконану роботу</span><h2>${esc(meta.n)}</h2></div>
+    <div class="kd-title"><span>Звіт про виконану роботу${a.type === "other" ? " · інше" : ""}</span><h2>${esc(actName(a))}</h2></div>
     <dl class="kd-meta"><dt>Виконавець</dt><dd>${esc(by.rankName || "")} ${esc(by.name || "")}${by.sid ? `, жетон №${by.sid}` : ""}</dd><dt>Підрозділ</dt><dd>${esc(dp.n || "—")}</dd>
-      <dt>Дата і час</dt><dd>${fmtDT(a.t)}</dd><dt>Обсяг</dt><dd>${q > 1 ? `×${q} · ` : ""}${meta.p * q} б.</dd></dl>
+      <dt>Дата і час</dt><dd>${fmtDT(a.t)}</dd><dt>Обсяг</dt><dd>${a.type === "other" ? actPts(a) : `${q > 1 ? `×${q} · ` : ""}${meta.p * q} б.`}</dd></dl>
     ${sec("I", "Фігурант", `<p class="kd-text">${esc(a.subj || "—")}</p>`)}
     ${sec("II", "Кваліфікація", a.arts.length ? `<div class="kd-arts">${a.arts.map((n) => `<span>ст. ${esc(n)} КК штату NG</span>`).join("")}</div>` : "<p>—</p>")}
     ${sec("III", "Обставини", `<p class="kd-text">${esc(a.note || "—")}</p>`)}
@@ -342,14 +349,14 @@ function actFeed(list, review) {
       <div class="doc-no"><b>${docNo("ЗВТ", a.id)}</b><span>${fmtDT(a.t)}</span><i class="act-ds">${esc(dp.s || "")}</i></div>
       <div class="doc-main">
         ${review ? `<div class="doc-who">${who(a.by)} ${deptTag(a.dept)}</div>` : ""}
-        <div class="doc-title">${esc(meta.n)}${a.qty > 1 ? ` <span class="muted">×${a.qty}</span>` : ""} <span class="pts">+${meta.p * (a.qty || 1)} б.</span></div>
+        <div class="doc-title">${esc(actName(a))}${a.type !== "other" && a.qty > 1 ? ` <span class="muted">×${a.qty}</span>` : ""} <span class="pts">${a.type === "other" && a.status !== "ok" ? "" : "+"}${actPts(a)}</span></div>
         ${a.subj ? `<div class="doc-line"><span>Фігурант</span>${esc(a.subj)}</div>` : ""}
         ${a.arts.length ? `<div class="art-list">${a.arts.map((n) => `<span class="art">ст. ${esc(n)}</span>`).join("")}</div>` : ""}
         ${a.note ? `<div class="doc-note">${esc(a.note)}</div>` : ""}
         <div class="files"><button class="btn sm gold" data-a="actopen" data-id="${a.id}">📂 Відкрити звіт</button><button class="btn sm" data-a="actpdf" data-id="${a.id}">⬇ PDF</button>${safeUrl(a.evidence) ? `<a class="btn sm" href="${esc(safeUrl(a.evidence))}" target="_blank" rel="noopener">▶ Відкат</a>` : ""}${a.files.map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}">📎 Файл ${i + 1}</button>`).join("")}</div>
       </div>
       <div class="doc-side">${review === "review"
-        ? `<button class="btn sm ok" data-a="actd" data-id="${a.id}" data-d="ok">Підтвердити</button><button class="btn sm bad" data-a="actd" data-id="${a.id}" data-d="rej">Відхилити</button>`
+        ? `${scoreSel(a)}<button class="btn sm ok" data-a="actd" data-id="${a.id}" data-d="ok">Підтвердити</button><button class="btn sm bad" data-a="actd" data-id="${a.id}" data-d="rej">Відхилити</button>`
         : `<span class="doc-stamp">${stLabel[a.status]}</span>${a.reviewer ? `<span class="muted small">${esc(a.reviewer.name)}</span>` : ""}${review ? "" : `${a.status === "wait" ? `<button class="btn sm" data-a="wd" data-k="acts" data-id="${a.id}">↩ Відкликати</button>` : ""}${["wait", "rej", "cancel"].includes(a.status) ? `<button class="btn sm bad" data-a="del" data-url="/api/acts/${a.id}/delete" data-q="Видалити документ? Його буде прибрано з кабінету, у журналі Discord лишиться запис.">🗑 Видалити</button>` : ""}`}`}</div>
     </article>`;
   }).join("")}</div>`;
@@ -362,7 +369,7 @@ async function vActView(id) {
   if (a.reviewed) ev.push([a.reviewed, a.status === "ok" ? "Підтверджено, бали нараховано" : a.status === "rej" ? "Відхилено" : stLabel[a.status], a.reviewer]);
   return `<div class="kd-bar"><button class="btn" data-a="actback">← До звітів</button><span class="sp"></span>
       <button class="btn" data-a="actpdf" data-id="${a.id}">⬇ PDF</button>${window.SOVA.docImgBtn("act", a.id)}
-      ${a.canDecide ? `<button class="btn ok" data-a="actd" data-id="${a.id}" data-d="ok">Підтвердити</button><button class="btn bad" data-a="actd" data-id="${a.id}" data-d="rej">Відхилити</button>` : ""}
+      ${a.canDecide ? `${scoreSel(a)}<button class="btn ok" data-a="actd" data-id="${a.id}" data-d="ok">Підтвердити</button><button class="btn bad" data-a="actd" data-id="${a.id}" data-d="rej">Відхилити</button>` : ""}
       ${a.mine && a.status === "wait" ? `<button class="btn" data-a="wd" data-k="acts" data-id="${a.id}">↩ Відкликати</button>` : ""}
       ${a.mine && ["wait", "rej", "cancel"].includes(a.status) ? `<button class="btn bad" data-a="del" data-url="/api/acts/${a.id}/delete" data-q="Видалити звіт?">🗑 Видалити</button>` : ""}</div>
     <div class="act-page"><div class="kd-wrap">${actDoc(a)}</div>
@@ -383,7 +390,8 @@ async function vAct() {
         <div class="paper-no">ЗВТ-<span class="mono">нов.</span></div></header>
       ${ME.me.rank === 1 ? '<p class="note warn">Стажер не проводить затримань самостійно (Положення про стажування, р. IV). Доступні патруль з наставником і навчання.</p>' : ""}
       <form data-f="act" class="form-grid">
-        <label class="f"><span>Тип дії</span><select class="i" id="a-type">${allowed.map(([k, a]) => `<option value="${k}">${esc(a.n)} · ${a.p} б.</option>`).join("")}</select></label>
+        <label class="f"><span>Тип дії</span><select class="i" id="a-type">${allowed.map(([k, a]) => `<option value="${k}">${k === "other" ? `Інше (свій тип) · 1–${OTHER_MAX} б.` : `${esc(a.n)} · ${a.p} б.`}</option>`).join("")}</select></label>
+        <label class="f" id="a-custom-f" ${allowed[0] && allowed[0][0] === "other" ? "" : "hidden"}><span>Ваш тип дії</span><input class="i" id="a-custom" maxlength="100" placeholder="напр. Супровід інкасації"></label>
         <label class="f"><span>Дата і час</span><input class="i" id="a-t" type="datetime-local" value="${localInput(Date.now())}"></label>
         <label class="f" id="a-qty-f" ${allowed[0] && allowed[0][0] === "patrol" ? "" : "hidden"}><span>Кількість блоків патрулювання по 30 хв</span><input class="i" id="a-qty" type="number" min="1" max="12" value="1"></label>
         <label class="f"><span>Статті КК (через кому)</span><input class="i mono" id="a-arts" placeholder="напр. 263, 342"></label>
@@ -994,12 +1002,14 @@ const A = {
   actback: () => { UI.actId = null; render(); },
   actpdf: (b) => {
     const a = window.SOVA.cache.acts && window.SOVA.cache.acts[b.dataset.id];
-    if (a) window.SOVA.pdfA4(b, actA4(a), `${docNo("ЗВТ", a.id)}_${(META.acts[a.type] || {}).n || ""}`);
+    if (a) window.SOVA.pdfA4(b, actA4(a), `${docNo("ЗВТ", a.id)}_${actName(a) || ""}`);
   },
   rappdf: (b) => { const r = window.SOVA.cache.rap; if (r) window.SOVA.pdfA4(b, rapA4(r), `${docNo("РАП", r.id)}_${META.rapTypes[r.type] || ""}`); },
   actd: async (b) => {
     b.disabled = true;
-    try { await call(`/api/acts/${b.dataset.id}/decision`, { json: { decision: b.dataset.d } }); toast(b.dataset.d === "ok" ? "Звіт підтверджено" : "Звіт відхилено"); await actImage(+b.dataset.id); await refreshMe(); render(); }
+    const sel = document.getElementById(`act-score-${b.dataset.id}`);
+    if (b.dataset.d === "ok" && sel && !sel.value) { b.disabled = false; sel.focus(); return toast(`Оберіть оцінку за звіт «Інше»: від 1 до ${OTHER_MAX} балів`, 1); }
+    try { await call(`/api/acts/${b.dataset.id}/decision`, { json: { decision: b.dataset.d, score: sel ? +sel.value || null : null } }); toast(b.dataset.d === "ok" ? `Звіт підтверджено${sel ? ` · ${sel.value} б.` : ""}` : "Звіт відхилено"); await actImage(+b.dataset.id); await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
   cand: async (b) => {
@@ -1060,7 +1070,7 @@ const F = {
     try {
       const files = await uploadFiles($("#a-files"));
       const r = await call("/api/acts", { json: {
-        type: $("#a-type").value, t: new Date($("#a-t").value).getTime() || Date.now(), qty: +$("#a-qty").value || 1,
+        type: $("#a-type").value, t: new Date($("#a-t").value).getTime() || Date.now(), qty: +$("#a-qty").value || 1, custom: $("#a-custom") ? $("#a-custom").value.trim() : "",
         arts: $("#a-arts").value.split(/[,;\s]+/).filter(Boolean), subj: $("#a-subj").value, evidence: $("#a-ev").value.trim(), files, note: $("#a-note").value,
         tag: $("#a-tag") ? $("#a-tag").value : "",
       } });
@@ -1093,7 +1103,7 @@ document.addEventListener("input", (e) => {
   const p = document.getElementById("cs-prev");
   if (p) p.textContent = p.dataset.s.replace("ПОЗИВНИЙ", e.target.value.replace(/\s+/g, "").toUpperCase() || "ПОЗИВНИЙ").slice(0, 32);
 });
-document.addEventListener("click", (e) => { const b = e.target.closest("[data-a]"); if (!b || b.disabled) return; const ln = e.target.closest("a[href]"); if (ln && ln !== b && b.contains(ln)) return; const f = A[b.dataset.a]; if (f) { e.preventDefault(); if (leaveOk(b)) f(b); } });
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-a]"); if (!b || b.disabled) return; const ln = e.target.closest("a[href], select, input, textarea"); if (ln && ln !== b && b.contains(ln)) return; const f = A[b.dataset.a]; if (f) { e.preventDefault(); if (leaveOk(b)) f(b); } });
 document.addEventListener("submit", (e) => { const f = e.target.closest("[data-f]"); if (!f) return; e.preventDefault(); const h = F[f.dataset.f]; if (h) h(f, e); });
 document.addEventListener("input", (e) => {
   if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview();
@@ -1104,6 +1114,7 @@ document.addEventListener("input", (e) => {
   }
 });
 document.addEventListener("change", (e) => {
+  if (e.target.id === "a-type" && $("#a-custom-f")) $("#a-custom-f").hidden = e.target.value !== "other";
   if (e.target.id === "a-type" && $("#a-qty-f")) { $("#a-qty-f").hidden = e.target.value !== "patrol"; if (e.target.value !== "patrol") $("#a-qty").value = 1; }
   if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview(); if (e.target.dataset.change === "raptype") { UI.rapType = e.target.value; render(); } });
 
@@ -1112,5 +1123,7 @@ window.SOVA = { esc, fmtDT, call, toast, $, uploadFiles, render, refreshMe, view
   ME: () => ME, META: () => META, routes: ROUTES, safeUrl, showFile, setDirty: (v) => { DIRTY = !!v; }, reloadMeta: async () => { META = await call("/api/meta"); } };
 
 window.SOVA.docImageFns = Object.assign(window.SOVA.docImageFns || {}, { act: actImage, rap: rapImage });
-if (TOKEN) boot(); else render();
+// старт — коли підключено всі модулі (memo.js, kb.js…): швидка відповідь API не повинна випередити їх завантаження
+const start = () => (TOKEN ? boot() : render());
+document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", start) : start();
 })();

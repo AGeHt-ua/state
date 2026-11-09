@@ -306,3 +306,4 @@
 /* наказ: відділи начальника управління */
 .ap-pairs{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
 .ap-pairs select{flex:1 1 200px;min-width:0}
+.i.act-score{width:auto;flex:0 0 auto;min-width:110px;padding:5px 8px;font-size:12px}

@@ -327,7 +327,7 @@ async def me_verify(request):
 
 # ---------------------------------------------------------------- звіти
 def act_out(a: dict, people: dict) -> dict:
-    return {**{k: a[k] for k in ("id", "type", "qty", "t", "subj", "evidence", "note", "status", "reviewed", "dept")},
+    return {**{k: a[k] for k in ("id", "type", "qty", "t", "subj", "evidence", "note", "status", "reviewed", "dept")}, "custom": a.get("custom"),
             "arts": json.loads(a["arts"] or "[]"), "files": json.loads(a["files"] or "[]"),
             "by": people.get(a["by_sid"]), "reviewer": people.get(a["reviewer"])}
 
@@ -365,7 +365,8 @@ async def acts_create(request):
 @routes.post("/api/acts/{id}/decision")
 async def acts_decide(request):
     u = await auth(request)
-    row = await core.decide_act(u, int(request.match_info["id"]), (await body(request)).get("decision"))
+    b = await body(request)
+    row = await core.decide_act(u, int(request.match_info["id"]), b.get("decision"), b.get("score"))
     return web.json_response(act_out(row, await people_map([row["by_sid"], row["reviewer"]])))
 
 
@@ -916,6 +917,18 @@ async def memo_row(request):
     return web.json_response(await memo.save_row(u, await request.json()))
 
 
+@routes.get("/api/memo/quick")
+async def memo_quick(request):
+    u = await kb_auth(request)
+    return web.json_response(await memo.quick(u))
+
+
+@routes.post("/api/memo/quick")
+async def memo_quick_save(request):
+    u = await kb_auth(request)
+    return web.json_response(await memo.save_quick(u, await request.json()))
+
+
 @routes.get("/api/detain")
 async def detain_get(request):
     u = await kb_auth(request)
@@ -1364,7 +1377,7 @@ async def admin_promo(request):
                               "exams": await db.all("SELECT id, title, status FROM exams WHERE status!='deleted' ORDER BY id"),
                               "acts": [{"key": k, "name": v[0], "default": core.BUILTIN_ACTS[k][1] if k in core.BUILTIN_ACTS else v[1], "value": c[k],
                                         "custom": k not in core.BUILTIN_ACTS, "d": v[2], "art": v[3]}
-                                       for k, v in ACTS.items() if k not in core.ACTS_OFF],
+                                       for k, v in ACTS.items() if k not in core.ACTS_OFF and k != core.OTHER],
                               "actDepts": [{"key": k, "s": DEPTS[k]["s"]} for k in core.ACT_DEPTS]})
 
 
@@ -1426,7 +1439,8 @@ async def admin_promo_save(request):
     b = await body(request)
     await promo.save(u, b.get("cfg") or {})
     if isinstance(b.get("acts"), dict):  # вартість звітів у балах
-        clean = {k: max(0, min(100, int(float(v)))) for k, v in b["acts"].items() if k in core.BUILTIN_ACTS and str(v).strip() != ""}
+        clean = {k: max(0, min(100, int(float(v)))) for k, v in b["acts"].items()
+                 if k in core.BUILTIN_ACTS and k != core.OTHER and str(v).strip() != ""}
         await db.set_setting("coef", {k: v for k, v in clean.items() if v != ACTS[k][1]})
     return web.json_response({"ok": True})
 

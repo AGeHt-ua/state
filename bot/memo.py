@@ -9,6 +9,7 @@
 """
 import hashlib
 import html
+import json
 import re
 
 import overrides as ov
@@ -438,4 +439,146 @@ async def save_guide(u: dict, data: dict) -> dict:
         s["refHash"] = {r: info[r]["hash"] for r in s["refs"]}  # з якою редакцією статей звірено крок
     await db.set_setting("detain_guide", {"steps": steps, "t": now_ms(), "by": u["sid"], "by_name": u["name"]})
     await db.audit(u["sid"], "Порядок затримання: змінено", 0, f"кроків: {len(steps)}")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- підказка: короткий порядок затримання + найчастіші статті
+MIRANDA = ("Ви затримані. Відповідно до статті 63 Конституції штату NG ви маєте право зберігати мовчання і не свідчити проти себе та своїх близьких. "
+           "Усе, що ви скажете, може бути використано проти вас у суді. Ви маєте право на захисника (адвоката) з моменту затримання, право на один "
+           "телефонний дзвінок тривалістю до трьох хвилин, а також право на медичну допомогу. Чи зрозумілі вам ваші права?")
+QUICK_DEFAULT = [
+    {"t": "Увімкнути боді-камеру", "d": "Запис — до початку будь-яких дій, інакше докази недопустимі"},
+    {"t": "Представитися", "d": "Ім'я або позивний, посада, звання — «Служба безпеки України»"},
+    {"t": "Показати посвідчення", "d": "Службове посвідчення або жетон СБУ"},
+    {"t": "Оголосити затримання й причину", "d": "«Ви затримані за …» — назвати статті, що інкримінуються"},
+    {"t": "Кайданки", "d": "Опір — сила за стадіями: вимога → фізична сила → спецзасоби. Після кайданків — лише утримання. Поранений — спершу медики"},
+    {"t": "Зачитати права (Міранда)", "d": "Мовчання, адвокат, дзвінок до 3 хв, медична допомога. Не зрозумів — повторити"},
+    {"t": "Поверхневий огляд", "d": "Зброя й засоби нападу. Повний обшук, авто чи приміщення — за ПК (за потреби ордер)"},
+    {"t": "Особливі категорії", "d": "Держслужбовець, силовик, недоторканність, зрада чи тероризм — виклик прокурора / ДБР"},
+    {"t": "Доставити до відділу", "d": "Приміщення СБУ, поліції, ДБР або ізолятор"},
+    {"t": "Дзвінок і адвокат", "d": "Дзвінок до 3 хв; адвокат і прокурор — через загальну хвилю департаменту"},
+    {"t": "Рішення до 60 хвилин", "d": "Скорочене провадження, варта за погодженням прокурора або ордер — інакше звільнити"},
+    {"t": "Протокол і речі", "d": "Протокол — у «Сові» (Протоколи затримання); вилучене — до кімнати речових доказів"},
+]
+QUICK_TOP = 12          # скільки статей у підказці
+QUICK_DAYS = 90         # за який період рахувати частоту
+_ABBR_SLUG = {v: k for k, v in CODES.items()}
+
+
+def _qkey(code: str, art: str) -> str:
+    return f"{CODES[code]} {art}"
+
+
+def _arts_in(s: str, known: set) -> list[str]:
+    """«263кк ч.1, 348 ч-2», «C185 ч3» → ['263', '348', '185'] — лише номери статей, що є в кодексі."""
+    s = re.sub(r"ч(?:астина)?\.?\s*-?\s*\d+", " ", str(s or ""), flags=re.I)
+    out = []
+    for m in re.finditer(r"(?<![\d.])(\d{1,3}(?:[.-]\d+)?)(?!\d)", s):
+        n = m.group(1).replace("-", ".")
+        a = n if n in known else n.split(".")[0] if n.split(".")[0] in known else None
+        if a and a not in out:
+            out.append(a)
+    return out
+
+
+async def _usage(known: set) -> dict:
+    """Як часто статті КК фігурують у звітах (затримання, ордери тощо) за останні QUICK_DAYS днів."""
+    since = now_ms() - QUICK_DAYS * 24 * 3600 * 1000
+    cnt: dict = {}
+    rows = await db.all("SELECT arts FROM acts WHERE arts NOT IN ('', '[]') AND status NOT IN ('rej', 'cancel') AND t>=?", since)
+    for r in rows:
+        try:
+            items = json.loads(r["arts"] or "[]")
+        except ValueError:
+            continue
+        for a in _arts_in(" , ".join(map(str, items)), known):
+            cnt[a] = cnt.get(a, 0) + 1
+    return cnt
+
+
+def _art_sort(a: dict):
+    return (list(CODES).index(a["code"]), [int(x) for x in re.findall(r"\d+", a["art"])])
+
+
+async def quick(u: dict) -> dict:
+    cfg = await db.get_setting("memo_quick", None) or {}
+    pins, drops = cfg.get("pins") or [], set(cfg.get("drops") or [])
+    need = {"criminal-code"} | {_ABBR_SLUG[p.split(" ", 1)[0]] for p in pins if p.split(" ", 1)[0] in _ABBR_SLUG}
+    by_code = {}
+    for code in need:
+        try:
+            m = await memo(code, u)
+        except Fail:
+            continue
+        arts: dict = {}
+        for s in m["sections"]:
+            for r in s["rows"]:
+                if r.get("hide"):
+                    continue
+                a = arts.setdefault(r["art"], {"key": _qkey(code, r["art"]), "code": code, "abbr": CODES[code], "art": r["art"], "title": r["title"],
+                                               "anchor": (r.get("anchor") or "").split("-ch")[0] or None, "find": r["find"], "parts": []})
+                a["parts"].append({"part": r["part"], "desc": r["desc"], "pen": r["pen"], "lic": r["lic"], "note": r.get("note") or ""})
+        by_code[code] = arts
+    kk = by_code.get("criminal-code", {})
+    use = await _usage(set(kk)) if kk else {}
+    picked, seen = [], set()
+    for p in pins:
+        ab, _, no = p.partition(" ")
+        a = by_code.get(_ABBR_SLUG.get(ab), {}).get(no)
+        if a and a["key"] not in seen:
+            picked.append({**a, "pinned": True, "uses": use.get(no, 0) if ab == "КК" else 0})
+            seen.add(a["key"])
+    auto = sorted(((n, c) for n, c in use.items() if _qkey("criminal-code", n) not in drops), key=lambda x: (-x[1], _art_sort(kk[x[0]])))
+    for n, c in auto:
+        if len(picked) >= QUICK_TOP:
+            break
+        if _qkey("criminal-code", n) not in seen:
+            picked.append({**kk[n], "pinned": False, "uses": c})
+            seen.add(_qkey("criminal-code", n))
+    picked.sort(key=_art_sort)
+    return {"steps": cfg.get("steps") or QUICK_DEFAULT, "customSteps": bool(cfg.get("steps")), "miranda": MIRANDA, "arts": picked,
+            "drops": sorted(drops), "pins": pins, "days": QUICK_DAYS, "top": QUICK_TOP, "canEdit": can_edit(u),
+            "updated": cfg.get("t"), "by": cfg.get("by_name")}
+
+
+async def save_quick(u: dict, data: dict) -> dict:
+    if not can_edit(u):
+        raise Fail("Редагувати підказку може керівництво (адмін-панель → Права).", 403)
+    cfg = await db.get_setting("memo_quick", None) or {}
+    pins, drops = list(cfg.get("pins") or []), list(cfg.get("drops") or [])
+    key = str(data.get("key") or "").strip()
+    if key and not re.match(r"^(%s) \d+(?:[.-]\d+)*$" % "|".join(map(re.escape, _ABBR_SLUG)), key):
+        raise Fail("Невідома стаття.")
+    if "steps" in data:
+        if data["steps"] is None:
+            cfg.pop("steps", None)
+            what = "порядок затримання — стандартний"
+        else:
+            raw = data["steps"] if isinstance(data["steps"], list) else []
+            steps = [{"t": str((s or {}).get("t") or "").strip()[:80], "d": str((s or {}).get("d") or "").strip()[:300]} for s in raw][:20]
+            steps = [s for s in steps if s["t"]]
+            if not steps:
+                raise Fail("Додайте хоча б один крок.")
+            cfg["steps"] = steps
+            what = f"порядок затримання ({len(steps)} кроків)"
+    elif data.get("pin") and key:
+        if key not in pins:
+            if len(pins) >= QUICK_TOP:
+                raise Fail(f"У підказці може бути не більше {QUICK_TOP} закріплених статей.")
+            pins.append(key)
+        drops = [d for d in drops if d != key]
+        what = f"додано {key}"
+    elif data.get("unpin") and key:
+        pins = [p for p in pins if p != key]
+        if key not in drops:
+            drops.append(key)  # прибрати й з автоматичного списку
+        what = f"прибрано {key}"
+    elif data.get("restore") and key:
+        drops = [d for d in drops if d != key]
+        what = f"повернуто {key}"
+    else:
+        raise Fail("Нічого не змінено.")
+    cfg.update(pins=pins, drops=drops[:200], t=now_ms(), by=u["sid"], by_name=u["name"])
+    await db.set_setting("memo_quick", cfg)
+    await db.audit(u["sid"], "Пам'ятка-підказка: змінено", 0, what)
     return {"ok": True}

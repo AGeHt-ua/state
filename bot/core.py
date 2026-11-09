@@ -48,7 +48,11 @@ ACTS = {  # id: (назва, бали, відділи або "all"/"instr", по
     "exam":      ("Прийнятий залік у стажера", 2, "instr", False),
     "gov":       ("Оголошення в державну хвилю", 1, ["press"], False),
     "pr":        ("Брифінг або медіаматеріал", 3, ["press"], False),
+    "other":     ("Інше (свій тип дії)", 1, "all", False),
 }
+# «Інше»: виконавець сам описує дію, а бали (1–6) ставить той, хто перевіряє звіт.
+# Оцінка зберігається в qty при коефіцієнті 1 — тож тижневі бали, премії й підвищення рахуються як завжди.
+OTHER, OTHER_MAX = "other", 6
 BUILTIN_ACTS = dict(ACTS)
 # Пункти звітів, додані в адмін-панелі (налаштування «acts_custom»): {key: {n, p, d, art, off}}.
 # Вони вливаються прямо в ACTS. off=True — пункт видалено, але старі звіти з ним ще є: назва лишається, нові звіти не подаються.
@@ -134,7 +138,14 @@ def act_allowed(u: dict, act_id: str) -> bool:
 
 async def coef() -> dict:
     saved = await db.get_setting("coef", {})
-    return {k: int(saved.get(k, v[1])) for k, v in ACTS.items()}
+    return {k: int(saved.get(k, v[1])) for k, v in ACTS.items()} | {OTHER: 1}
+
+
+def act_name(a: dict) -> str:
+    """Назва дії зі звіту: для «Інше» — те, що вписав виконавець."""
+    if a.get("type") == OTHER and a.get("custom"):
+        return a["custom"]
+    return ACTS[a["type"]][0] if a.get("type") in ACTS else str(a.get("type") or "—")
 
 
 async def week_points(sid: int, offset: int = 0) -> int:
@@ -612,15 +623,16 @@ async def materials(urls: list | str | None = None, fids: list | None = None) ->
 async def act_embed(a: dict) -> discord.Embed:
     author = await user(a["by_sid"]) or {"name": "—", "sid": a["by_sid"], "rank": 1}
     pts = (await coef()).get(a["type"], 0) * (a["qty"] or 1)
+    other = a["type"] == OTHER
     arts = json.loads(a["arts"] or "[]")
     state, color = await state_line(a["status"], a["reviewer"], a["reviewed"], "Підтверджено", "На перевірці")
     ev = await materials(a["evidence"], json.loads(a["files"] or "[]"))
     return style.card(style.doc_no("ЗВТ", a["id"]), "Службовий звіт", state, color, t=a["t"], fields=[
         ("Від", style.person(author)),
         ("Підрозділ", dept_name(a["dept"])),
-        ("Дія", ACTS[a["type"]][0] + (f" ×{a['qty']}" if (a["qty"] or 1) > 1 else "")),
+        ("Дія", style.esc(act_name(a)) + (" · інше" if other else f" ×{a['qty']}" if (a["qty"] or 1) > 1 else "")),
         ("Час події", style.when(a["t"])),
-        ("Бали", str(pts)),
+        ("Бали", f"оцінить перевіряючий (1–{OTHER_MAX})" if other and a["status"] == "wait" else "—" if other and a["status"] != "ok" else str(pts)),
         ("Статті КК", style.esc(", ".join(arts))),
         ("Фігурант", style.esc(a["subj"][:100]) if a["subj"] else None),
         ("Матеріали", ev, False),
@@ -740,6 +752,26 @@ class RapButton(discord.ui.DynamicItem[discord.ui.Button], template=r"sova:rap:(
         await button_decision(interaction, "rap", self.rap_id, self.decision)
 
 
+class ScoreView(discord.ui.View):
+    """Оцінка звіту «Інше» з Discord: кнопки 1–6 (видно лише тому, хто перевіряє)."""
+    def __init__(self, act_id: int):
+        super().__init__(timeout=600)
+        for n in range(1, OTHER_MAX + 1):
+            b = discord.ui.Button(label=str(n), style=discord.ButtonStyle.success)
+            b.callback = self._pick(act_id, n)
+            self.add_item(b)
+
+    @staticmethod
+    def _pick(act_id: int, n: int):
+        async def cb(interaction: discord.Interaction):
+            try:
+                await decide_act(await actor_from_discord(interaction.user), act_id, "ok", n)
+                await interaction.response.edit_message(content=f"Звіт підтверджено: {n} б. Сайт оновлено.", view=None)
+            except Fail as e:
+                await interaction.response.edit_message(content=str(e), view=None)
+        return cb
+
+
 def decision_view(kind: str, rid: int) -> discord.ui.View:
     v = discord.ui.View(timeout=None)
     cls = ActButton if kind == "act" else RapButton
@@ -762,6 +794,12 @@ async def button_decision(interaction: discord.Interaction, kind: str, rid: int,
     try:
         actor = await actor_from_discord(interaction.user)
         if kind == "act":
+            a = await db.one("SELECT * FROM acts WHERE id=?", rid)
+            if decision == "ok" and a and a["type"] == OTHER and a["status"] == "wait":
+                if not can_approve_act(actor, a):
+                    raise Fail("Ви не можете розглядати цей звіт (свій звіт, уже розглянутий або інший відділ).")
+                await interaction.response.send_message(f"Звіт «Інше»: оцініть від 1 до {OTHER_MAX} балів.", view=ScoreView(rid), ephemeral=True)
+                return
             await decide_act(actor, rid, decision)
         else:
             await decide_rap(actor, rid, decision)
@@ -840,7 +878,7 @@ async def refresh_card(kind: str, row: dict):
     if row["status"] != "wait":
         reviewer = await user(row["reviewer"]) if row.get("reviewer") else None
         author = await user(row["by_sid"])
-        what = ACTS[row["type"]][0] if kind == "act" else RAP_TYPES.get(row["type"], "Рапорт")
+        what = act_name(row) if kind == "act" else RAP_TYPES.get(row["type"], "Рапорт")
         await post_log(row["ch_id"], row["msg_id"], style.doc_no("ЗВТ" if kind == "act" else "РАП", row["id"]), what,
                        who(author), row["status"], who(author if row["status"] == "cancel" else reviewer), row.get("reviewed"))
 
@@ -948,6 +986,12 @@ async def create_act(u: dict, body: dict) -> dict:
     if ACTS[t][3] and not arts:
         raise Fail("Для затримання вкажіть статті, які оголошено затриманому.")
     qty = max(1, min(12, int(body.get("qty") or 1))) if t == "patrol" else 1  # кількість — лише блоки патрулювання по 30 хв
+    custom = None
+    if t == OTHER:
+        custom = " ".join(str(body.get("custom") or "").split())[:100]
+        if len(custom) < 3:
+            raise Fail("Впишіть, яку саме дію виконано (тип дії для «Інше»).")
+        qty = 0  # бали поставить перевіряючий
     try:
         when = int(body.get("t") or now_ms())
     except (TypeError, ValueError):
@@ -957,9 +1001,9 @@ async def create_act(u: dict, body: dict) -> dict:
     dept = "press" if ACTS[t][2] == ["press"] else u["dept"]
     if u.get("status") == "vacation":
         await back_from_vacation(u["sid"], "подав службовий звіт — вийшов на службу раніше")
-    rid = await db.run("INSERT INTO acts(by_sid,dept,type,qty,t,arts,subj,evidence,files,note) VALUES(?,?,?,?,?,?,?,?,?,?)",
+    rid = await db.run("INSERT INTO acts(by_sid,dept,type,qty,t,arts,subj,evidence,files,note,custom) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                        u["sid"], dept, t, qty, min(when, now_ms()), json.dumps(arts, ensure_ascii=False),
-                       str(body.get("subj", ""))[:200], ev[:500], json.dumps(files), str(body.get("note", ""))[:1500])
+                       str(body.get("subj", ""))[:200], ev[:500], json.dumps(files), str(body.get("note", ""))[:1500], custom)
     row = await db.one("SELECT * FROM acts WHERE id=?", rid)
     await post_card("act", row, tag=body.get("tag"))
     return row
@@ -1004,13 +1048,22 @@ async def vacation_loop():
 
 
 @serialized("act")
-async def decide_act(actor: dict, act_id: int, decision: str) -> dict:
+async def decide_act(actor: dict, act_id: int, decision: str, score=None) -> dict:
     a = await db.one("SELECT * FROM acts WHERE id=?", act_id)
     if not a:
         raise Fail("Звіт не знайдено.", 404)
     if not can_approve_act(actor, a):
         raise Fail("Ви не можете розглядати цей звіт (свій звіт, уже розглянутий або інший відділ).", 403)
-    await db.run("UPDATE acts SET status=?, reviewer=?, reviewed=? WHERE id=?", "ok" if decision == "ok" else "rej", actor["sid"], now_ms(), act_id)
+    qty = a["qty"]
+    if decision == "ok" and a["type"] == OTHER:
+        try:
+            qty = int(score)
+        except (TypeError, ValueError):
+            qty = 0
+        if not 1 <= qty <= OTHER_MAX:
+            raise Fail(f"Оцініть звіт «Інше»: від 1 до {OTHER_MAX} балів.")
+    await db.run("UPDATE acts SET status=?, reviewer=?, reviewed=?, qty=? WHERE id=?",
+                 "ok" if decision == "ok" else "rej", actor["sid"], now_ms(), qty, act_id)
     a = await db.one("SELECT * FROM acts WHERE id=?", act_id)
     await refresh_card("act", a)
     if decision == "ok":
@@ -1050,7 +1103,7 @@ async def create_rap(u: dict, body: dict) -> dict:
         rows = await db.all("SELECT type, qty FROM acts WHERE by_sid=? AND status='ok' AND t>=?", u["sid"], u["since"] or 0)
         acts = {}
         for a in rows:
-            acts[a["type"]] = acts.get(a["type"], 0) + (a["qty"] or 1)
+            acts[a["type"]] = acts.get(a["type"], 0) + (1 if a["type"] == OTHER else a["qty"] or 1)  # в «Інше» qty — це оцінка
         data.update(to=pc["next"], balance=pc["points"], need=pc["need"], acts=acts,
                     points=await week_points(u["sid"]), points_prev=await week_points(u["sid"], 1))
     elif t == "vac":
