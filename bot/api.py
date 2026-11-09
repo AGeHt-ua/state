@@ -756,14 +756,19 @@ async def doc_image(request):
         ok = await ok
     if not ok:
         raise Fail("Немає доступу до цього документа.", 403)
-    reader = await request.multipart()
     data = bytearray()
-    while (part := await reader.next()) is not None:
-        if part.name == "img":
-            while chunk := await part.read_chunk(64 * 1024):
-                data.extend(chunk)
-                if len(data) > 9 * 1024 * 1024:
-                    raise Fail("Картинка документа завелика.", 413)
+    try:
+        reader = await request.multipart()
+        while (part := await reader.next()) is not None:
+            if part.name == "img":
+                while chunk := await part.read_chunk(64 * 1024):
+                    data.extend(chunk)
+                    if len(data) > 9 * 1024 * 1024:
+                        raise Fail("Картинка документа завелика.", 413)
+    except ConnectionResetError:
+        # браузер закрили чи зник інтернет посеред завантаження — не помилка бота; картинку можна перемалювати кнопкою на сайті
+        log.info("Картинка документа %s-%s: з'єднання обірвалося під час завантаження", kind, did)
+        raise Fail("З'єднання обірвалося під час завантаження картинки.", 400)
     ok = await docpost.set_image(kind, did, bytes(data), f"{kind}-{did}")
     return web.json_response({"ok": ok})
 

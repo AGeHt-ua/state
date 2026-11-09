@@ -158,26 +158,144 @@ async def post(kind: str, did: int, ch: discord.abc.Messageable | None, embed: d
     return msg
 
 
+# ---------------------------------------------------------------- правки карток: черга з повтором
+# Discord дозволяє в каналі лише кілька правок повідомлень, старших за годину (429, код 30046), тож коли керівник
+# за хвилину розглядає десяток старих рапортів, частина правок відхиляється. Тому правки йдуть через чергу:
+#  • картку й картинку аркуша, яку сайт надсилає за секунду-дві після рішення, бот вносить ОДНІЄЮ правкою;
+#  • правку, яку Discord відхилив через ліміт, бот повторює пізніше, доки не пройде (картка не «зависає» зі старим статусом).
+# Черга живе в пам'яті: після перезапуску бота невнесені правки відновлює «Перебудувати картки» в адмін-панелі.
+EDIT_DELAY = 6.0          # с: зачекати картинку від сайту, щоб оновити картку й картинку разом
+RETRY_SOON = 60.0         # с: звичайне «You are being rate limited»
+RETRY_OLD = 15 * 60.0     # с: 30046 — ліміт правок старих повідомлень у каналі (скидається приблизно за годину)
+RETRY_MAX = 12            # спроб на одну правку (для 30046 — близько трьох годин)
+_pending: dict[tuple[str, int], dict] = {}   # (вид, номер) → {"embed", "view", "img": (байти, ім'я) | None, "left", "tries"}
+_tasks: dict[tuple[str, int], asyncio.Task] = {}
+
+
+def _queue(kind: str, did: int, *, embed: discord.Embed | None = None, view: discord.ui.View | None = None,
+           img: tuple[bytes, str] | None = None):
+    """Додати зміну картки до черги; зміни, що прийшли до внесення, зливаються в одну правку."""
+    key = (kind, did)
+    p = _pending.setdefault(key, {"embed": None, "view": None, "img": None, "left": None, "tries": 0})
+    if embed is not None:
+        p["embed"] = embed
+    if view is not None:
+        p["view"] = view
+    if img is not None:
+        p["img"] = img
+    p["left"] = None  # нові дані — внести в усі повідомлення документа
+    task = _tasks.get(key)
+    if not task or task.done():
+        _tasks[key] = asyncio.create_task(_worker(key))
+
+
+def _retry_after(ex: discord.HTTPException) -> float | None:
+    """Через скільки секунд повторити правку, яку відхилив Discord; None — повтор не допоможе (видалено, немає прав)."""
+    if ex.status == 429:
+        return RETRY_OLD if ex.code == 30046 else RETRY_SOON
+    if ex.status >= 500:
+        return RETRY_SOON
+    return None
+
+
+async def _apply(key: tuple[str, int], p: dict) -> float | None:
+    """Внести зміну в усі повідомлення документа. Повертає, через скільки секунд повторити те, що не пройшло (None — усе)."""
+    kind, did = key
+    row = await _row(*key)
+    msgs = await _messages(row) if row else []
+    if p["left"] is not None:
+        msgs = [m for m in msgs if m.id in p["left"]]
+    wait, left, img_done = None, set(), False
+    for msg in msgs:
+        if p["embed"] is not None:
+            e = p["embed"].copy()
+        elif msg.embeds:
+            e = msg.embeds[0]
+        else:
+            continue
+        extra = {"view": p["view"]} if p["view"] is not None else {}
+        if p["img"]:
+            data, fname = p["img"]
+            e.set_image(url=f"attachment://{fname}")
+            extra["attachments"] = [discord.File(io.BytesIO(data), filename=fname)]
+        elif row["img"]:
+            e.set_image(url=f"attachment://{row['img']}")
+        try:
+            await msg.edit(embed=e, **extra)
+            img_done = img_done or bool(p["img"])
+        except discord.HTTPException as ex:
+            after = _retry_after(ex)
+            what = "Картинка документа" if p["img"] and p["embed"] is None else "Оновлення документа"
+            if after is None:
+                log.warning("%s %s-%s: %s", what, kind, did, ex)
+                continue
+            log.info("%s %s-%s: Discord відхилив правку (%s), повтор через %d хв", what, kind, did, ex.code or ex.status, max(1, after // 60))
+            left.add(msg.id)
+            wait = max(wait or 0, after)
+    if img_done:
+        await db.run("UPDATE doc_msgs SET img=? WHERE kind=? AND id=?", p["img"][1], kind, did)
+    p["left"] = left
+    return wait
+
+
+async def _worker(key: tuple[str, int]):
+    delay = EDIT_DELAY
+    try:
+        while True:
+            await asyncio.sleep(delay)
+            p = _pending.pop(key, None)
+            if not p:
+                return
+            try:
+                wait = await _apply(key, p)
+            except Exception:
+                log.exception("Правка картки документа %s-%s", *key)
+                wait = RETRY_SOON
+            if wait is None:
+                if key not in _pending:
+                    return
+                delay = 1.0  # поки вносили, прийшла нова зміна
+                continue
+            p["tries"] += 1
+            if p["tries"] >= RETRY_MAX:
+                log.warning("Картка документа %s-%s не оновилась після %d спроб (ліміти Discord) — «Перебудувати картки» в адмін-панелі",
+                            *key, p["tries"])
+                if key not in _pending:
+                    return
+                delay = 1.0
+                continue
+            newer = _pending.get(key)
+            if newer:  # новіші дані важливіші; з невнесеної спроби лишаємо те, чого в них немає
+                for k in ("embed", "view", "img"):
+                    if newer[k] is None:
+                        newer[k] = p[k]
+                newer["tries"] = p["tries"]
+            else:
+                _pending[key] = p
+            delay = wait
+    finally:
+        if _tasks.get(key) is asyncio.current_task():
+            del _tasks[key]
+
+
 async def update(kind: str, did: int, embed: discord.Embed, *, view: discord.ui.View | None = None,
                  ping: str | None = None, users: list[str] | None = None, roles: list[int] | None = None) -> bool:
     """Оновлює картку документа (і копії), зберігаючи картинку аркуша й рядок «Стосується».
     ping — коротка відповідь під повідомленням лише тоді, коли треба покликати нових людей (roles: наступний етап, напр. Мінфін чи виплата премій).
-    Рішення («Погоджено», «Відхилено», «Підписано») окремою відповіддю не дублюємо — картка й так оновлюється."""
+    Рішення («Погоджено», «Відхилено», «Підписано») окремою відповіддю не дублюємо — картка й так оновлюється.
+    Сама правка картки йде через чергу (_queue): за кілька секунд, разом із картинкою від сайту, з повтором після лімітів."""
     row = await _row(kind, did)
     msgs = await _messages(row) if row else []
     if not msgs:
         return False
     concerns_field(embed, _who(row), row["tag"])
-    if row["img"]:
-        embed.set_image(url=f"attachment://{row['img']}")
-    for i, msg in enumerate(msgs):
+    _queue(kind, did, embed=embed, view=view)
+    if ping and roles:
+        m = mentions([], None, roles)
         try:
-            await msg.edit(embed=embed, **({"view": view} if view is not None else {}))
-            if ping and roles and i == 0:
-                m = mentions([], None, roles)
-                await msg.reply(" ".join(filter(None, [ping, m["content"]])), mention_author=False, allowed_mentions=m["allowed_mentions"])
+            await msgs[0].reply(" ".join(filter(None, [ping, m["content"]])), mention_author=False, allowed_mentions=m["allowed_mentions"])
         except discord.HTTPException as ex:
-            log.warning("Оновлення документа %s-%s: %s", kind, did, ex)
+            log.warning("Відповідь під документом %s-%s: %s", kind, did, ex)
     return True
 
 
@@ -191,7 +309,7 @@ async def journal(kind: str, did: int, ch: discord.abc.Messageable | None, embed
 
 
 async def set_image(kind: str, did: int, data: bytes, name: str) -> bool:
-    """Картинка аркуша А4 (PNG/JPEG, сформована сайтом) — у картку документа та її копії."""
+    """Картинка аркуша А4 (PNG/JPEG, сформована сайтом) — у картку документа та її копії (через чергу правок, разом зі зміною картки)."""
     if data.startswith(b"\x89PNG"):
         ext = "png"
     elif data.startswith(b"\xff\xd8\xff"):
@@ -205,18 +323,8 @@ async def set_image(kind: str, did: int, data: bytes, name: str) -> bool:
     if not msgs:
         return False
     fname = f"{''.join(ch for ch in name if ch.isalnum() or ch in '-_')[:60] or 'doc'}.{ext}"
-    done = False
-    for msg in msgs:
-        e = msg.embeds[0]
-        e.set_image(url=f"attachment://{fname}")
-        try:
-            await msg.edit(embed=e, attachments=[discord.File(io.BytesIO(data), filename=fname)])
-            done = True
-        except discord.HTTPException as ex:
-            log.warning("Картинка документа %s-%s: %s", kind, did, ex)
-    if done:
-        await db.run("UPDATE doc_msgs SET img=? WHERE kind=? AND id=?", fname, kind, did)
-    return done
+    _queue(kind, did, img=(data, fname))
+    return True
 
 
 async def remove(kind: str, did: int):
