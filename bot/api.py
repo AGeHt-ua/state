@@ -21,6 +21,7 @@ import discipline
 import docpost
 import kb
 import library
+import memo
 import orders
 import config
 import core
@@ -188,7 +189,7 @@ async def me(request):
         "cases": cases.rights(u),
         "control": depts.control_depts(u),
         "admin": core.is_admin(u), "curator": bool(u.get("curator_ro")),
-        "kb": {"sync": u["rank"] >= ov.P("kb_sync"), "lib": library.can_edit_lib(u), "exam": library.is_examiner(u)},
+        "kb": {"sync": u["rank"] >= ov.P("kb_sync"), "lib": library.can_edit_lib(u), "exam": library.is_examiner(u), "memo": memo.can_edit(u)},
         "appoint": {"prepare": orders.can_prepare(u), "sign": orders.can_sign(u)} if orders.can_prepare(u) else None,
         "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
         "bonus": {"manage": bonus.can_manage(u) or bool(u.get("curator")), "finalize": bonus.can_finalize(u)},
@@ -900,6 +901,31 @@ async def kb_sync(request):
 async def kb_sync_state(request):
     await kb_auth(request)
     return web.json_response({"syncing": kb._sync_lock.locked(), "last": await db.get_setting("kb_last", None)})
+
+
+# ---------------------------------------------------------------- пам'ятка статей і порядок затримання (База даних)
+@routes.get("/api/memo")
+async def memo_get(request):
+    u = await kb_auth(request)
+    return web.json_response(await memo.memo(request.query.get("code", "criminal-code"), u))
+
+
+@routes.post("/api/memo/row")
+async def memo_row(request):
+    u = await kb_auth(request)
+    return web.json_response(await memo.save_row(u, await request.json()))
+
+
+@routes.get("/api/detain")
+async def detain_get(request):
+    u = await kb_auth(request)
+    return web.json_response(await memo.guide(u))
+
+
+@routes.post("/api/detain")
+async def detain_save(request):
+    u = await kb_auth(request)
+    return web.json_response(await memo.save_guide(u, await request.json()))
 
 
 @routes.get("/api/lib")

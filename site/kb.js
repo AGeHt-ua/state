@@ -350,9 +350,9 @@ function resultView(a, review) {
 
 /* ---------- сторінка ---------- */
 async function view() {
-  const tabs = [["law", "Законодавство"], ["changes", "Зміни законодавства"], ["lib", "Бібліотека"], ["exams", "Іспити", ME().pending.exams || undefined], ["prot", "Протоколи затримання"]];
+  const tabs = [["law", "Законодавство"], ["memo", "Пам'ятка"], ["detain", "Порядок затримання"], ["changes", "Зміни законодавства"], ["lib", "Бібліотека"], ["exams", "Іспити", ME().pending.exams || undefined], ["prot", "Протоколи затримання"]];
   const head = `<div class="tabs">${tabs.map(([v, l, n]) => `<button class="tb ${st.tab === v ? "on" : ""}" data-a="kbtab" data-v="${v}">${l}${n ? `<span class="cnt">${n}</span>` : ""}</button>`).join("")}</div>`;
-  const body = st.tab === "prot" ? await S.protView() : st.tab === "changes" ? await changesView() : st.tab === "lib" ? await libView() : st.tab === "exams" ? await examsView() : await lawView();
+  const body = st.tab === "memo" ? await S.memoView() : st.tab === "detain" ? await S.detainView() : st.tab === "prot" ? await S.protView() : st.tab === "changes" ? await changesView() : st.tab === "lib" ? await libView() : st.tab === "exams" ? await examsView() : await lawView();
   return head + body;
 }
 S.views.kb = view;
@@ -362,7 +362,8 @@ const run = async (b, fn) => { if (b) b.disabled = true; try { await fn(); } cat
 Object.assign(S.actions, {
   kbtab: (b) => { st.tab = b.dataset.v; st.take = st.result = st.review = st.examEdit = st.libEdit = null; R(); },
   kbopen: async (b) => { st.doc = b.dataset.v; st.extract = false; st.side = false; st.fold = true; st.sel.clear(); st.find = b.dataset.find || "";
-    if (b.dataset.tab) st.tab = b.dataset.tab; await R(); scrollTo(0, 0); if (st.find) setTimeout(() => findIn(0), 50); },
+    if (b.dataset.tab) st.tab = b.dataset.tab; await R(); scrollTo(0, 0); if (st.find) setTimeout(() => findIn(0), 50);
+    if (b.dataset.go) setTimeout(() => goTo(b.dataset.go), 80); },  // з пам'ятки чи порядку затримання — одразу до статті
   kbback: () => { st.doc = null; st.extract = false; R(); },
   kbclear: () => { st.q = ""; R(); },
   kbside: () => { st.side = !st.side; R(); },
@@ -474,13 +475,16 @@ document.addEventListener("input", (e) => {
   }
 });
 document.addEventListener("keydown", (e) => { if (e.target.id === "kb-find" && e.key === "Enter") { e.preventDefault(); findIn(e.shiftKey ? -1 : 1); } });
+function goTo(id) {
+  const el = document.getElementById(id);
+  if (el && el.closest("details")) el.closest("details").open = true;
+  if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); el.classList.add("kb-flash"); setTimeout(() => el.classList.remove("kb-flash"), 1600); }
+}
 document.addEventListener("click", (e) => {
   const a = e.target.closest("[data-kbgo]");
   if (!a) return;
   e.preventDefault();
-  const el = document.getElementById(a.dataset.kbgo);
-  if (el && el.closest("details")) el.closest("details").open = true;
-  if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); el.classList.add("kb-flash"); setTimeout(() => el.classList.remove("kb-flash"), 1600); }
+  goTo(a.dataset.kbgo);
 });
 setInterval(() => {
   const t = document.getElementById("ex-timer");
