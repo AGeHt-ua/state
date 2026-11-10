@@ -6,6 +6,7 @@
 """
 import io
 import logging
+import time
 
 import discord
 
@@ -68,12 +69,20 @@ async def _post_discord(n: dict, u: dict) -> tuple[str, str] | None:
     ch = await core.channel("news")
     if not ch:
         return None
-    site = f"{config.SITE_URL.rstrip('/')}/site/#/"
-    # заголовок ембеда — посилання на сайт; під ембедом — кнопка «Відкрити в Сові» (Discord розміщує кнопки під карткою)
-    e = discord.Embed(title=n["title"][:256], url=site, description=n["body"][:4000] or None, color=COLOR,
-                      timestamp=discord.utils.utcnow())
-    e.set_author(name=f"{rank_name(u['rank'])} {u['name']}"[:256] if u.get("dept") != "curator" else "СБУ")
-    e.set_footer(text="ЄІС «Сова» · Новини СБУ")
+    root = config.SITE_URL.rstrip('/')
+    site, logo = f"{root}/site/#/", f"{root}/site/sbu-logo.webp"
+    # Картка «Інформаційний бюлетень СБУ»: шапка з емблемою, заголовок-посилання на сайт, текст між лініями,
+    # реквізити випуску (номер, автор, дата), картинка на всю ширину; під карткою — кнопка «Читати в Сові»
+    line = "━" * 24
+    body = n["body"][:3600].strip()
+    e = discord.Embed(title=f"📰 {n['title']}"[:256], url=site, color=COLOR, timestamp=discord.utils.utcnow(),
+                      description=f"{line}\n{body}\n{line}" if body else line)
+    e.set_author(name="СЛУЖБА БЕЗПЕКИ УКРАЇНИ · ПРЕС-ЦЕНТР", url=site, icon_url=logo)
+    e.set_thumbnail(url=logo)
+    e.add_field(name="📋 Випуск", value=f"`НВ-{n['id']:04d}`", inline=True)
+    e.add_field(name="👤 Автор", value=(f"{rank_name(u['rank'])}\n**{u['name']}**" if u.get("dept") != "curator" else "**Керівництво СБУ**")[:1024], inline=True)
+    e.add_field(name="🗓 Дата", value=f"<t:{int(time.time())}:f>", inline=True)
+    e.set_footer(text="ЄІС «Сова» · Інформаційний бюлетень СБУ · Для службового користування", icon_url=logo)
     kw = {}
     if n["img"]:
         try:
@@ -86,8 +95,9 @@ async def _post_discord(n: dict, u: dict) -> tuple[str, str] | None:
             kw["file"] = discord.File(io.BytesIO(img[0]), filename=img[1])
     m = docpost.mentions([], None, docpost.key_roles("news"))
     view = discord.ui.View(timeout=None)
-    view.add_item(discord.ui.Button(label="Відкрити в Сові", emoji="🦉", url=site))
-    msg = await ch.send(content=m["content"], embed=e, allowed_mentions=m["allowed_mentions"], view=view, **kw)
+    view.add_item(discord.ui.Button(label="Читати в «Сові»", emoji="🦉", url=site))
+    head = "📢 **Інформаційний бюлетень СБУ**"
+    msg = await ch.send(content=" · ".join(filter(None, [head, m["content"]])), embed=e, allowed_mentions=m["allowed_mentions"], view=view, **kw)
     return str(ch.id), str(msg.id)
 
 
@@ -114,8 +124,8 @@ async def create(u: dict, b: dict) -> dict:
             await db.run("UPDATE news SET ch=?, msg=? WHERE id=?", where[0], where[1], nid)
         else:
             warn = "Канал новин у Discord не налаштовано (адмін-панель → Канали → «Новини») — новина лише на сайті."
-    except discord.HTTPException as ex:
-        log.warning("Новина %s: Discord відхилив (%s)", nid, ex)
+    except Exception as ex:  # будь-яка біда з Discord не скасовує публікацію на сайті
+        log.warning("Новина %s: Discord відхилив (%r)", nid, ex)
         warn = "Новину опубліковано на сайті, але Discord її не прийняв. Перевірте права бота в каналі новин."
     await db.audit(u["sid"], "Опубліковано новину", None, title[:120])
     return {"ok": True, "id": nid, "warn": warn}

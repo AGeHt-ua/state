@@ -305,32 +305,45 @@ async function vHome() {
 
 
 /* ---------------- новини (головна) ---------------- */
-// Стрічка новин СБУ; публікують керівництво й Прес-служба — новина одночасно йде в канал Discord зі згадкою ролі СБУ
-const NEWS_MORE = 300;  // довгий текст згортається
+// Інформаційний бюлетень СБУ: головна новина — великим блоком, решта — картками. Публікують керівництво й Прес-служба;
+// новина одночасно йде в канал Discord зі згадкою ролі СБУ
+const NEWS_MORE = 280;  // довгий текст згортається
+const newsNo = (id) => `НВ-${String(id).padStart(4, "0")}`;
 function newsCard(N) {
   if (!N) return "";
   const form = N.canPost && UI.newsForm ? `<form class="nw-form" data-f="newspub">
+      <div class="nw-form-h"><span class="nw-stamp">Новий випуск</span><span class="muted small">Новина з'явиться в бюлетені й у Discord зі згадкою СБУ</span></div>
       <label class="f"><span>Заголовок</span><input class="i" name="title" maxlength="200" required placeholder="Напр.: Підсумки спецоперації «Світанок»"></label>
       <label class="f"><span>Текст</span><textarea class="i" name="body" rows="5" maxlength="3500" placeholder="Що сталося, кого стосується, що робити…"></textarea></label>
       <div class="nw-img-row"><label class="btn sm">🖼 Картинка<input type="file" id="nw-img" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
         <span class="muted small" id="nw-img-name">не обрано</span><button class="btn sm" type="button" data-a="newsimgclear" id="nw-img-x" hidden>✕</button></div>
       <img id="nw-prev" class="nw-prev" alt="" hidden>
-      <div class="acts"><button class="btn gold" type="submit">📢 Опублікувати</button><button class="btn" type="button" data-a="newsform">Скасувати</button>
-        <span class="muted small">Новина з'явиться тут і в Discord зі згадкою СБУ.</span></div></form>` : "";
-  const item = (n) => {
-    const long = n.body.length > NEWS_MORE && !UI.newsOpen?.[n.id];
-    return `<article class="nw-it">
-      ${n.img ? `<button class="nw-pic" data-a="file" data-id="${esc(n.img)}" title="Відкрити картинку"><img data-fid="${esc(n.img)}" alt=""></button>` : ""}
-      <div class="nw-body"><div class="nw-meta"><span>${fmtDT(n.t)}</span><span>${esc(n.author.rankName)} ${esc(n.author.name)}</span>
-          ${n.discord ? `<span class="nw-ds" title="Опубліковано в Discord">Discord ✓</span>` : ""}<span class="sp"></span>
-          ${n.canDelete ? `<button class="btn sm bad" data-a="newsdel" data-id="${n.id}" title="Видалити новину (і з Discord)">✕</button>` : ""}</div>
-        <h4>${esc(n.title)}</h4>${n.body ? `<p class="nw-text">${esc(long ? n.body.slice(0, NEWS_MORE).trimEnd() + "…" : n.body)}</p>` : ""}
-        ${long ? `<button class="nw-more" data-a="newsmore" data-id="${n.id}">Читати повністю</button>` : ""}</div></article>`;
+      <div class="acts"><button class="btn gold" type="submit">📢 Опублікувати</button><button class="btn" type="button" data-a="newsform">Скасувати</button></div></form>` : "";
+  const pic = (n, cls) => n.img
+    ? `<button class="${cls}" data-a="file" data-id="${esc(n.img)}" title="Відкрити картинку"><img data-fid="${esc(n.img)}" alt=""></button>`
+    : `<div class="${cls} nw-blank"><img src="sbu-logo.webp" alt=""></div>`;
+  const text = (n, max) => {
+    if (!n.body) return "";
+    const long = n.body.length > max && !UI.newsOpen?.[n.id];
+    return `<p class="nw-text">${esc(long ? n.body.slice(0, max).trimEnd() + "…" : n.body)}</p>${long ? `<button class="nw-more" data-a="newsmore" data-id="${n.id}">Читати повністю →</button>` : ""}`;
   };
-  return `<div class="card nw"><header><h3>Новини СБУ</h3>
-      ${N.canPost && !UI.newsForm ? `<button class="sp btn sm gold" data-a="newsform">+ Новина</button>` : ""}</header>
+  const meta = (n) => `<div class="nw-meta"><span class="nw-no">${newsNo(n.id)}</span><span>${fmtDT(n.t)}</span>
+      ${n.discord ? `<span class="nw-ds" title="Опубліковано в Discord">● Discord</span>` : ""}<span class="sp"></span>
+      ${n.canDelete ? `<button class="nw-del" data-a="newsdel" data-id="${n.id}" title="Видалити новину (і з Discord)">✕</button>` : ""}</div>`;
+  const by = (n) => `<div class="nw-by">${esc(n.author.rankName)} <b>${esc(n.author.name)}</b></div>`;
+  const [lead, ...rest] = N.items;
+  return `<section class="nw">
+    <header class="nw-head"><img src="sbu-logo.webp" alt="" class="nw-logo">
+      <div class="nw-ttl"><div class="eyebrow">Служба безпеки України · Прес-центр</div><h3>Інформаційний бюлетень</h3></div>
+      <span class="sp"></span>${N.items.length ? `<span class="nw-count">${N.items.length} ${N.items.length === 1 ? "випуск" : N.items.length < 5 ? "випуски" : "випусків"}</span>` : ""}
+      ${N.canPost && !UI.newsForm ? `<button class="btn sm gold" data-a="newsform">+ Новина</button>` : ""}</header>
     ${form}
-    ${N.items.length ? `<div class="nw-feed">${N.items.map(item).join("")}</div>` : `<div class="empty">Новин поки немає.</div>`}</div>`;
+    ${lead ? `<article class="nw-lead">${pic(lead, "nw-lead-pic")}<span class="nw-flag">Головне</span>
+        <div class="nw-lead-body">${meta(lead)}<h4>${esc(lead.title)}</h4>${text(lead, NEWS_MORE * 2)}${by(lead)}</div></article>
+      ${rest.length ? `<div class="nw-grid">${rest.map((n) => `<article class="nw-it">${pic(n, "nw-pic")}
+        <div class="nw-body">${meta(n)}<h4>${esc(n.title)}</h4>${text(n, NEWS_MORE / 2)}${by(n)}</div></article>`).join("")}</div>` : ""}`
+      : `<div class="nw-empty"><img src="sbu-logo.webp" alt=""><span>Нових випусків поки немає</span></div>`}
+  </section>`;
 }
 // картинки новин: посилання Discord на файл беремо окремим запитом (токен в адресі не світиться)
 async function loadNewsImgs() {
