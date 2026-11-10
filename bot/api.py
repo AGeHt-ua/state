@@ -9,6 +9,7 @@ from aiohttp import web
 
 import admin
 import callsigns
+import castro_link
 import games
 import promo
 import finance
@@ -119,6 +120,12 @@ def limit_login(key: str):
 
 
 # ---------------------------------------------------------------- вхід
+@routes.post("/api/castro/access")
+async def castro_access(request):
+    """Сервер CASTRO CONTROL питає, чи може співробітник надсилати оголошення (підпис HMAC, див. castro_link)."""
+    return await castro_link.handle_access(request)
+
+
 @routes.get("/api/health")
 async def health(request):
     return web.json_response({"ok": True, "discord": bool(core.guild()), "time": now_ms()})

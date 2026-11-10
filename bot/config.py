@@ -34,6 +34,9 @@ BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 # Тунель Cloudflare + ретранслятор (Cloudflare Worker) — постійна HTTPS-адреса для сайту
 TUNNEL = env("SOVA_TUNNEL", "1")
 RELAY_URL = env("RELAY_URL", "https://sova.d-f-12339.workers.dev")
+# Спільний ключ із сервером CASTRO CONTROL (оголошення на екрани СБУ, див. castro_link.py); той самий — у секреті
+# SOVA_API_SECRET Worker'а auth.family-castro.fun. Без нього «Оголошення» в програмі нікому не відкриваються.
+CASTRO_API_SECRET = env("CASTRO_API_SECRET", "")
 AI_KEY = env("ANTHROPIC_API_KEY", "")  # необов'язково: ШІ-підсумок змін законодавства (вписує власник у .env)
 
 BACKUP_EVERY_HOURS =float(env("BACKUP_EVERY_HOURS", "6"))
