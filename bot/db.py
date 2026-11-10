@@ -199,6 +199,10 @@ CREATE TABLE IF NOT EXISTS protocols (
 CREATE TABLE IF NOT EXISTS game_scores (
   id INTEGER PRIMARY KEY AUTOINCREMENT, sid INTEGER, game TEXT, level INTEGER, score INTEGER, ms INTEGER, data TEXT, t INTEGER
 );
+CREATE TABLE IF NOT EXISTS news (               -- новини на головній (і в каналі Discord «news»)
+  id INTEGER PRIMARY KEY AUTOINCREMENT, author INTEGER, title TEXT, body TEXT, img TEXT, t INTEGER,
+  ch TEXT, msg TEXT, deleted INTEGER
+);
 CREATE INDEX IF NOT EXISTS game_sid ON game_scores(game, sid);
 CREATE INDEX IF NOT EXISTS disc_sid ON discipline(sid);
 CREATE INDEX IF NOT EXISTS acts_by ON acts(by_sid);

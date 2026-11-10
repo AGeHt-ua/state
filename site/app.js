@@ -237,9 +237,10 @@ function callsignCard(c) {
 
 async function vHome() {
   const cs = (ME.callsign && ME.callsign.eligible) || (ME.pending && ME.pending.callsign) ? call("/api/callsign").catch(() => null) : null;
+  const newsP = call("/api/news").catch(() => null);
   const acts = await call("/api/acts");
-  const csData = await cs;
-  setTimeout(() => verifyCard(), 60);  // після вставки сторінки (render вставляє HTML одразу після цього return)
+  const csData = await cs, newsData = await newsP;
+  setTimeout(() => { verifyCard(); loadNewsImgs(); }, 60);  // після вставки сторінки (render вставляє HTML одразу після цього return)
   const pc = ME.promo;
   const pend = ME.pending || {};
   const me = ME.me, d = META.depts[me.dept];
@@ -278,6 +279,7 @@ async function vHome() {
   ${todo.length ? `<section class="todo"><div class="eyebrow">Потребує вашого рішення</div><div class="todo-row">
     ${todo.map(([v, path, l, n]) => `<button class="todo-item" data-a="${v === "home" ? "csgo" : "goto"}" data-path="${path}">${ico(v === "home" ? "staff" : v)}<span>${l}</span><b class="num">${n}</b></button>`).join("")}</div></section>` : ""}
   ${callsignCard(csData)}
+  ${newsCard(newsData)}
   <div class="grid2">
     <div class="card"><header><h3>Наступне звання</h3>${pc ? `<span class="sp chip ${pc.eligible ? "ok" : "wait"}">${pc.eligible ? "Можна подати рапорт" : "Умови ще не виконано"}</span>` : ""}</header>
       ${pc ? `<div class="promo"><span class="from">${esc(me.rankName)}</span><i></i><span class="to">${esc(pc.name)}</span></div>
@@ -299,6 +301,42 @@ async function vHome() {
   <div class="card"><header><h3>Останні звіти</h3><button class="sp btn sm" data-a="go" data-v="act" data-tab="new">+ Новий звіт</button></header>
     ${acts.length ? actFeed(acts.slice(0, 6), false) : '<div class="empty">Звітів ще немає. Додайте перший після зміни.</div>'}
   </div>`;
+}
+
+
+/* ---------------- новини (головна) ---------------- */
+// Стрічка новин СБУ; публікують керівництво й Прес-служба — новина одночасно йде в канал Discord зі згадкою ролі СБУ
+const NEWS_MORE = 300;  // довгий текст згортається
+function newsCard(N) {
+  if (!N) return "";
+  const form = N.canPost && UI.newsForm ? `<form class="nw-form" data-f="newspub">
+      <label class="f"><span>Заголовок</span><input class="i" name="title" maxlength="200" required placeholder="Напр.: Підсумки спецоперації «Світанок»"></label>
+      <label class="f"><span>Текст</span><textarea class="i" name="body" rows="5" maxlength="3500" placeholder="Що сталося, кого стосується, що робити…"></textarea></label>
+      <div class="nw-img-row"><label class="btn sm">🖼 Картинка<input type="file" id="nw-img" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
+        <span class="muted small" id="nw-img-name">не обрано</span><button class="btn sm" type="button" data-a="newsimgclear" id="nw-img-x" hidden>✕</button></div>
+      <img id="nw-prev" class="nw-prev" alt="" hidden>
+      <div class="acts"><button class="btn gold" type="submit">📢 Опублікувати</button><button class="btn" type="button" data-a="newsform">Скасувати</button>
+        <span class="muted small">Новина з'явиться тут і в Discord зі згадкою СБУ.</span></div></form>` : "";
+  const item = (n) => {
+    const long = n.body.length > NEWS_MORE && !UI.newsOpen?.[n.id];
+    return `<article class="nw-it">
+      ${n.img ? `<button class="nw-pic" data-a="file" data-id="${esc(n.img)}" title="Відкрити картинку"><img data-fid="${esc(n.img)}" alt=""></button>` : ""}
+      <div class="nw-body"><div class="nw-meta"><span>${fmtDT(n.t)}</span><span>${esc(n.author.rankName)} ${esc(n.author.name)}</span>
+          ${n.discord ? `<span class="nw-ds" title="Опубліковано в Discord">Discord ✓</span>` : ""}<span class="sp"></span>
+          ${n.canDelete ? `<button class="btn sm bad" data-a="newsdel" data-id="${n.id}" title="Видалити новину (і з Discord)">✕</button>` : ""}</div>
+        <h4>${esc(n.title)}</h4>${n.body ? `<p class="nw-text">${esc(long ? n.body.slice(0, NEWS_MORE).trimEnd() + "…" : n.body)}</p>` : ""}
+        ${long ? `<button class="nw-more" data-a="newsmore" data-id="${n.id}">Читати повністю</button>` : ""}</div></article>`;
+  };
+  return `<div class="card nw"><header><h3>Новини СБУ</h3>
+      ${N.canPost && !UI.newsForm ? `<button class="sp btn sm gold" data-a="newsform">+ Новина</button>` : ""}</header>
+    ${form}
+    ${N.items.length ? `<div class="nw-feed">${N.items.map(item).join("")}</div>` : `<div class="empty">Новин поки немає.</div>`}</div>`;
+}
+// картинки новин: посилання Discord на файл беремо окремим запитом (токен в адресі не світиться)
+async function loadNewsImgs() {
+  for (const img of document.querySelectorAll("img[data-fid]:not([src])")) {
+    try { img.src = (await call(`/api/files/${encodeURIComponent(img.dataset.fid)}/url`)).url; } catch (e) { img.closest(".nw-pic")?.remove(); }
+  }
 }
 
 /* ---------------- звіти ---------------- */
@@ -981,6 +1019,14 @@ const A = {
   file: async (b) => {
     showFile(b.dataset.id);
   },
+  newsform: () => { UI.newsForm = !UI.newsForm; UI.newsImg = null; render(); },
+  newsmore: (b) => { UI.newsOpen = { ...(UI.newsOpen || {}), [b.dataset.id]: true }; render(); },
+  newsimgclear: () => { UI.newsImg = null; const i = $("#nw-img"); if (i) i.value = ""; $("#nw-prev").hidden = true; $("#nw-img-x").hidden = true; $("#nw-img-name").textContent = "не обрано"; },
+  newsdel: async (b) => {
+    if (!confirm("Видалити новину? Її буде прибрано й з Discord.")) return;
+    b.disabled = true;
+    try { await call(`/api/news/${b.dataset.id}/delete`, { json: {} }); toast("Новину видалено"); render(); } catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
   // універсальна кнопка PDF: data-sel — селектор бланка на сторінці, data-name — назва файлу
   verify: (b) => verifyCard(b),
   csgo: () => document.getElementById("cs-card")?.scrollIntoView({ behavior: "smooth", block: "center" }),
@@ -1045,6 +1091,23 @@ const A = {
 };
 
 const F = {
+  newspub: async (f) => {
+    const btn = f.querySelector("button[type=submit]"), title = f.title.value.trim();
+    if (title.length < 3) return toast("Додайте заголовок новини", 1);
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Публікую…';
+    try {
+      let img = null;
+      if (UI.newsImg) {
+        const fd = new FormData();
+        fd.append("file", UI.newsImg, UI.newsImg.name || "news.png");
+        img = (await call("/api/files", { method: "POST", body: fd })).id;
+      }
+      const r = await call("/api/news", { json: { title, body: f.body.value, img } });
+      UI.newsForm = false; UI.newsImg = null;
+      toast(r.warn || "Новину опубліковано на сайті й у Discord", !!r.warn);
+      render();
+    } catch (e) { toast(e.message, 1); btn.disabled = false; btn.textContent = "📢 Опублікувати"; }
+  },
   docgo: () => {
     const inp = $("#docgo-q"), path = docPath(inp.value);
     if (!path) return toast("Вкажіть номер документа, напр. ЗВТ-0042, РАП-13, КФ-7, ПЗ-12, НС-5", 1);
@@ -1114,6 +1177,16 @@ document.addEventListener("input", (e) => {
   }
 });
 document.addEventListener("change", (e) => {
+  if (e.target.id === "nw-img") {  // картинка до новини: попередній перегляд
+    const f = e.target.files[0];
+    if (f && !/^image\/(png|jpe?g|gif|webp)$/.test(f.type)) { e.target.value = ""; return toast("Лише картинка: PNG, JPG, GIF або WEBP", 1); }
+    if (f && f.size > 8 * 1024 * 1024) { e.target.value = ""; return toast("Картинка більша за 8 МБ", 1); }
+    UI.newsImg = f || null;
+    const p = $("#nw-prev");
+    if (p.src) URL.revokeObjectURL(p.src);
+    p.hidden = !f; if (f) p.src = URL.createObjectURL(f);
+    $("#nw-img-x").hidden = !f; $("#nw-img-name").textContent = f ? f.name : "не обрано";
+  }
   if (e.target.id === "a-type" && $("#a-custom-f")) $("#a-custom-f").hidden = e.target.value !== "other";
   if (e.target.id === "a-type" && $("#a-qty-f")) { $("#a-qty-f").hidden = e.target.value !== "patrol"; if (e.target.value !== "patrol") $("#a-qty").value = 1; }
   if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview(); if (e.target.dataset.change === "raptype") { UI.rapType = e.target.value; render(); } });

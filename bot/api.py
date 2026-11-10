@@ -22,6 +22,7 @@ import docpost
 import kb
 import library
 import memo
+import news
 import orders
 import config
 import core
@@ -1240,6 +1241,25 @@ async def hr_access(request):
     u = await auth(request)
     text = await core.decide_access(int(request.match_info["id"]), await reviewer_member(u), (await body(request)).get("decision"))
     return web.json_response({"text": text})
+
+
+# ---------------------------------------------------------------- новини (головна сторінка)
+@routes.get("/api/news")
+async def news_list(request):
+    u = await auth(request)
+    return web.json_response(await news.listing(u))
+
+
+@routes.post("/api/news")
+async def news_create(request):
+    u = await auth(request)
+    return web.json_response(await news.create(u, await body(request)), status=201)
+
+
+@routes.post("/api/news/{id}/delete")
+async def news_delete(request):
+    u = await auth(request)
+    return web.json_response(await news.delete(u, int(request.match_info["id"])))
 
 
 # ---------------------------------------------------------------- файли
