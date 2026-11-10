@@ -292,6 +292,7 @@ class RegisterView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(discord.ui.Button(label="Анкета кандидата", emoji="📝", url=config.SITE_URL.rstrip("/") + "/site/anketa.html"))
+        self.add_item(discord.ui.Button(label="CASTRO CONTROL", emoji="🖥️", url=config.CASTRO_CONTROL_URL))
 
     @discord.ui.button(label="Отримати допуск", style=discord.ButtonStyle.success, emoji="🦉", custom_id="sova:register")
     async def create(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -435,7 +436,8 @@ class AccessPanel(discord.ui.LayoutView):
             discord.ui.TextDisplay("### 🛡️ Панель керування\nОберіть потрібну дію нижче. Відповіді бота бачите **лише ви**.\n"
                                    "-# СБУ штату NG · Честь. Закон. Безпека."),
             discord.ui.ActionRow(discord.ui.Button(label="Кабінет «Сова»", emoji="🌐", url=site + "/site/"),
-                                 discord.ui.Button(label="Анкета кандидата", emoji="📝", url=site + "/site/anketa.html")),
+                                 discord.ui.Button(label="Анкета кандидата", emoji="📝", url=site + "/site/anketa.html"),
+                                 discord.ui.Button(label="CASTRO CONTROL", emoji="🖥️", url=config.CASTRO_CONTROL_URL)),
             accent_colour=GOLD))
         self.add_item(_card(GREEN, "🦉 Отримати допуск",
                             "Вкажіть **номер жетона** (Static ID) та **ім'я персонажа** — заявку розгляне **ВКПП**, код доступу прийде в особисті.\n"

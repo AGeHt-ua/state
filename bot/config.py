@@ -24,6 +24,8 @@ API_HOST = env("API_HOST", "0.0.0.0")
 # Адреси сайту, яким дозволено звертатися до API (через кому)
 SITE_ORIGINS = [o.strip() for o in env("SITE_ORIGINS", "https://ageht-ua.github.io,http://localhost:8765").split(",") if o.strip()]
 SITE_URL = env("SITE_URL", "https://ageht-ua.github.io/state/")
+# Програма CASTRO CONTROL (планшет «СОВА» над грою): свіжий інсталятор
+CASTRO_CONTROL_URL = env("CASTRO_CONTROL_URL", "https://auth.family-castro.fun/v1/update/setup")
 
 DATA_DIR = Path(env("DATA_DIR", str(Path(__file__).resolve().parent.parent / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
