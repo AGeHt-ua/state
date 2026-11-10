@@ -765,7 +765,8 @@ async function view() {
   const lb = (rows) => rows.length ? `<ol class="gm-lb">${rows.map((r, n) => `<li class="${r.sid === me.sid ? "me" : ""}"><b>${n + 1}</b><span>${esc(r.rankShort || "")} ${esc(r.name)} <i class="muted">${esc(r.deptS || "")}</i></span><em>${r.score}</em></li>`).join("")}</ol>` : '<p class="muted small">Ще ніхто не пройшов.</p>';
   const dl = (rows) => rows.length ? `<ol class="gm-lb">${rows.map((r, n) => `<li class="${r.dept === me.dept ? "me" : ""}"><b>${n + 1}</b><span>${esc(r.n)} <i class="muted">учасників: ${r.players}</i></span><em>${r.avg}</em></li>`).join("")}</ol>` : '<p class="muted small">Ще немає результатів.</p>';
   const team = (ppl && ppl.team) || [];
-  return `<div class="gm-hero"><div><div class="eyebrow">Тренажер ЦСО «Альфа» · ЄІС «Сова»</div><h2>ШТУРМ</h2>
+  return `<div class="gm-crumbs"><button class="btn sm" data-a="trhub">← Усі тренажери</button></div>
+    <div class="gm-hero"><div><div class="eyebrow">Тренажер «Альфа» · ЦСО «Альфа» · ЄІС «Сова»</div><h2>ШТУРМ</h2>
       <p>Тактичний штурм будівлі з видом згори. Ви бачите лише те, що в полі зору. Спершу — <b>вимога здатися</b>, вогонь — лише по озброєних. Заручники — <b>наші колеги</b> зі складу СБУ.</p>
       <div class="gm-keys"><span><b>WASD</b> рух</span><span><b>Shift</b> тихо</span><span><b>ЛКМ</b> вогонь</span><span><b>R</b> перезарядка</span><span><b>E</b> двері · кайданки · заручник</span><span><b>F</b> «Руки вгору!»</span><span><b>G</b> світлошумова</span><span><b>Esc</b> пауза</span></div>
       <label class="gm-mate">🤝 Напарник: <select class="i" id="gm-mate"><option value="">— без напарника —</option>${team.map((t) => `<option value="${t.sid}" ${st.mate && st.mate.sid === t.sid ? "selected" : ""}>${esc(t.rankShort)} ${esc(t.callsign || t.name)} · ${esc(t.deptS)}</option>`).join("")}</select></label>
@@ -784,7 +785,8 @@ async function view() {
     <div class="card gm-law-card"><header><h3>📖 Довідка оперативника</h3><span class="muted small">законодавча база NG</span></header>
       <div class="gm-law">${LAW.base.map(([a, t]) => `<span><i>${a}</i> ${esc(t)}</span>`).join("")}<span><i>ст. 16.1 ПК</i> Застава заборонена: зброя, захоплення заручників, тероризм, НЗФ</span><span><i>ст. 40–41 ПК</i> Протокол затримання: дата, місце, учасники, підстава, вилучене</span></div></div>`;
 }
-S.views.game = view;
+S.games = S.games || {};
+S.games.assault = { view, stop };
 Object.assign(S.actions, {
   gmplay: (b) => {
     const sel = document.getElementById("gm-mate");

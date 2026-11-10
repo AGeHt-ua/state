@@ -148,13 +148,13 @@ const NAV = [
   ["hr", "Кадри", () => !!(ME.hr && (ME.hr.vvb || ME.hr.vkpp))],
   ["audit", "Кадровий аудит", (u) => u.rank >= 12 || !!(ME.hr && ME.hr.vkpp)],
   ["fin", "Клопотання Мінфіну", () => !!(ME.fin && ME.fin.view)],
-  ["game", "Тренажер «Штурм»", () => true],
+  ["game", "Тренажери", () => true],
   ["admin", "Адмін-панель", () => !!ME.admin],
 ];
 const SOON = [];
 // Генеральний прокурор (не співробітник СБУ) бачить лише кейс-файли
 const navOk = (n) => n[2](ME.me) && (ME.me.dept !== "prosecutor" || n[0] === "cases");
-const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Розділ відділу", bonus: "Премії", disc: "Дисципліна", kb: "База даних", admin: "Адмін-панель", fin: "Клопотання до Мінфіну", game: "Тренажер «Штурм» · ЦСО «Альфа»" };
+const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Розділ відділу", bonus: "Премії", disc: "Дисципліна", kb: "База даних", admin: "Адмін-панель", fin: "Клопотання до Мінфіну", game: "Тренажери СБУ" };
 
 function viewShell(inner) {
   const p = ME.pending || {};
@@ -266,7 +266,7 @@ async function vHome() {
         <dl><dt>Звання</dt><dd>${esc(me.rankName)}</dd><dt>Підрозділ</dt><dd>${esc(d.n)}</dd><dt>Жетон</dt><dd class="mono">${me.sid}</dd><dt>На званні з</dt><dd>${fmtDT(me.since)}</dd></dl>
       </div>
       <div class="idcard-foot"><span class="mono">SBU-NG · ${String(me.sid).padStart(8, "0")}</span><span class="idcard-rank">${me.rank}<small>/15</small></span></div>
-      ${(ME.gameBadges || []).length ? `<div class="idcard-badges">${ME.gameBadges.map((b) => `<span title="Тренажер «Штурм»">${b.icon} ${esc(b.t)}</span>`).join("")}</div>` : ""}
+      ${(ME.gameBadges || []).length ? `<div class="idcard-badges">${ME.gameBadges.map((b) => `<span title="Тренажери СБУ">${b.icon} ${esc(b.t)}</span>`).join("")}</div>` : ""}
       <div class="idcard-ver" id="idver"><span class="iv-st">⟳ Звіряю з Discord…</span></div>
     </div>
     <div class="hero-stats">

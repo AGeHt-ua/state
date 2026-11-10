@@ -256,7 +256,7 @@ async def prot_act(request):
     return web.json_response(await protocols.act(u, int(request.match_info["id"]), request.match_info["action"], await body(request)))
 
 
-# ---------------------------------------------------------------- тренажер «Штурм»: рейтинг (на бали підвищення й премії не впливає)
+# ---------------------------------------------------------------- тренажери «Штурм» і «Хвіст»: рейтинги (на бали підвищення й премії не впливають)
 async def _game_board(game: str, since: int = 0) -> list[dict]:
     rows = await db.all("SELECT sid, SUM(best) AS score FROM (SELECT sid, level, MAX(score) AS best FROM game_scores WHERE game=? AND t>=? GROUP BY sid, level) "
                         "GROUP BY sid ORDER BY score DESC LIMIT 10", game, since)
@@ -269,9 +269,14 @@ async def game_people(request):
     return web.json_response(await games.people(await auth(request)))
 
 
+@routes.get("/api/game/hub")
+async def game_hub(request):
+    return web.json_response(await games.hub(await auth(request)))
+
+
 @routes.get("/api/game/{game}")
 async def game_board(request):
-    return web.json_response(await games.board(await auth(request)))
+    return web.json_response(await games.board(await auth(request), request.match_info["game"]))
 
 
 @routes.post("/api/game/score")

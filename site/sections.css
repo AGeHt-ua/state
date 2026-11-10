@@ -251,7 +251,7 @@
 .gm-best{font:12px var(--mono);color:var(--muted)}.gm-best b{color:var(--gold2);font-size:14px}
 .gm-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}.gm-bar b{font:18px var(--display)}
 .gm-wrap{position:relative;border:1px solid var(--line2);background:#05070b;box-shadow:0 18px 40px rgba(0,0,0,.5)}
-#gm-canvas{display:block;width:100%;height:auto;cursor:none;outline:none}
+#gm-canvas,#tl-canvas{display:block;width:100%;height:auto;cursor:none;outline:none}
 .gm-over{position:absolute;inset:0;display:grid;place-items:center;background:rgba(4,6,10,.72);padding:16px}
 .gm-card{width:min(520px,100%);padding:20px 22px;border:1px solid var(--line2);background:var(--panel);display:grid;gap:8px}
 .gm-card.ok{border-top:3px solid var(--ok)}.gm-card.bad{border-top:3px solid var(--bad)}.gm-card h3{font:22px var(--display);margin:0}
@@ -277,7 +277,7 @@
 .gm-law-card .gm-law{border:0;background:none;padding:0}
 .gm-bar .sp{flex:1}
 .gm-wrap:fullscreen{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;background:#000;border:0}
-.gm-wrap:fullscreen #gm-canvas{width:min(100vw,calc(100vh * 1.3545));height:auto}
+.gm-wrap:fullscreen #gm-canvas,.gm-wrap:fullscreen #tl-canvas{width:min(100vw,calc(100vh * 1.3545));height:auto}
 .idcard-badges{display:flex;flex-wrap:wrap;gap:5px;padding:0 18px 12px}
 .idcard-badges span{font-size:11px;padding:2px 8px;border:1px solid rgba(201,162,77,.45);color:var(--gold2);background:rgba(201,162,77,.08)}
 
@@ -357,3 +357,27 @@
 .nw-empty img{width:54px;opacity:.35}
 @media (max-width:760px){.nw-lead{grid-template-columns:1fr}.nw-lead-pic{min-height:190px}.nw-lead-pic::after{background:linear-gradient(180deg,transparent 60%,rgba(18,25,36,.85))}
   .nw-lead-body{border-left:0;border-top:3px solid var(--gold)}.nw-lead-body h4{font-size:19px}}
+/* вкладка «Тренажери СБУ» */
+.gm-crumbs{margin-bottom:10px}
+.tr-hero{background:linear-gradient(120deg,rgba(176,127,224,.1),transparent 45%),linear-gradient(240deg,rgba(212,96,90,.1),transparent 45%),var(--panel)}
+.tr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px}
+.tr-card{position:relative;display:grid;gap:10px;align-content:start;padding:18px 20px;border:1px solid var(--line2);border-radius:4px;overflow:hidden;
+  background:linear-gradient(160deg,rgba(var(--acc,201,162,77),.14),transparent 55%),var(--panel);transition:transform .15s,border-color .15s}
+.tr-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:rgb(var(--acc,201,162,77))}
+.tr-card:hover{transform:translateY(-3px);border-color:rgba(var(--acc,201,162,77),.7)}
+.tr-top{display:flex;gap:12px;align-items:center}
+.tr-icon{font-size:30px;width:52px;height:52px;display:grid;place-items:center;border:1px solid rgba(var(--acc,201,162,77),.5);border-radius:50%;background:rgba(0,0,0,.25)}
+.tr-name{font:600 15px var(--display);letter-spacing:.04em}
+.tr-new{margin-left:auto;align-self:start;font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--gold-ink);background:var(--gold);padding:5px 8px;border-radius:2px}
+.tr-card h3{font:800 34px/1 var(--display);letter-spacing:.22em;margin:4px 0 0;color:rgb(var(--acc,201,162,77));text-shadow:0 0 22px rgba(var(--acc,201,162,77),.35)}
+.tr-card p{margin:0;color:#cfd6e2;font-size:13.5px;line-height:1.55}
+.tr-tags{display:flex;flex-wrap:wrap;gap:6px}
+.tr-tags span{font:11px/1 var(--mono);color:var(--muted);border:1px solid var(--line2);padding:5px 7px;border-radius:2px}
+.tr-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.tr-stats i{display:block;font:normal 10.5px/1.3 var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.tr-stats b{display:block;font-size:13px;margin-top:3px;overflow-wrap:anywhere}
+.tr-card .btn{justify-self:start}
+.tr-soon{border-style:dashed;background:var(--panel);opacity:.75}.tr-soon::before{background:var(--line2)}.tr-soon:hover{transform:none}
+.tl-hero{background:linear-gradient(160deg,rgba(176,127,224,.12),transparent 55%),var(--panel)}
+.tl-hero h2{color:#cdb0f0;text-shadow:0 0 24px rgba(176,127,224,.35)}
+@media (max-width:560px){.tr-stats{grid-template-columns:1fr}}
