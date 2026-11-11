@@ -1,4 +1,4 @@
-"""Тренажери СБУ: «Штурм» (ЦСО «Альфа») і «Хвіст» (ОРВ, негласне стеження).
+"""Тренажери СБУ: «Штурм» (ЦСО «Альфа»), «Хвіст» (ОРВ, негласне стеження) і «Перевірка» (ВВБ, службове розслідування).
 Люди в грі (заручники й напарник — колеги зі складу), рейтинги кожної гри (особистий, відділів, операція тижня),
 нагороди на посвідченні, стрічка «вас урятували» і щотижневі підсумки в Discord. На бали підвищення й премії не впливає."""
 import asyncio
@@ -24,6 +24,9 @@ GAMES = {
     "tail": {"title": "ТРЕНАЖЕР ОРВ · «ХВІСТ»", "max": 12000, "posted": "game_posted_tail", "best": "Найкращий оперативник стеження тижня",
              "footer": "Оперативно-розшуковий відділ · рейтинг у ЄІС «Сова» → Тренажери",
              "fields": ("photos", "contacts", "exchange", "audio", "watchers", "maxSusp", "swaps", "disguise", "grade", "partner", "film")},
+    "audit": {"title": "ТРЕНАЖЕР ВВБ · «ПЕРЕВІРКА»", "max": 12000, "posted": "game_posted_audit", "best": "Найкращий інспектор ВВБ тижня",
+              "footer": "Відділ внутрішньої безпеки · рейтинг у ЄІС «Сова» → Тренажери",
+              "fields": ("right", "falseAccuse", "found", "missed", "falseMarks", "pins", "grade", "tpl", "qual", "sanct")},
 }
 GAME = "assault"
 
@@ -124,6 +127,26 @@ async def badges(sid: int, game: str | None = None) -> list[dict]:
         out += await _badges_assault(sid)
     if game in (None, "tail"):
         out += await _badges_tail(sid)
+    if game in (None, "audit"):
+        out += await _badges_audit(sid)
+    return out
+
+
+async def _badges_audit(sid: int) -> list[dict]:
+    """Нагороди «Перевірки» (ВВБ)."""
+    out = []
+    rows = await db.all("SELECT level, data FROM game_scores WHERE game='audit' AND sid=?", sid)
+    if not rows:
+        return out
+    datas = [(r["level"], json.loads(r["data"] or "{}")) for r in rows]
+    wk = await db.all("SELECT sid, SUM(best) AS s FROM (SELECT sid, level, MAX(score) AS best FROM game_scores WHERE game='audit' AND t>=? AND t<? AND level<3 "
+                      "GROUP BY sid, level) GROUP BY sid ORDER BY s DESC LIMIT 1", core.week_start(1), core.week_start(0))
+    if wk and wk[0]["sid"] == sid:
+        out.append({"k": "aweek", "icon": "🔎", "t": GAMES["audit"]["best"]})
+    if len(datas) >= 5 and not any(d.get("falseAccuse") for _, d in datas):
+        out.append({"k": "fair", "icon": "⚖", "t": "Жодного хибного звинувачення"})
+    if all(any(lvl == i and d.get("grade") == "S" for lvl, d in datas) for i in (0, 1, 2)):
+        out.append({"k": "as", "icon": "⭐", "t": "S-ранг на всіх перевірках"})
     return out
 
 

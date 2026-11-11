@@ -381,3 +381,34 @@
 .tl-hero{background:linear-gradient(160deg,rgba(176,127,224,.12),transparent 55%),var(--panel)}
 .tl-hero h2{color:#cdb0f0;text-shadow:0 0 24px rgba(176,127,224,.35)}
 @media (max-width:560px){.tr-stats{grid-template-columns:1fr}}
+/* тренажер ВВБ «Перевірка» */
+.au-hero{background:linear-gradient(160deg,rgba(217,162,61,.14),transparent 55%),var(--panel)}
+.au-hero h2{color:#e7c37a}
+.au-clock{font:13px var(--mono);color:var(--muted)}.au-clock b{color:var(--fg)}
+.au-grid{display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px;align-items:start}
+.au-side{display:grid;gap:10px;padding:14px;border:1px solid var(--line2);border-radius:4px;background:var(--panel)}
+.au-sig{padding:10px 12px;border-left:3px solid #d9a23d;background:rgba(217,162,61,.08)}.au-sig p{margin:4px 0 0;font-size:13px;line-height:1.5}
+.au-sus{display:grid;grid-template-columns:1fr auto;gap:2px 8px;text-align:left;padding:9px 11px;border:1px solid var(--line2);border-radius:3px;background:var(--bg2);color:inherit;cursor:pointer}
+.au-sus span{grid-column:1;font:11px var(--mono);color:var(--muted)}.au-sus i{grid-row:1/3;grid-column:2;align-self:center;font-style:normal;color:#d9a23d}
+.au-sus.on{border-color:#d9a23d;background:rgba(217,162,61,.1)}
+.au-ev ul{margin:6px 0 0;padding-left:16px;font-size:12px;display:grid;gap:4px}
+.au-main{display:grid;gap:10px;min-width:0}
+.au-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.au-tabs button{padding:7px 12px;border:1px solid var(--line2);border-radius:3px;background:var(--panel);color:var(--muted);cursor:pointer;font-size:13px}
+.au-tabs button.on{color:var(--fg);border-color:#d9a23d;background:rgba(217,162,61,.1)}
+.au-player{display:grid;gap:8px}
+#au-cv{width:100%;height:auto;display:block;border:1px solid var(--line2);background:#000;border-radius:3px}
+.au-ctl{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.au-seekw{position:relative;flex:1;min-width:180px}.au-seekw input{width:100%}
+.au-flags{position:relative;height:14px}.au-flags span{position:absolute;transform:translateX(-50%);color:#d9a23d;font-size:12px;line-height:1}
+.au-speed{width:auto}
+.au-markbox{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px;border:1px dashed #d9a23d;border-radius:3px;background:rgba(217,162,61,.08)}
+.au-markbox select{width:auto;max-width:100%}
+.au-marks{display:flex;gap:6px;flex-wrap:wrap}.au-marks span{font-size:12px;padding:4px 8px;border:1px solid var(--line2);border-radius:3px}
+.au-marks button{border:0;background:none;color:var(--muted);cursor:pointer}
+.au-doc td,.au-doc th{font-size:13px}.au-doc tr.pin td{background:rgba(217,162,61,.12)}
+.au-pin{border:0;background:none;cursor:pointer;opacity:.45;font-size:14px}.au-doc tr.pin .au-pin{opacity:1}
+.au-modal{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:16px;background:rgba(4,6,10,.75);overflow:auto}
+.au-modal .gm-card{max-width:680px;width:100%;max-height:calc(100vh - 32px);overflow:auto}
+.au-final{display:grid;gap:12px}
+@media (max-width:900px){.au-grid{grid-template-columns:1fr}}
