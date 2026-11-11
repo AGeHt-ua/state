@@ -285,9 +285,10 @@ async function examsView() {
   S.cache.exams = d;
   const pct = (a) => a.pct == null ? '<span class="chip wait">На перевірці ВКПП</span>' : `<span class="chip ${a.passed ? "ok" : "bad"}">${a.pct}% · ${a.passed ? "складено" : "не складено"}</span>`;
   return `${d.examiner ? '<div class="bn-actions"><button class="btn gold" data-a="exnew">+ Створити іспит</button></div>' : ""}
-    <div class="ex-grid">${d.exams.map((e) => `<article class="ex-card ${e.status}"><div class="eyebrow">${e.status === "published" ? "Опубліковано" : "Чернетка"}</div><h3>${esc(e.title)}</h3>
+    <div class="ex-grid">${d.exams.map((e) => `<article class="ex-card ${e.status} ${e.locked ? "locked" : ""}"><div class="eyebrow">${e.status === "published" ? "Опубліковано" : "Чернетка"}</div><h3>${esc(e.title)}</h3>
       <p class="muted small">${esc(e.descr || "")}</p><div class="ex-meta"><span>${e.count} питань</span><span>прохідний ${e.pass_pct}%</span><span>${e.minutes ? e.minutes + " хв" : "без ліміту часу"}</span></div>
-      <div class="acts">${e.status === "published" ? `<button class="btn gold sm" data-a="exstart" data-id="${e.id}">Скласти іспит</button>` : ""}
+      ${e.minRank ? `<div class="ex-rank ${e.locked ? "lock" : ""}">${e.locked ? "🔒" : "🎖"} Зі звання «${esc(e.minRankName)}»</div>` : ""}
+      <div class="acts">${e.status === "published" ? (e.locked ? `<span class="muted small">Відкриється після підвищення до звання «${esc(e.minRankName)}»</span>` : `<button class="btn gold sm" data-a="exstart" data-id="${e.id}">Скласти іспит</button>`) : ""}
         ${d.examiner ? `<button class="btn sm" data-a="exedit" data-id="${e.id}">Редагувати</button><button class="btn sm bad" data-a="exdel" data-id="${e.id}">🗑</button>` : ""}</div></article>`).join("") || '<div class="empty">Іспитів ще немає.</div>'}</div>
     <h3 class="bn-h" style="margin-top:20px">Мої результати</h3>
     ${d.mine.length ? `<div class="docs">${d.mine.map((a) => `<article class="doc st-${a.pct == null ? "wait" : a.passed ? "ok" : "rej"}" data-a="exres" data-id="${a.id}" style="cursor:pointer">

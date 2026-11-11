@@ -3,6 +3,7 @@ import json
 
 import core
 import overrides as ov
+import promo
 from core import Fail
 from db import db, now_ms
 from roles import rank_name
@@ -120,10 +121,23 @@ def public_exam(e: dict) -> dict:
 RETRY_MS = 24 * 3600 * 1000  # пауза між спробами іспиту після нескладеної
 
 
+async def min_ranks() -> dict[int, int]:
+    """З якого звання відкривається іспит: той, що потрібен для підвищення до звання N, доступний зі звання N−1
+    (адмін-панель → «Підвищення»). Так Стажер бачить лише 1-й іспит, Молодший агент — ще 2-й, Агент — 3-й. Решта — для всіх."""
+    out = {}
+    for r, c in (await promo.cfg()).items():
+        if c.get("exam"):
+            out[int(c["exam"])] = min(out.get(int(c["exam"]), 99), r - 1)
+    return out
+
+
 async def start(u: dict, eid: int) -> dict:
     e = await exam_get(eid)
     if e["status"] != "published":
         raise Fail("Іспит ще не опубліковано.")
+    need = (await min_ranks()).get(eid, 0)
+    if u["rank"] < need:
+        raise Fail(f"Іспит «{e['title']}» відкривається зі звання «{rank_name(need)}». Спершу складіть попередній іспит і отримайте підвищення.", 403)
     a = await db.one("SELECT * FROM attempts WHERE exam_id=? AND sid=? AND status='progress'", eid, u["sid"])
     if not a:
         last = await db.one("SELECT * FROM attempts WHERE exam_id=? AND sid=? AND status IN ('submitted','graded') ORDER BY finished DESC LIMIT 1",
@@ -216,9 +230,12 @@ async def overview(u: dict) -> dict:
                          + ("" if ex else " AND status='published'") + " ORDER BY id")
     mine = await db.all("SELECT * FROM attempts WHERE sid=? AND status!='deleted' ORDER BY id DESC LIMIT 50", u["sid"])
     review = await db.all("SELECT * FROM attempts WHERE status IN ('submitted','graded') ORDER BY (status='submitted') DESC, finished DESC LIMIT 100") if ex else []
+    need = await min_ranks()
     return {
         "examiner": ex,
-        "exams": [{**{k: e[k] for k in ("id", "title", "descr", "pass_pct", "minutes", "status", "t")}, "count": len(json.loads(e["questions"] or "[]"))} for e in exams],
+        "exams": [{**{k: e[k] for k in ("id", "title", "descr", "pass_pct", "minutes", "status", "t")}, "count": len(json.loads(e["questions"] or "[]")),
+                   "minRank": need.get(e["id"], 0), "minRankName": rank_name(need[e["id"]]) if need.get(e["id"]) else "",
+                   "locked": u["rank"] < need.get(e["id"], 0)} for e in exams],
         "mine": [await attempt_out(a, reveal=a["status"] == "graded") for a in mine if a["status"] != "progress"],
         "review": [await attempt_out(a, reveal=True, keys=True) for a in review],
     }
