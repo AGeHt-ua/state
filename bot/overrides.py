@@ -16,6 +16,8 @@ PERMS = {
     "kb_sync":        ("Оновлення законодавчої бази", 15, ""),
     "memo_edit":      ("Пам'ятка статей і порядок затримання: редагування", 14, ""),
     "audit_view":     ("Перегляд кадрового аудиту", 12, "також ВКПП"),
+    "dept_all":       ("Розділ відділу: статистика всіх підрозділів", 14, ""),
+    "dept_own":       ("Розділ відділу: статистика своїх підрозділів", 12, "за ролями відділів; начальник управління — підрозділи з вкладки «Управління»"),
     "disc_chief":     ("Дисципліна: рішення керівництва (зняття, перевірки ВВБ)", 14, ""),
     "news_post":      ("Новини: публікація на головній і в Discord", 14, "також Прес-служба"),
     "castro_broadcast": ("CASTRO CONTROL: оголошення на екрани всіх СБУ (текст, картинка)", 14, "розділ «Оголошення» в програмі"),
@@ -25,6 +27,7 @@ _perms: dict[str, int] = {}
 channels: dict[str, int] = {}
 mentions: dict[str, list[int]] = {}
 nick: dict = {}  # шаблони нікнеймів, скорочення звань, відділи з позивними
+mgmt: dict[str, list[str]] = {}  # начальники управлінь: sid → відділи, статистику яких бачить (вручну; інакше — за ролями Discord)
 
 
 def P(key: str) -> int:
@@ -41,6 +44,7 @@ async def load(db):
     channels.clear(); channels.update({k: int(v) for k, v in (await db.get_setting("admin_channels", {})).items() if v})
     mentions.clear(); mentions.update({k: [int(x) for x in v] for k, v in (await db.get_setting("admin_mentions", {})).items()})
     nick.clear(); nick.update(await db.get_setting("admin_nick", {}))
+    mgmt.clear(); mgmt.update({str(k): list(v) for k, v in (await db.get_setting("admin_mgmt", {})).items() if isinstance(v, list)})
 
 
 async def save_perms(db, data: dict) -> dict:

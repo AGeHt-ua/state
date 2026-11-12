@@ -1,8 +1,10 @@
-"""Розділ відділу: контрольна панель для Голови СБУ, його заступника (усі відділи) та начальника відділу (свої відділи)."""
+"""Розділ відділу: контрольна панель для Голови СБУ, його заступника (усі відділи), начальника управління (підрозділи управління)
+та начальника відділу (свої відділи)."""
 import json
 from collections import Counter
 
 import core
+import overrides as ov
 from core import ACTS, DAY, Fail
 from db import db, now_ms
 from roles import DEPTS, OPS_DEPTS, rank_name
@@ -11,13 +13,30 @@ CONTROL_DEPTS = [*OPS_DEPTS, "academy", "press"]
 INACTIVE_DAYS = 3
 
 
+def role_depts(u: dict) -> list[str]:
+    """Оперативні відділи, ролі яких має людина в Discord (з кешу ролей) + основний відділ картки."""
+    hit = core._roles_cache.get(str(u.get("discord_id")))
+    roles = hit[1] if hit and hit[1] else set()
+    return [d for d in OPS_DEPTS if d == u["dept"] or DEPTS[d]["role"] in roles]
+
+
+def mgmt_depts(u: dict) -> list[str]:
+    """Підрозділи начальника управління: як задано в адмін-панелі (вкладка «Управління»), інакше — за ролями відділів у Discord."""
+    custom = ov.mgmt.get(str(u["sid"]))
+    if custom is not None:
+        return [d for d in CONTROL_DEPTS if d in custom]
+    out = role_depts(u)
+    return out + ["academy"] if "vkpp" in out else out
+
+
 def control_depts(u: dict) -> list[str]:
-    if u["rank"] >= 14:
+    """З якого звання видно статистику — адмін-панель → «Доступи» (dept_all — усі підрозділи, dept_own — свої)."""
+    if u["rank"] >= ov.P("dept_all"):
         return list(CONTROL_DEPTS)
-    if u["rank"] == 12:
-        hit = core._roles_cache.get(str(u.get("discord_id")))
-        roles = hit[1] if hit and hit[1] else set()
-        out = [d for d in OPS_DEPTS if d == u["dept"] or DEPTS[d]["role"] in roles]
+    if u["rank"] == 13:
+        return mgmt_depts(u) if u["rank"] >= ov.P("dept_own") else []
+    if u["rank"] >= ov.P("dept_own"):
+        out = role_depts(u)
         return out + ["academy"] if "vkpp" in out else out  # Начальник ВКПП — він же начальник академії
     return []
 

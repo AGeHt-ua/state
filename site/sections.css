@@ -412,3 +412,9 @@
 .au-modal .gm-card{max-width:680px;width:100%;max-height:calc(100vh - 32px);overflow:auto}
 .au-final{display:grid;gap:12px}
 @media (max-width:900px){.au-grid{grid-template-columns:1fr}}
+/* адмін-панель: доступ начальників управлінь */
+.adm-mgmt{display:grid;gap:8px;padding:12px 14px;margin-bottom:10px;border:1px solid var(--line2);border-radius:4px;background:var(--bg2)}
+.adm-mgmt-h{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.adm-mgmt-h .sp{flex:1}
+.adm-mgmt-mode{display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer}
+.adm-mgmt-d{display:flex;gap:6px 14px;flex-wrap:wrap;padding-left:24px}
+.adm-chk{display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer}

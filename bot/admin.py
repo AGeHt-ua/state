@@ -208,6 +208,34 @@ async def save_mentions(u: dict, data: dict):
     await note(u, "Змінено згадки", 0, ", ".join(f"{k}: {len(v)} рол." for k, v in cur.items()) or "усі стандартні")
 
 
+async def mgmt_view() -> dict:
+    """Начальники управлінь і підрозділи, статистику яких вони бачать у «Розділі відділу»."""
+    import depts
+    rows = await db.all("SELECT * FROM users WHERE rank=13 AND status NOT IN ('dismissed','removed') ORDER BY name")
+    heads = []
+    for r in rows:
+        custom = ov.mgmt.get(str(r["sid"]))
+        by_roles = depts.role_depts(r)
+        heads.append({"sid": r["sid"], "name": r["name"], "status": r["status"], "custom": custom, "roles": by_roles + (["academy"] if "vkpp" in by_roles else []),
+                      "effective": depts.mgmt_depts(r)})
+    return {"heads": heads, "depts": [{"k": k, "s": DEPTS[k]["s"], "n": DEPTS[k]["n"]} for k in depts.CONTROL_DEPTS]}
+
+
+async def save_mgmt(u: dict, data: dict) -> dict:
+    """data: {sid: null (за ролями) | [відділи]}."""
+    import depts
+    clean = {}
+    for k, v in (data or {}).items():
+        if str(k).isdigit() and isinstance(v, list):
+            clean[str(int(k))] = [d for d in depts.CONTROL_DEPTS if d in v]
+    await db.set_setting("admin_mgmt", clean)
+    ov.mgmt.clear(); ov.mgmt.update(clean)
+    names = {r["sid"]: r["name"] for r in await db.all("SELECT sid, name FROM users WHERE rank=13")}
+    await note(u, "⚙ Доступ начальників управлінь до статистики", 0,
+               "; ".join(f"{names.get(int(k), k)}: {', '.join(DEPTS[d]['s'] for d in v) or 'немає'}" for k, v in clean.items()) or "усі — за ролями Discord")
+    return await mgmt_view()
+
+
 async def save_perms(u: dict, data: dict):
     clean = await ov.save_perms(db, data)
     await note(u, "Змінено доступи", 0, ", ".join(f"{ov.PERMS[k][0]} → від {v}" for k, v in clean.items()) or "усі стандартні")

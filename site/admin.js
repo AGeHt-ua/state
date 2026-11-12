@@ -5,7 +5,7 @@ const { esc, call, toast, fmtDT } = S;
 const st = { tab: "users", d: null };
 const kb = (n) => n > 1048576 ? `${(n / 1048576).toFixed(1)} МБ` : `${Math.round(n / 1024)} КБ`;
 const ago = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? `${h} год ${m} хв` : `${m} хв`; };
-const TABS = [["users", "Користувачі"], ["promo", "Підвищення"], ["nick", "Нікнейми й позивні"], ["perms", "Доступи"], ["roles", "Ролі Discord"], ["chan", "Канали й згадки"], ["sys", "Система"], ["log", "Журнал адміністрування"]];
+const TABS = [["users", "Користувачі"], ["mgmt", "Управління"], ["promo", "Підвищення"], ["nick", "Нікнейми й позивні"], ["perms", "Доступи"], ["roles", "Ролі Discord"], ["chan", "Канали й згадки"], ["sys", "Система"], ["log", "Журнал адміністрування"]];
 
 function usersView(d) {
   const blocked = d.users.filter((u) => u.blocked).length;
@@ -104,6 +104,25 @@ function permsView(d) {
       <li>Звання й відділ кожного беруться з ролей Discord (синхронізація кожні 4 хв).</li></ul></div>`;
 }
 
+function mgmtView(m) {
+  const dn = (k) => (m.depts.find((x) => x.k === k) || { s: k }).s;
+  return `<form class="card" data-f="admmgmt"><header><h3>Начальники управлінь · доступ до статистики підрозділів</h3></header>
+    <p class="note">Начальник управління бачить у «Розділі відділу» статистику своїх підрозділів: бали, звіти, активність, черги на перевірку.
+      За замовчуванням підрозділи беруться з його ролей відділів у Discord; тут їх можна задати вручну.</p>
+    ${m.heads.length ? m.heads.map((h) => `<div class="adm-mgmt" data-sid="${h.sid}">
+      <div class="adm-mgmt-h"><b>${esc(h.name)}</b><span class="muted small">№${h.sid}${h.status !== "active" ? " · " + esc(h.status) : ""}</span><span class="sp"></span>
+        <span class="small">Зараз бачить: ${h.effective.length ? h.effective.map((k) => `<span class="chip">${esc(dn(k))}</span>`).join(" ") : '<span class="chip bad">нічого</span>'}</span></div>
+      <label class="adm-mgmt-mode"><input type="radio" name="mode-${h.sid}" value="roles" ${h.custom === null ? "checked" : ""}> За ролями Discord
+        <i class="muted small">(${h.roles.length ? h.roles.map((k) => esc(dn(k))).join(", ") : "ролей відділів немає"})</i></label>
+      <label class="adm-mgmt-mode"><input type="radio" name="mode-${h.sid}" value="custom" ${h.custom !== null ? "checked" : ""}> Вручну:</label>
+      <div class="adm-mgmt-d">${m.depts.map((d) => `<label class="adm-chk"><input type="checkbox" name="d-${h.sid}" value="${d.k}" ${(h.custom || h.roles).includes(d.k) ? "checked" : ""}> ${esc(d.s)}</label>`).join("")}</div>
+    </div>`).join("") : '<p class="muted">Начальників управлінь (13-й ранг) у складі зараз немає.</p>'}
+    ${m.heads.length ? '<div class="acts"><button class="btn gold" type="submit">Зберегти доступ</button></div>' : ""}</form>
+    <div class="card"><header><h3>Хто ще бачить «Розділ відділу»</h3></header><ul class="adm-fixed">
+      <li>З якого звання видно статистику всіх і своїх підрозділів — вкладка «Доступи» (за замовчуванням: усі — від Заступника Голови, свої — від начальника відділу).</li>
+      <li>Свої підрозділи для звань до 12 — за ролями відділів у Discord (начальник ВКПП — ще Академію).</li></ul></div>`;
+}
+
 function rolesView(d) {
   const bad = d.roles.filter((r) => !r.exists).length, noman = d.roles.filter((r) => r.exists && !r.manageable).length;
   return `${bad || noman ? `<div class="note warn">${bad ? `Ролей, яких немає на сервері: <b>${bad}</b>. ` : ""}${noman ? `Ролей вище за роль бота (бот не може їх видавати й знімати): <b>${noman}</b>.` : ""}</div>` : '<div class="note">Усі ролі на місці, бот може ними керувати.</div>'}
@@ -153,7 +172,8 @@ function logView(d) {
 async function view() {
   const d = st.d = await call("/api/admin");
   if (st.tab === "promo") st.promo = await call("/api/admin/promo");
-  const body = { users: usersView, promo: () => promoView(st.promo), nick: nickView, perms: permsView, roles: rolesView, chan: chanView, sys: sysView, log: logView }[st.tab](d);
+  if (st.tab === "mgmt") st.mgmt = await call("/api/admin/mgmt");
+  const body = { users: usersView, mgmt: () => mgmtView(st.mgmt), promo: () => promoView(st.promo), nick: nickView, perms: permsView, roles: rolesView, chan: chanView, sys: sysView, log: logView }[st.tab](d);
   return `<div class="adm-head"><div><div class="eyebrow">Керування ЄІС «Сова»</div><b>Адмін-панель</b></div><span class="muted small">Доступ: Голова СБУ та Куратор</span></div>
     <div class="tabs">${TABS.map(([k, l]) => `<button class="tb ${st.tab === k ? "on" : ""}" data-a="admtab" data-v="${k}">${l}</button>`).join("")}</div>${body}`;
 }
@@ -225,6 +245,15 @@ S.forms.admnick = (f) => run(f.querySelector("[type=submit]"), async () => {
     ranks: [...f.querySelectorAll("[name=rank]")].map((el) => el.value.trim() || el.placeholder),
     depts: [...f.querySelectorAll("[name=dept]:checked")].map((el) => el.value) };
   await call("/api/admin/nick", { json: body }); toast("Формат нікнеймів збережено"); S.render();
+});
+S.forms.admmgmt = (f) => run(f.querySelector("[type=submit]"), async () => {
+  const heads = {};
+  for (const box of f.querySelectorAll(".adm-mgmt")) {
+    const sid = box.dataset.sid, mode = box.querySelector(`input[name="mode-${sid}"]:checked`).value;
+    heads[sid] = mode === "roles" ? null : [...box.querySelectorAll(`input[name="d-${sid}"]:checked`)].map((x) => x.value);
+  }
+  st.mgmt = await call("/api/admin/mgmt", { json: { heads } });
+  toast("Доступ начальників управлінь збережено"); S.render();
 });
 S.forms.admpromo = (f) => run(f.querySelector("[type=submit]"), async () => {
   const v = (n) => (f.querySelector(`[name="${n}"]`) || {}).value;

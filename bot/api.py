@@ -600,7 +600,7 @@ async def dept_overview(request):
     u = await auth(request)
     allowed = depts.control_depts(u)
     if not allowed:
-        raise Fail("Розділ відділу доступний начальникам відділів, Заступнику Голови та Голові СБУ.", 403)
+        raise Fail("Розділ відділу для вашого звання закрито (адмін-панель → Доступи).", 403)
     d = request.query.get("d") or (u["dept"] if u["dept"] in allowed else allowed[0])
     return web.json_response({"allowed": allowed, **await depts.overview(u, d)})
 
@@ -1365,6 +1365,18 @@ async def admin_mentions(request):
     u = await admin_auth(request)
     await admin.save_mentions(u, await body(request))
     return web.json_response(admin.mentions_view())
+
+
+@routes.get("/api/admin/mgmt")
+async def admin_mgmt(request):
+    await admin_auth(request)
+    return web.json_response(await admin.mgmt_view())
+
+
+@routes.post("/api/admin/mgmt")
+async def admin_mgmt_save(request):
+    u = await admin_auth(request)
+    return web.json_response(await admin.save_mgmt(u, (await body(request)).get("heads") or {}))
 
 
 @routes.post("/api/admin/perms")
