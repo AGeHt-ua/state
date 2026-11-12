@@ -94,10 +94,30 @@ def depts_of(u: dict) -> set[str]:
     return out | {"academy"} if "vkpp" in out else out  # Начальник ВКПП — він же начальник академії
 
 
+VVB_KINDS = ("remark", "reprimand", "severe")  # що може оголосити ВВБ за власними перевірками
+
+
+def vvb_can(u: dict, target: dict | None = None) -> bool:
+    """ВВБ контролює порядок у всій Службі: зауваження й догани будь-якому відділу (звання — адмін-панель → Доступи, «disc_vvb»).
+    Не керівництву (13+) і не старшим чи рівним за званням колегам з ВВБ."""
+    if u.get("curator_ro") or "vvb" not in depts_of(u) or u["rank"] < ov.P("disc_vvb"):
+        return False
+    if target is None:
+        return True
+    return target["rank"] < 13 and not ("vvb" in depts_of(target) and target["rank"] >= u["rank"])
+
+
+def kinds_for(u: dict) -> list[str]:
+    return [k for k in KINDS if u["rank"] >= KINDS[k][2] or (k in VVB_KINDS and vvb_can(u))]
+
+
 def can_punish(u: dict, target: dict, kind: str) -> bool:
-    """Р. II: начальники відділів/управлінь і заступники — зауваження й догани своїм; Заступник Голови — до звільнення; Голова — усе."""
+    """Р. II: начальники відділів/управлінь і заступники — зауваження й догани своїм; Заступник Голови — до звільнення; Голова — усе.
+    ВВБ — зауваження й догани будь-якому відділу (див. vvb_can)."""
     if target["sid"] == u["sid"] or u["dept"] == "prosecutor":
         return False
+    if kind in VVB_KINDS and vvb_can(u, target):
+        return True
     if u["rank"] < KINDS[kind][2]:
         return False
     if u["rank"] >= 14:
@@ -398,7 +418,7 @@ async def listing(u: dict) -> dict:
         "journal": [out(o, people) for o in journal_rows],
         "inspections": [{**i, "files": json.loads(i["files"] or "[]"), "target": people.get(i["sid"]), "author": people.get(i["author"])} for i in insp],
         "rights": {"journal": can_journal(u), "vvb": is_vvb(u), "chief": u["rank"] >= ov.P("disc_chief"), "head": u["rank"] == 15,
-                   "kinds": [k for k in KINDS if u["rank"] >= KINDS[k][2]]},
+                   "kinds": kinds_for(u)},
         "kinds": {k: v[0] for k, v in KINDS.items()},
         "violations": [{"id": v[0], "t": v[1], "kinds": v[2], "fine": v[3]} for v in VIOLATIONS],
     }
