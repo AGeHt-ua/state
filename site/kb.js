@@ -351,9 +351,9 @@ function resultView(a, review) {
 
 /* ---------- сторінка ---------- */
 async function view() {
-  const tabs = [["law", "Законодавство"], ["memo", "Пам'ятка"], ["detain", "Порядок затримання"], ["changes", "Зміни законодавства"], ["lib", "Бібліотека"], ["exams", "Іспити", ME().pending.exams || undefined], ["prot", "Протоколи затримання"]];
+  const tabs = [["law", "Законодавство"], ["memo", "Пам'ятка"], ["detain", "Порядок затримання"], ["codes", "Тен-коди"], ["changes", "Зміни законодавства"], ["lib", "Бібліотека"], ["exams", "Іспити", ME().pending.exams || undefined], ["prot", "Протоколи затримання"]];
   const head = `<div class="tabs">${tabs.map(([v, l, n]) => `<button class="tb ${st.tab === v ? "on" : ""}" data-a="kbtab" data-v="${v}">${l}${n ? `<span class="cnt">${n}</span>` : ""}</button>`).join("")}</div>`;
-  const body = st.tab === "memo" ? await S.memoView() : st.tab === "detain" ? await S.detainView() : st.tab === "prot" ? await S.protView() : st.tab === "changes" ? await changesView() : st.tab === "lib" ? await libView() : st.tab === "exams" ? await examsView() : await lawView();
+  const body = st.tab === "memo" ? await S.memoView() : st.tab === "detain" ? await S.detainView() : st.tab === "codes" ? await S.codesView() : st.tab === "prot" ? await S.protView() : st.tab === "changes" ? await changesView() : st.tab === "lib" ? await libView() : st.tab === "exams" ? await examsView() : await lawView();
   return head + body;
 }
 S.views.kb = view;
@@ -496,7 +496,7 @@ setInterval(() => {
   if (!left && !t.dataset.done) { t.dataset.done = 1; toast("Час вийшов — іспит здається автоматично", 1); document.querySelector("form[data-f=exsubmit]")?.requestSubmit(); }
 }, 1000);
 S.onNav.push((v) => { if (v !== "kb") { st.take = null; } });
-// адреса: #/kb/law/<документ> · #/kb/lib/4 · #/kb/prot/… · #/kb/exams · #/kb/changes
+// адреса: #/kb/law/<документ> · #/kb/lib/4 · #/kb/prot/… · #/kb/exams · #/kb/changes · #/kb/codes
 S.routes.kb = {
   get: () => st.tab === "prot" ? ["prot", ...((S.protRoute && S.protRoute.get()) || [])]
     : st.tab === "lib" ? ["lib", st.lib] : st.tab === "law" || !st.tab ? ["law", st.doc] : [st.tab],

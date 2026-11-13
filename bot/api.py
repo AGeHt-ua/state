@@ -172,12 +172,66 @@ async def logout(request):
     return web.json_response({"ok": True})
 
 
+async def my_stats(u: dict) -> dict:
+    """Детальна особиста статистика: бали й звіти за весь час, тижні, види дій, рекорди."""
+    from collections import defaultdict
+    c = await core.coef()
+    rows = await db.all("SELECT type, qty, status, t, custom FROM acts WHERE by_sid=? AND status!='deleted' ORDER BY t", u["sid"])
+    pts = lambda a: c.get(a["type"], 0) * (a["qty"] or 1)
+    ok = [a for a in rows if a["status"] == "ok"]
+    ws0, week = core.week_start(0), 7 * core.DAY
+    wk = lambda t: (ws0 - t + week - 1) // week if t < ws0 else 0     # 0 — поточний тиждень, 1 — минулий…
+    by_week = defaultdict(lambda: [0, 0])
+    for a in ok:
+        b = by_week[wk(a["t"])]; b[0] += pts(a); b[1] += 1
+    weeks = [{"t": ws0 - i * week, "pts": by_week[i][0], "n": by_week[i][1]} for i in range(11, -1, -1)]
+    best = max(by_week.items(), key=lambda kv: kv[1][0], default=None)
+    def by_type(items):
+        types = defaultdict(lambda: [0, 0])
+        for a in items:
+            k = core.act_name(a) if a["type"] != core.OTHER else "Інше (свій тип дії)"
+            types[k][0] += 1; types[k][1] += pts(a)
+        return sorted(({"name": k, "n": v[0], "pts": v[1]} for k, v in types.items()), key=lambda x: -x["pts"])[:10]
+    # поточний тиждень: по днях, види дій, стан поданих звітів, місце у відділі
+    cur = [a for a in rows if a["t"] >= ws0]
+    cur_ok = [a for a in cur if a["status"] == "ok"]
+    days = [{"t": ws0 + i * core.DAY, "pts": sum(pts(a) for a in cur_ok if ws0 + i * core.DAY <= a["t"] < ws0 + (i + 1) * core.DAY),
+             "n": len([a for a in cur_ok if ws0 + i * core.DAY <= a["t"] < ws0 + (i + 1) * core.DAY])} for i in range(7)]
+    allw = await core.week_points_all(0)
+    mates = [r["sid"] for r in await db.all("SELECT sid FROM users WHERE dept=? AND status IN ('active','vacation')", u["dept"])]
+    board = sorted(((allw.get(s, 0), s) for s in mates), reverse=True)
+    place = next((n + 1 for n, (p, s) in enumerate(board) if s == u["sid"] and p > 0), None)  # без балів місця немає
+    cur_rej = len([a for a in cur if a["status"] == "rej"])
+    week_out = {"pts": sum(pts(a) for a in cur_ok), "ok": len(cur_ok), "rej": cur_rej, "wait": len([a for a in cur if a["status"] == "wait"]),
+                "submitted": len(cur), "quality": round(100 * len(cur_ok) / max(1, len(cur_ok) + cur_rej)) if cur_ok or cur_rej else None,
+                "days": days, "types": by_type(cur_ok), "place": place, "of": len(board), "prev": by_week[1][0], "prevN": by_week[1][1]}
+    first = ok[0]["t"] if ok else None
+    n_weeks = max(1, wk(first) + 1) if first else 1
+    total = sum(pts(a) for a in ok)
+    return {
+        "pointsAll": total, "ok": len(ok), "rej": len([a for a in rows if a["status"] == "rej"]), "wait": len([a for a in rows if a["status"] == "wait"]),
+        "submitted": len(rows), "quality": round(100 * len(ok) / max(1, len(ok) + len([a for a in rows if a["status"] == "rej"]))),
+        "avgWeek": round(total / n_weeks, 1), "first": first, "since": u.get("since"),
+        "best": {"t": ws0 - best[0] * week, "pts": best[1][0], "n": best[1][1]} if best else None,
+        "weeks": weeks, "types": by_type(ok), "week": week_out,
+        "balance": await promo.balance(u),
+    }
+
+
+@routes.get("/api/me/stats")
+async def me_stats(request):
+    return web.json_response(await my_stats(await auth(request)))
+
+
 @routes.get("/api/me")
 async def me(request):
     u = await auth(request)
     return web.json_response({
         "me": public_user(u),
         "points": await core.week_points(u["sid"]), "pointsPrev": await core.week_points(u["sid"], 1),
+        # за весь час: бали підтверджених звітів (за поточною вартістю) і їх кількість — без обмеження списку звітів
+        "pointsAll": await promo._points(u["sid"]),
+        "actsOk": (await db.one("SELECT COUNT(*) AS n FROM acts WHERE by_sid=? AND status='ok'", u["sid"]))["n"],
         "promo": await core.promo_check(u),
         "allowedActs": [k for k in ACTS if core.act_allowed(u, k)],
         "pending": {
@@ -600,9 +654,18 @@ async def dept_overview(request):
     u = await auth(request)
     allowed = depts.control_depts(u)
     if not allowed:
-        raise Fail("Розділ відділу для вашого звання закрито (адмін-панель → Доступи).", 403)
+        raise Fail("Статистика відділів для вашого звання закрита (адмін-панель → Доступи).", 403)
     d = request.query.get("d") or (u["dept"] if u["dept"] in allowed else allowed[0])
-    return web.json_response({"allowed": allowed, **await depts.overview(u, d)})
+    out = {"allowed": allowed, **await depts.overview(u, d)}
+    if request.query.get("p") == "all":
+        out["all"] = await depts.alltime(u, d)
+    return web.json_response(out)
+
+
+@routes.post("/api/dept/report")
+async def dept_report(request):
+    u = await auth(request)
+    return web.json_response(await depts.report_now(u, str((await body(request)).get("d") or "")))
 
 
 # ---------------------------------------------------------------- премії
@@ -1320,6 +1383,7 @@ async def start() -> web.AppRunner:
     asyncio.create_task(docpost.reminder_loop())  # нагадування про документи, що чекають рішення понад добу
     asyncio.create_task(core.vacation_loop())     # повернення з відпусток
     asyncio.create_task(games.weekly_loop())
+    asyncio.create_task(depts.weekly_loop())      # щонеділі — тижневі звіти відділів у Discord
     asyncio.create_task(structure_loop())
     asyncio.create_task(kb.ensure_seeded())
     return runner

@@ -39,11 +39,11 @@
 .dp-chart text.n{font-size:9.5px;fill:var(--dim)}
 @keyframes grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 .dp-types{display:grid;gap:10px}
-.dp-types div{display:grid;grid-template-columns:minmax(0,1.2fr) 2fr 36px;gap:10px;align-items:center;font-size:13px}
+.dp-types div{display:grid;grid-template-columns:minmax(0,1.2fr) 2fr minmax(36px,auto);gap:10px;align-items:center;font-size:13px}
 .dp-types span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dp-types i{height:10px;background:var(--line);display:block}
 .dp-types i b{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2))}
-.dp-types em{font:500 13px var(--mono);font-style:normal;text-align:right}
+.dp-types em{font:500 13px var(--mono);font-style:normal;text-align:right;white-space:nowrap}
 
 .dp-staff{margin-bottom:16px}
 .dp-staff tr.inact td{background:rgba(212,96,90,.05)}
@@ -61,3 +61,10 @@
 
 @media (max-width:1200px){.dp-kpi{grid-template-columns:repeat(3,1fr)}}
 @media (max-width:760px){.dp-hero{grid-template-columns:1fr}.dp-stamp{display:none}.dp-kpi{grid-template-columns:1fr 1fr}}
+/* перемикач періоду й кнопка тижневого звіту */
+.dp-side{display:grid;gap:12px;justify-items:center}
+.dp-period{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:-4px 0 16px}
+.dp-period button{padding:8px 18px;border:1px solid var(--line2);border-radius:3px;background:var(--bg2);color:var(--muted);cursor:pointer;font:600 11.5px var(--mono);letter-spacing:.1em;text-transform:uppercase}
+.dp-period button.on{color:var(--gold-ink);background:var(--gold);border-color:var(--gold)}
+.dp-period .muted{margin-left:auto}
+@media (max-width:760px){.dp-side{justify-items:start}.dp-period .muted{margin-left:0;width:100%}}

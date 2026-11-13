@@ -1,8 +1,8 @@
-/* Розділ відділу: контрольна панель для Голови СБУ, Заступника Голови, начальника управління та начальника відділу. Підключається після app.js (window.SOVA). */
+/* Статистика відділів: контрольна панель для Голови СБУ, Заступника Голови, начальника управління та начальника відділу. Підключається після app.js (window.SOVA). */
 (() => {
 const S = window.SOVA;
 const { esc, call } = S;
-const st = { d: null };
+const st = { d: null, p: "week" };
 const DOW = ["Нд", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 const RSHORT = ["Стажер", "Мол. агент", "Агент", "Ст. агент", "Мол. опер", "Опер", "Ст. опер", "Інструктор", "Кер. групи", "Кер. сектору", "Заст. нач.", "Нач. відділу", "Нач. управл.", "Заст. Голови", "Голова"];
 const ago = (t) => {
@@ -33,23 +33,68 @@ function chart(days) {
   </svg>`;
 }
 
+function weeksChart(weeks) {
+  const max = Math.max(1, ...weeks.map((w) => w.pts));
+  const W = 560, H = 170, bw = 34, gap = (W - bw * weeks.length) / (weeks.length - 1);
+  return `<svg class="dp-chart" viewBox="0 0 ${W} ${H + 34}" role="img" aria-label="Бали відділу за 12 тижнів">
+    ${[0.25, 0.5, 0.75, 1].map((f) => `<line x1="0" x2="${W}" y1="${H - H * f}" y2="${H - H * f}" class="grid"/>`).join("")}
+    ${weeks.map((w, i) => {
+      const h = Math.max(2, (w.pts / max) * (H - 16)), x = i * (bw + gap), cur = i === weeks.length - 1;
+      const dd = new Date(w.t).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" });
+      return `<g><rect x="${x}" y="${H - h}" width="${bw}" height="${h}" class="${cur ? "today" : ""}" style="animation-delay:${i * 40}ms"><title>Тиждень з ${dd}: ${w.pts} балів · ${w.n} звітів</title></rect>
+        <text x="${x + bw / 2}" y="${H - h - 6}" class="v">${w.pts || ""}</text>
+        <text x="${x + bw / 2}" y="${H + 18}" class="d">${dd}</text>
+        <text x="${x + bw / 2}" y="${H + 31}" class="n">${w.n} зв.</text></g>`;
+    }).join("")}
+  </svg>`;
+}
+
+function allView(o, d) {
+  const a = o.all, t = a.totals;
+  const maxPts = Math.max(1, ...a.people.map((p) => p.pts)), maxT = Math.max(1, ...a.types.map((x) => x.pts));
+  const dd = (ms) => ms ? new Date(ms).toLocaleDateString("uk-UA") : "—";
+  return `<div class="dp-kpi">
+    <div class="k gold"><span>Бали відділу за весь час</span><b>${t.pts}</b><small>з ${dd(t.first)}</small></div>
+    <div class="k"><span>Звітів подано</span><b>${t.submitted}</b><small>підтверджено ${t.approved} · відхилено ${t.rejected}</small></div>
+    <div class="k ${t.quality >= 80 ? "ok" : t.quality ? "warn" : ""}"><span>Якість звітів</span><b>${t.quality}%</b><small>частка підтверджених</small></div>
+    <div class="k"><span>Середнє за тиждень</span><b>${t.avgWeek}</b><small>балів відділу</small></div>
+    <div class="k"><span>Найкращий тиждень</span><b>${t.best ? t.best.pts : 0}</b><small>${t.best ? "з " + dd(t.best.t) : "—"}</small></div>
+    <div class="k info"><span>На одного співробітника</span><b>${t.avgPerson}</b><small>активних: ${t.contributors} з ${t.staff}</small></div>
+  </div>
+  <div class="grid2 dp-row">
+    <div class="card"><header><h3>Бали за 12 тижнів</h3><span class="sp muted small">поточний тиждень — виділено</span></header>${weeksChart(a.weeks)}</div>
+    <div class="card"><header><h3>Структура роботи · весь час</h3></header>
+      ${a.types.length ? `<div class="dp-types">${a.types.map((x) => `<div><span>${esc(x.name)}</span><i><b style="width:${(x.pts / maxT) * 100}%"></b></i><em>${x.n} · ${x.pts} б.</em></div>`).join("")}</div>` : '<div class="empty">Підтверджених звітів ще немає.</div>'}
+    </div>
+  </div>
+  <div class="card dp-staff"><header><h3>Рейтинг особового складу · весь час</h3><span class="sp muted small">сортування за балами</span></header>
+    <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>Співробітник</th><th>Звання</th><th>Бали</th><th class="r">Звітів</th><th class="r">Відхилено</th><th>Остання активність</th><th>У відділі з</th></tr></thead><tbody>
+    ${a.people.map((p, i) => `<tr><td class="mono muted">${i + 1}</td><td><b>${esc(p.name)}</b><div class="mono small muted">${p.sid}</div></td>
+      <td>${RSHORT[p.rank - 1] || esc(p.rankName)}</td><td><div class="dp-bar"><i style="width:${(p.pts / maxPts) * 100}%"></i></div><b class="num">${p.pts}</b></td>
+      <td class="r num">${p.ok}</td><td class="r num ${p.rej ? "bad" : "muted"}">${p.rej}</td><td>${ago(p.last)}</td><td class="muted">${dd(p.since)}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">У відділі нікого немає.</td></tr>'}
+    </tbody></table></div></div>`;
+}
+
 async function view() {
-  const o = await call("/api/dept" + (st.d ? `?d=${encodeURIComponent(st.d)}` : ""));
+  const o = await call("/api/dept?" + new URLSearchParams({ ...(st.d ? { d: st.d } : {}), ...(st.p === "all" ? { p: "all" } : {}) }));
   st.d = o.dept;
   const D = S.META().depts, d = D[o.dept], t = o.totals;
-  const okPct = t.submitted ? Math.round((t.approved / t.submitted) * 100) : 0;
+  const okPct = t.approved + t.rejected ? Math.round((t.approved / (t.approved + t.rejected)) * 100) : 0;  // з розглянутих
   const maxPts = Math.max(1, ...o.people.map((p) => p.pts));
   const maxType = Math.max(1, ...o.types.map((x) => x.n));
   return `
   ${o.allowed.length > 1 ? `<div class="dp-switch">${o.allowed.map((k) => `<button class="${k === o.dept ? "on" : ""}" style="--dc:${D[k].color}" data-a="dpsel" data-v="${k}"><b>${esc(D[k].s)}</b><span>${esc(D[k].n)}</span></button>`).join("")}</div>` : ""}
   <section class="dp-hero" style="--dc:${d.color}">
     <div class="dp-emb">${esc(d.s)}</div>
-    <div class="dp-id"><div class="eyebrow">Контрольна справа підрозділу · тиждень з ${new Date(o.weekStart).toLocaleDateString("uk-UA")}</div>
+    <div class="dp-id"><div class="eyebrow">Статистика підрозділу · ${st.p === "all" ? "за весь час" : "тиждень з " + new Date(o.weekStart).toLocaleDateString("uk-UA")}</div>
       <h2>${esc(d.n)}</h2>
       <div class="dp-lead"><span>Начальник: <b>${o.head ? esc(o.head.name) : '<i class="vac">вакантно</i>'}</b></span><span>Заступник: <b>${o.deputy ? esc(o.deputy.name) : '<i class="vac">вакантно</i>'}</b></span><span>Особовий склад: <b>${t.staff}</b></span></div></div>
-    <div class="dp-stamp">ДЛЯ СЛУЖБОВОГО<br>КОРИСТУВАННЯ</div>
+    <div class="dp-side"><div class="dp-stamp">ДЛЯ СЛУЖБОВОГО<br>КОРИСТУВАННЯ</div>
+      ${o.canReport ? `<button class="btn sm gold" data-a="dpreport">📤 Звіт за тиждень у Discord</button>` : ""}</div>
   </section>
-
+  <nav class="dp-period">${[["week", "Тиждень"], ["all", "Весь час"]].map(([k, l]) => `<button class="${st.p === k ? "on" : ""}" data-a="dpper" data-v="${k}">${l}</button>`).join("")}
+    <span class="muted small">Тижневий звіт кожного підрозділу щонеділі о 20:00 надходить у Discord автоматично.</span></nav>
+  ${st.p === "all" && o.all ? allView(o, d) : `
   <div class="dp-kpi">
     <div class="k gold"><span>Бали відділу за тиждень</span><b>${t.pts}</b>${delta(t.pts, t.ptsPrev)}<small>минулий: ${t.ptsPrev}</small></div>
     <div class="k"><span>Звітів подано</span><b>${t.submitted}</b><small>підтверджено ${t.approved} · відхилено ${t.rejected}</small></div>
@@ -89,11 +134,18 @@ async function view() {
     ${["orv", "deb", "atc", "alpha"].includes(o.dept) ? `<div class="card"><header><h3>Кейс-файли в роботі</h3><span class="sp cnt-b">${o.queue.cases.length}</span></header>
       ${o.queue.cases.length ? `<ul>${o.queue.cases.map((c) => `<li><span class="mono">КФ-${String(c.id).padStart(4, "0")}</span><b>«${esc(c.title)}»</b><span>${{ draft: "чернетка", head: "у начальника", chief: "у Голови", prosecutor: "у прокурора" }[c.status] || c.status}</span><em>${ago(c.updated)}</em></li>`).join("")}</ul>
         <button class="btn sm" data-a="nav" data-v="cases">Відкрити кейс-файли</button>` : '<div class="empty">Немає.</div>'}</div>` : ""}
-  </div>`;
+  </div>`}`;
 }
 
 S.views.dept = view;
 S.actions.dpsel = (b) => { st.d = b.dataset.v; S.render(); };
-// адреса: #/dept/відділ
-S.routes.dept = { get: () => [st.d], set: (p) => { st.d = p[0] || null; } };
+S.actions.dpper = (b) => { st.p = b.dataset.v; S.render(); };
+S.actions.dpreport = async (b) => {
+  if (!confirm("Надіслати тижневий звіт підрозділу в канал Discord?")) return;
+  b.disabled = true;
+  try { await call("/api/dept/report", { json: { d: st.d } }); S.toast("Звіт підрозділу надіслано в Discord"); } catch (e) { S.toast(e.message, 1); }
+  b.disabled = false;
+};
+// адреса: #/dept/відділ/період
+S.routes.dept = { get: () => [st.d, st.p === "all" ? "all" : null].filter(Boolean), set: (p) => { st.d = p[0] || null; st.p = p[1] === "all" ? "all" : "week"; } };
 })();

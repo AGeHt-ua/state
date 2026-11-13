@@ -107,7 +107,7 @@ function permsView(d) {
 function mgmtView(m) {
   const dn = (k) => (m.depts.find((x) => x.k === k) || { s: k }).s;
   return `<form class="card" data-f="admmgmt"><header><h3>Начальники управлінь · доступ до статистики підрозділів</h3></header>
-    <p class="note">Начальник управління бачить у «Розділі відділу» статистику своїх підрозділів: бали, звіти, активність, черги на перевірку.
+    <p class="note">Начальник управління бачить у «Статистиці відділів» свої підрозділи: бали, звіти, активність, черги на перевірку.
       За замовчуванням підрозділи беруться з його ролей відділів у Discord; тут їх можна задати вручну.</p>
     ${m.heads.length ? m.heads.map((h) => `<div class="adm-mgmt" data-sid="${h.sid}">
       <div class="adm-mgmt-h"><b>${esc(h.name)}</b><span class="muted small">№${h.sid}${h.status !== "active" ? " · " + esc(h.status) : ""}</span><span class="sp"></span>
@@ -118,7 +118,7 @@ function mgmtView(m) {
       <div class="adm-mgmt-d">${m.depts.map((d) => `<label class="adm-chk"><input type="checkbox" name="d-${h.sid}" value="${d.k}" ${(h.custom || h.roles).includes(d.k) ? "checked" : ""}> ${esc(d.s)}</label>`).join("")}</div>
     </div>`).join("") : '<p class="muted">Начальників управлінь (13-й ранг) у складі зараз немає.</p>'}
     ${m.heads.length ? '<div class="acts"><button class="btn gold" type="submit">Зберегти доступ</button></div>' : ""}</form>
-    <div class="card"><header><h3>Хто ще бачить «Розділ відділу»</h3></header><ul class="adm-fixed">
+    <div class="card"><header><h3>Хто ще бачить «Статистику відділів»</h3></header><ul class="adm-fixed">
       <li>З якого звання видно статистику всіх і своїх підрозділів — вкладка «Доступи» (за замовчуванням: усі — від Заступника Голови, свої — від начальника відділу).</li>
       <li>Свої підрозділи для звань до 12 — за ролями відділів у Discord (начальник ВКПП — ще Академію).</li></ul></div>`;
 }

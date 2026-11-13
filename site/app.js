@@ -143,7 +143,7 @@ const NAV = [
   ["kb", "База даних", () => true],
   ["bonus", "Премії", () => true],
   ["disc", "Дисципліна", () => true],
-  ["dept", "Розділ відділу", () => !!(ME.control && ME.control.length)],
+  ["dept", "Статистика відділів", () => !!(ME.control && ME.control.length)],
   ["cases", "Кейс-файли", () => !!(ME.cases && ME.cases.view)],
   ["hr", "Кадри", () => !!(ME.hr && (ME.hr.vvb || ME.hr.vkpp))],
   ["audit", "Кадровий аудит", (u) => u.rank >= 12 || !!(ME.hr && ME.hr.vkpp)],
@@ -154,7 +154,7 @@ const NAV = [
 const SOON = [];
 // Генеральний прокурор (не співробітник СБУ) бачить лише кейс-файли
 const navOk = (n) => n[2](ME.me) && (ME.me.dept !== "prosecutor" || n[0] === "cases");
-const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Розділ відділу", bonus: "Премії", disc: "Дисципліна", kb: "База даних", admin: "Адмін-панель", fin: "Клопотання до Мінфіну", game: "Тренажери СБУ" };
+const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Статистика відділів", bonus: "Премії", disc: "Дисципліна", kb: "База даних", admin: "Адмін-панель", fin: "Клопотання до Мінфіну", game: "Тренажери СБУ" };
 
 function viewShell(inner) {
   const p = ME.pending || {};
@@ -257,8 +257,21 @@ async function vHome() {
     pend.hr && ["hr", "hr/cand", "Кадрові справи", pend.hr],
     pend.callsign && ["home", "", "Позивні на затвердження", pend.callsign],
   ].filter(Boolean);
-  return `
-  <section class="hero" style="--dc:${deptColor(me.dept)}">
+  const hour = new Date().getHours(), greet = hour < 5 ? "Доброї ночі" : hour < 12 ? "Доброго ранку" : hour < 18 ? "Доброго дня" : "Доброго вечора";
+  const today = new Date().toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" });
+  const pct = Math.min(100, Math.round(ME.points / goal * 100));
+  window.SOVA.cache.acts = { ...(window.SOVA.cache.acts || {}), ...Object.fromEntries(acts.map((a) => [a.id, a])) };
+  const sec = (eyebrow, title, extra = "") => `<header class="hm-sh"><div><div class="eyebrow">${eyebrow}</div><h3>${title}</h3></div>${extra}</header>`;
+  return `<div class="home" style="--dc:${deptColor(me.dept)}">
+  <section class="hm-greet">
+    <img src="sbu-logo.webp" alt="" class="hm-logo">
+    <div class="hm-greet-t"><div class="eyebrow">Служба безпеки штату NG · Службовий кабінет</div>
+      <h2>${greet}, <span>${esc(me.name)}</span></h2>
+      <p>${esc(me.rankName)} · ${esc(d.n)} · ${today}</p></div>
+    <div class="hm-greet-k"><div><i>Цей тиждень</i><b class="num">${ME.points}</b><small>балів</small></div><div><i>Звання</i><b class="num">${me.rank}</b><small>з 15</small></div></div>
+  </section>
+
+  <section class="hm-hero">
     <div class="idcard">
       <div class="idcard-top"><img src="sbu-logo.webp" alt="" width="54" height="54"><div><b>СЛУЖБА БЕЗПЕКИ ШТАТУ NG</b><span>Службове посвідчення</span></div></div>
       <div class="idcard-body">
@@ -269,37 +282,55 @@ async function vHome() {
       ${(ME.gameBadges || []).length ? `<div class="idcard-badges">${ME.gameBadges.map((b) => `<span title="Тренажери СБУ">${b.icon} ${esc(b.t)}</span>`).join("")}</div>` : ""}
       <div class="idcard-ver" id="idver"><span class="iv-st">⟳ Звіряю з Discord…</span></div>
     </div>
-    <div class="hero-stats">
-      ${ring(ME.points, goal, "підтверджених балів за цей тиждень")}
-      <div class="mini"><span>Минулий тиждень</span><b class="num">${ME.pointsPrev}</b></div>
-      <div class="mini"><span>Звітів на перевірці</span><b class="num">${wait}</b></div>
-      <div class="mini"><span>Підтверджено за весь час</span><b class="num">${okN}</b></div>
+    <div class="hm-kpi">
+      ${sec("Показники служби", "Поточний тиждень", `<button class="btn sm gold" data-a="mystats">📊 Детальна статистика</button>`)}
+      <div class="hm-kpi-body">
+        ${ring(ME.points, goal, "балів за тиждень")}
+        <div class="hm-tiles">
+          <div><i>Минулий тиждень</i><b class="num">${ME.pointsPrev}</b><small>балів</small></div>
+          <div><i>За весь час</i><b class="num">${ME.pointsAll ?? "—"}</b><small>звітів підтверджено: ${ME.actsOk ?? okN}</small></div>
+          <div class="${wait ? "warn" : ""}"><i>На перевірці</i><b class="num">${wait}</b><small>${wait ? "очікують керівника" : "черга порожня"}</small></div>
+          <div><i>До підвищення</i><b class="num">${pc && pc.need !== undefined ? `${pc.points}<em>/${pc.need}</em>` : "—"}</b><small>${pc ? `до «${esc(pc.name)}»` : "найвище звання"}</small></div>
+        </div>
+      </div>
+      <div class="hm-goal"><span>Мета тижня — ${goal} балів${ME.pointsPrev > 20 ? " (як минулого тижня)" : ""}</span><div class="hm-bar"><b style="width:${pct}%"></b></div><em>${pct}%</em></div>
     </div>
   </section>
-  ${todo.length ? `<section class="todo"><div class="eyebrow">Потребує вашого рішення</div><div class="todo-row">
-    ${todo.map(([v, path, l, n]) => `<button class="todo-item" data-a="${v === "home" ? "csgo" : "goto"}" data-path="${path}">${ico(v === "home" ? "staff" : v)}<span>${l}</span><b class="num">${n}</b></button>`).join("")}</div></section>` : ""}
-  ${callsignCard(csData)}
+
+  ${todo.length ? `<section class="hm-todo"><div class="hm-todo-h"><span class="hm-dot"></span>Потребує вашого рішення</div><div class="hm-todo-row">
+    ${todo.map(([v, path, l, n]) => `<button class="hm-todo-it" data-a="${v === "home" ? "csgo" : "goto"}" data-path="${path}">${ico(v === "home" ? "staff" : v)}<span>${l}</span><b class="num">${n}</b></button>`).join("")}</div></section>` : ""}
+
   ${newsCard(newsData)}
-  <div class="grid2">
-    <div class="card"><header><h3>Наступне звання</h3>${pc ? `<span class="sp chip ${pc.eligible ? "ok" : "wait"}">${pc.eligible ? "Можна подати рапорт" : "Умови ще не виконано"}</span>` : ""}</header>
-      ${pc ? `<div class="promo"><span class="from">${esc(me.rankName)}</span><i></i><span class="to">${esc(pc.name)}</span></div>
+
+  <div class="hm-grid">
+    <section class="hm-panel">${sec("Кар'єра", "Наступне звання", pc ? `<span class="chip ${pc.eligible ? "ok" : "wait"}">${pc.eligible ? "Можна подати рапорт" : "Умови ще не виконано"}</span>` : "")}
+      <div class="hm-pbody">${pc ? `<div class="promo"><span class="from">${esc(me.rankName)}</span><i></i><span class="to">${esc(pc.name)}</span></div>
         ${pc.need !== undefined ? `<div class="promo-pts"><b class="num">${pc.points}</b><span>/ ${pc.need} балів на званні (для підвищення)</span>${pc.points > pc.need ? `<em>+${pc.points - pc.need} перейде далі</em>` : ""}</div>` : ""}
         ${(pc.items.find((i) => i.pct !== undefined)) ? `<div class="bar ${pc.items.find((i) => i.pct !== undefined).ok ? "ok" : ""}"><i style="width:${Math.round(pc.items.find((i) => i.pct !== undefined).pct * 100)}%"></i></div>` : ""}
         <ul class="checklist">${pc.items.map((i) => `<li class="${i.ok ? "" : i.soft ? "soft" : "no"}">${esc(i.t)}</li>`).join("")}</ul>
         <div><button class="btn ${pc.eligible ? "gold" : ""}" data-a="go" data-v="rap" data-tab="new" ${pc.eligible ? "" : "disabled"}>Подати рапорт на підвищення</button></div>`
-      : '<p class="muted">Найвище звання у відомстві.</p>'}
-    </div>
-    <div class="card"><header><h3>Швидкі дії</h3></header>
-      <div class="quick">
+      : '<p class="muted">Найвище звання у відомстві.</p>'}</div>
+    </section>
+    <section class="hm-panel">${sec("Служба", "Швидкі дії")}
+      <div class="hm-pbody"><div class="quick">
         <button data-a="go" data-v="act" data-tab="new">${ico("act")}<b>Звіт про дію</b><span>арешт, патруль, операція</span></button>
         <button data-a="go" data-v="rap" data-tab="new">${ico("rap")}<b>Рапорт</b><span>підвищення, відпустка, переведення</span></button>
         <button data-a="go" data-v="staff" data-tab="tree">${ico("staff")}<b>Штатна структура</b><span>хто є хто у відділах</span></button>
       </div>
-      <div class="do-line"><code>/do На спорядженні закріплений номерний жетон СБУ ${esc(d.s)} №${me.sid}.</code></div>
-    </div>
+      <div class="do-line"><span class="eyebrow">Відіграш жетона</span><code>/do На спорядженні закріплений номерний жетон СБУ ${esc(d.s)} №${me.sid}.</code></div></div>
+    </section>
   </div>
-  <div class="card"><header><h3>Останні звіти</h3><button class="sp btn sm" data-a="go" data-v="act" data-tab="new">+ Новий звіт</button></header>
-    ${acts.length ? actFeed(acts.slice(0, 6), false) : '<div class="empty">Звітів ще немає. Додайте перший після зміни.</div>'}
+
+  ${callsignCard(csData)}
+
+  <section class="hm-panel hm-recent">${sec("Журнал", "Останні звіти", `<button class="btn sm gold" data-a="go" data-v="act" data-tab="new">+ Новий звіт</button>`)}
+    ${acts.length ? `<div class="hm-acts">${acts.slice(0, 8).map((a) => `<button class="hm-act st-${a.status}" data-a="actopen" data-id="${a.id}" title="Відкрити звіт">
+        <span class="hm-act-no mono">${docNo("ЗВТ", a.id)}</span><span class="hm-act-t">${esc(actName(a))}${a.type !== "other" && a.qty > 1 ? ` <i>×${a.qty}</i>` : ""}</span>
+        <span class="hm-act-d">${fmtDT(a.t)}</span><span class="hm-act-p">${a.type === "other" && a.status !== "ok" ? "" : "+"}${actPts(a)}</span>
+        <span class="hm-act-s">${stLabel[a.status] || a.status}</span></button>`).join("")}</div>
+      <div class="hm-more"><button class="btn sm" data-a="go" data-v="act" data-tab="mine">Усі мої звіти →</button></div>`
+      : '<div class="empty">Звітів ще немає. Додайте перший після зміни.</div>'}
+  </section>
   </div>`;
 }
 
@@ -350,6 +381,65 @@ async function loadNewsImgs() {
   for (const img of document.querySelectorAll("img[data-fid]:not([src])")) {
     try { img.src = (await call(`/api/files/${encodeURIComponent(img.dataset.fid)}/url`)).url; } catch (e) { img.closest(".nw-pic")?.remove(); }
   }
+}
+
+/* ---------------- детальна особиста статистика ---------------- */
+let STATS = null;
+const STAT_DOW = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"];
+function statTypes(types) {
+  const tmax = Math.max(1, ...types.map((x) => x.pts));
+  return types.length ? `<div class="stat-types">${types.map((x) => `<div class="stat-type"><span>${esc(x.name)}</span>
+      <div><b style="width:${Math.round(x.pts / tmax * 100)}%"></b></div><em>${x.n} зв. · ${x.pts} б.</em></div>`).join("")}</div>` : '<p class="muted small">Підтверджених звітів ще немає.</p>';
+}
+function statWeek(s) {
+  const w = s.week, d = (t) => new Date(t).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" });
+  const max = Math.max(1, ...w.days.map((x) => x.pts)), today = Math.floor((Date.now() - w.days[0].t) / 864e5);
+  const diff = w.pts - w.prev;
+  return `<div class="stat-tiles">
+      <div><i>Балів за тиждень</i><b>${w.pts}</b><small>${w.prev ? `${diff >= 0 ? "▲" : "▼"} ${Math.abs(diff)} до минулого (${w.prev})` : "минулого тижня — 0"}</small></div>
+      <div><i>Звітів підтверджено</i><b>${w.ok}</b><small>подано ${w.submitted}</small></div>
+      <div><i>На перевірці</i><b>${w.wait}</b></div><div><i>Відхилено</i><b>${w.rej}</b><small>${w.quality === null ? "" : `якість ${w.quality}%`}</small></div>
+      <div><i>Місце у відділі</i><b>${w.place ? `${w.place}` : "—"}</b><small>${w.place ? `з ${w.of} за балами тижня` : ""}</small></div>
+      <div><i>Минулий тиждень</i><b>${w.prev}</b><small>звітів ${w.prevN}</small></div></div>
+    <section><h4>По днях · тиждень з ${d(w.days[0].t)}</h4><div class="stat-bars d7">${w.days.map((x, i) => `<div class="stat-bar ${i === today ? "now" : ""}" title="${STAT_DOW[i]} ${d(x.t)}: ${x.pts} б., звітів ${x.n}">
+      <span style="height:${Math.round(x.pts / max * 100)}%"><em>${x.pts || ""}</em></span><i>${STAT_DOW[i]} ${d(x.t)}</i></div>`).join("")}</div></section>
+    <section><h4>За видами дій цього тижня</h4>${statTypes(w.types)}</section>`;
+}
+function statAll(s) {
+  const max = Math.max(1, ...s.weeks.map((w) => w.pts));
+  const d = (t) => new Date(t).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" });
+  const pr = ME.promo;
+  return `<div class="stat-tiles">
+      <div><i>Балів за весь час</i><b>${s.pointsAll}</b></div><div><i>Звітів підтверджено</i><b>${s.ok}</b></div>
+      <div><i>Цей тиждень</i><b>${ME.points}</b></div><div><i>Минулий тиждень</i><b>${ME.pointsPrev}</b></div>
+      <div><i>Середнє за тиждень</i><b>${s.avgWeek}</b></div><div><i>Найкращий тиждень</i><b>${s.best ? s.best.pts : 0}</b><small>${s.best ? "з " + d(s.best.t) : ""}</small></div>
+      <div><i>Якість звітів</i><b>${s.quality}%</b><small>відхилено ${s.rej}</small></div><div><i>На перевірці</i><b>${s.wait}</b></div></div>
+    <section><h4>Бали за 12 тижнів</h4><div class="stat-bars">${s.weeks.map((w, i) => `<div class="stat-bar ${i === s.weeks.length - 1 ? "now" : ""}" title="Тиждень з ${d(w.t)}: ${w.pts} б., звітів ${w.n}">
+      <span style="height:${Math.round(w.pts / max * 100)}%"><em>${w.pts || ""}</em></span><i>${d(w.t)}</i></div>`).join("")}</div></section>
+    <section><h4>За видами дій · весь час</h4>${statTypes(s.types)}</section>
+    ${pr ? `<section><h4>До звання «${esc(pr.name)}»</h4><div class="stat-promo"><div><b style="width:${Math.min(100, Math.round(pr.points / Math.max(1, pr.need) * 100))}%"></b></div>
+      <span>Баланс для підвищення: <b>${pr.points}</b> з ${pr.need}</span></div></section>` : ""}
+    <p class="muted small">Перший підтверджений звіт: ${s.first ? fmtDT(s.first) : "—"}.</p>`;
+}
+function showStats(s, tab = "week") {
+  if (s) STATS = s;
+  s = STATS;
+  let el = document.getElementById("stat-modal");
+  if (!el) {
+    el = document.createElement("div"); el.id = "stat-modal"; el.className = "stat-modal";
+    el.addEventListener("click", (e) => { if (e.target === el) el.remove(); });
+    document.body.appendChild(el);
+  }
+  const m = ME.me, dep = (META.depts[m.dept] || {}).n || "";
+  el.innerHTML = `<div class="stat-card" role="dialog" aria-label="Детальна статистика">
+    <header class="stat-h"><img src="sbu-logo.webp" alt="" class="stat-logo">
+      <div class="stat-ttl"><div class="eyebrow">Служба безпеки штату NG · ЄІС «Сова»</div><h3>Службова статистика</h3>
+        <div class="stat-who">${esc(m.rankName || "")} <b>${esc(m.name)}</b> · ${esc(dep)} · жетон №${m.sid}</div></div>
+      <span class="stat-stamp">Для службового<br>користування</span><button class="stat-x" data-a="statclose" title="Закрити">✕</button></header>
+    <nav class="stat-tabs">${[["week", "За тиждень"], ["all", "За весь час"]].map(([k, l]) => `<button class="${tab === k ? "on" : ""}" data-a="stattab" data-t="${k}">${l}</button>`).join("")}
+      <span class="stat-no">Довідка СТ-${String(m.sid).padStart(5, "0")} · ${new Date().toLocaleDateString("uk-UA")}</span></nav>
+    <div class="stat-body">${tab === "week" ? statWeek(s) : statAll(s)}
+    <p class="stat-foot">Бали — за чинною вартістю звітів (адмін-панель → Підвищення). Тиждень — з понеділка 00:00.</p></div></div>`;
 }
 
 /* ---------------- звіти ---------------- */
@@ -1032,6 +1122,13 @@ const A = {
   file: async (b) => {
     showFile(b.dataset.id);
   },
+  mystats: async (b) => {
+    b.disabled = true;
+    try { showStats(await call("/api/me/stats")); } catch (e) { toast(e.message, 1); }
+    b.disabled = false;
+  },
+  statclose: () => { const m = document.getElementById("stat-modal"); if (m) m.remove(); },
+  stattab: (b) => showStats(null, b.dataset.t),
   newsform: () => { UI.newsForm = !UI.newsForm; UI.newsImg = null; render(); },
   newsmore: (b) => { UI.newsOpen = { ...(UI.newsOpen || {}), [b.dataset.id]: true }; render(); },
   newsimgclear: () => { UI.newsImg = null; const i = $("#nw-img"); if (i) i.value = ""; $("#nw-prev").hidden = true; $("#nw-img-x").hidden = true; $("#nw-img-name").textContent = "не обрано"; },
