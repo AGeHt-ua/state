@@ -547,3 +547,9 @@
 .adm-mods .adm-chk.off{opacity:.6;border-style:dashed}
 .adm-banner{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:start;margin-bottom:10px}
 @media (max-width:760px){.adm-banner{grid-template-columns:1fr}}
+/* закріплене посилання на медіасторінку СБУ (TikTok) у верхній панелі */
+.tt-link{display:inline-flex;gap:7px;align-items:center;padding:6px 11px;border:1px solid rgba(201,160,90,.55);border-radius:3px;color:var(--gold2);text-decoration:none;
+  font:600 11.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;background:linear-gradient(100deg,rgba(201,160,90,.14),transparent 70%);transition:border-color .15s,background .15s}
+.tt-link:hover{border-color:var(--gold);background:var(--gold-soft);color:var(--fg)}
+.tt-link svg{width:15px;height:15px;fill:currentColor;filter:drop-shadow(1px 0 0 rgba(37,244,238,.55)) drop-shadow(-1px 0 0 rgba(254,44,85,.55))}
+@media (max-width:560px){.tt-link span{display:none}.tt-link{padding:6px 8px}}

@@ -176,7 +176,9 @@ function viewShell(inner) {
   </aside>
   <main class="main" style="--vc:${c}">
     <header class="top"><div><div class="crumbs">СБУ / ${esc(META.depts[ME.me.dept].s)} / ${esc(TITLES[UI.view])}</div><h2>${esc(TITLES[UI.view])}</h2></div>
-      <div class="right"><form class="docgo" data-f="docgo" role="search"><input class="i mono" id="docgo-q" placeholder="№ документа: ЗВТ-0042" autocomplete="off" aria-label="Перейти до документа за номером"></form>
+      <div class="right"><a class="tt-link" href="https://www.tiktok.com/@ng_sbu" target="_blank" rel="noopener" title="Офіційна медіасторінка СБУ в TikTok">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.6 3c.4 2.2 1.8 3.7 4 3.9v3.2c-1.5.1-2.8-.3-4-1.1v6.1c0 3.4-2.6 5.9-5.9 5.9S4.8 18.5 4.8 15.1c0-3.3 2.6-5.9 5.9-5.9.3 0 .7 0 1 .1v3.3a2.7 2.7 0 0 0-1-.2 2.7 2.7 0 1 0 2.7 2.7V3h3.2z"/></svg>
+          <span>Медіа СБУ</span></a><form class="docgo" data-f="docgo" role="search"><input class="i mono" id="docgo-q" placeholder="№ документа: ЗВТ-0042" autocomplete="off" aria-label="Перейти до документа за номером"></form>
         <span class="dbadge">${esc(META.depts[ME.me.dept].s)}</span><button class="btn sm" data-a="logout">Вийти</button></div></header>
     ${ME.curator ? '<div class="note cur-note">👁 Наглядовий режим куратора: перегляд усіх розділів СБУ. Зміни — лише в адмін-панелі та схвалення відомостей премій. На сайті вас не видно.</div>' : ""}
     ${ME.banner ? `<div class="site-banner t-${esc(ME.banner.tone)}"><b>${BANNER_TONE[ME.banner.tone] || "📢"}</b><span>${esc(ME.banner.text)}</span></div>` : ""}
