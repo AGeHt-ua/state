@@ -94,7 +94,18 @@ def depts_of(u: dict) -> set[str]:
     return out | {"academy"} if "vkpp" in out else out  # Начальник ВКПП — він же начальник академії
 
 
-VVB_KINDS = ("remark", "reprimand", "severe")  # що може оголосити ВВБ за власними перевірками
+VVB_KINDS = ("remark", "reprimand", "severe")
+# хто накладає який вид — адмін-панель → «Доступи»; строки доган — адмін-панель → «Налаштування»
+KIND_PERM = {"remark": "disc_minor", "reprimand": "disc_minor", "severe": "disc_minor", "fine": "disc_major", "demote": "disc_major",
+             "dismiss": "disc_major", "blacklist": "disc_blacklist"}
+
+
+def kind_rank(kind: str) -> int:
+    return ov.P(KIND_PERM[kind])
+
+
+def kind_days(kind: str) -> int:
+    return ov.C("reprimand_days") if kind == "reprimand" else ov.C("severe_days") if kind == "severe" else KINDS[kind][1]  # що може оголосити ВВБ за власними перевірками
 
 
 def vvb_can(u: dict, target: dict | None = None) -> bool:
@@ -108,7 +119,7 @@ def vvb_can(u: dict, target: dict | None = None) -> bool:
 
 
 def kinds_for(u: dict) -> list[str]:
-    return [k for k in KINDS if u["rank"] >= KINDS[k][2] or (k in VVB_KINDS and vvb_can(u))]
+    return [k for k in KINDS if u["rank"] >= kind_rank(k) or (k in VVB_KINDS and vvb_can(u))]
 
 
 def can_punish(u: dict, target: dict, kind: str) -> bool:
@@ -118,7 +129,7 @@ def can_punish(u: dict, target: dict, kind: str) -> bool:
         return False
     if kind in VVB_KINDS and vvb_can(u, target):
         return True
-    if u["rank"] < KINDS[kind][2]:
+    if u["rank"] < kind_rank(kind):
         return False
     if u["rank"] >= 14:
         return target["rank"] < u["rank"] or u["rank"] == 15
@@ -132,7 +143,7 @@ def is_vvb(u: dict) -> bool:
 
 
 def can_journal(u: dict) -> bool:
-    return u["rank"] >= 11 or is_vvb(u)
+    return u["rank"] >= ov.P("disc_journal") or is_vvb(u)
 
 
 def active(o: dict, now: int | None = None) -> bool:
@@ -174,7 +185,7 @@ async def issue(u: dict, b: dict) -> dict:
     if kind == "fine" and not fine:
         raise Fail("Вкажіть суму штрафу.")
     t = now_ms()
-    expires = t + KINDS[kind][1] * DAY if KINDS[kind][1] else None
+    expires = t + kind_days(kind) * DAY if kind_days(kind) else None
     h = [{"t": t, "sid": u["sid"], "name": u["name"], "action": "issue"}]
     oid = await db.run("INSERT INTO discipline(sid,dept,kind,violation,reason,fine,status,issued_by,issued,expires,history,inspection) "
                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", target["sid"], target["dept"], kind, v[0], reason, fine, "active", u["sid"], t, expires,
@@ -399,9 +410,9 @@ async def listing(u: dict) -> dict:
         o["history"] = json.loads(o["history"] or "[]")
         o["appeal"] = json.loads(o["appeal"] or "null")
     mine = [o for o in rows if o["sid"] == u["sid"]]
-    if u["rank"] >= 13 or is_vvb(u):
+    if u["rank"] >= ov.P("disc_journal_all") or is_vvb(u):
         journal_rows = rows
-    elif u["rank"] >= 11:
+    elif u["rank"] >= ov.P("disc_journal"):
         ds = depts_of(u)
         journal_rows = [o for o in rows if o["dept"] in ds]
     else:

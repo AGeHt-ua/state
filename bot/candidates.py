@@ -7,6 +7,7 @@ import re
 import discord
 
 import core
+import overrides as ov
 import style
 from core import Fail
 from db import db, now_ms
@@ -26,7 +27,7 @@ STAGE = {  # статус: (напис, колір ANSI, колір embed)
 def can_vvb(member: discord.Member) -> bool:
     ids = {r.id for r in member.roles}
     a = resolve(ids)
-    return DEPTS["vvb"]["role"] in ids or (a["ok"] and a["rank"] >= 13)
+    return DEPTS["vvb"]["role"] in ids or (a["ok"] and a["rank"] >= ov.P("cand_vvb"))
 
 
 async def find_member(username: str) -> discord.Member | None:

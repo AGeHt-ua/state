@@ -153,7 +153,9 @@ const NAV = [
 ];
 const SOON = [];
 // Генеральний прокурор (не співробітник СБУ) бачить лише кейс-файли
-const navOk = (n) => n[2](ME.me) && (ME.me.dept !== "prosecutor" || n[0] === "cases");
+// розділи, вимкнені в адмін-панелі («Налаштування»), зникають з меню (адмін-панель — завжди)
+const navOk = (n) => n[2](ME.me) && (ME.me.dept !== "prosecutor" || n[0] === "cases") && (n[0] === "admin" || (ME.modules || {})[n[0]] !== false);
+const BANNER_TONE = { info: "📢", warn: "⚠", bad: "⛔", ok: "✅" };
 const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Статистика відділів", bonus: "Премії", disc: "Дисципліна", kb: "База даних", admin: "Адмін-панель", fin: "Клопотання до Мінфіну", game: "Тренажери СБУ" };
 
 function viewShell(inner) {
@@ -177,6 +179,7 @@ function viewShell(inner) {
       <div class="right"><form class="docgo" data-f="docgo" role="search"><input class="i mono" id="docgo-q" placeholder="№ документа: ЗВТ-0042" autocomplete="off" aria-label="Перейти до документа за номером"></form>
         <span class="dbadge">${esc(META.depts[ME.me.dept].s)}</span><button class="btn sm" data-a="logout">Вийти</button></div></header>
     ${ME.curator ? '<div class="note cur-note">👁 Наглядовий режим куратора: перегляд усіх розділів СБУ. Зміни — лише в адмін-панелі та схвалення відомостей премій. На сайті вас не видно.</div>' : ""}
+    ${ME.banner ? `<div class="site-banner t-${esc(ME.banner.tone)}"><b>${BANNER_TONE[ME.banner.tone] || "📢"}</b><span>${esc(ME.banner.text)}</span></div>` : ""}
     <section class="view" id="view">${inner}</section>
   </main></div>`;
 }
@@ -300,7 +303,7 @@ async function vHome() {
   ${todo.length ? `<section class="hm-todo"><div class="hm-todo-h"><span class="hm-dot"></span>Потребує вашого рішення</div><div class="hm-todo-row">
     ${todo.map(([v, path, l, n]) => `<button class="hm-todo-it" data-a="${v === "home" ? "csgo" : "goto"}" data-path="${path}">${ico(v === "home" ? "staff" : v)}<span>${l}</span><b class="num">${n}</b></button>`).join("")}</div></section>` : ""}
 
-  ${newsCard(newsData)}
+  ${(ME.modules || {}).news === false ? "" : newsCard(newsData)}
 
   <div class="hm-grid">
     <section class="hm-panel">${sec("Кар'єра", "Наступне звання", pc ? `<span class="chip ${pc.eligible ? "ok" : "wait"}">${pc.eligible ? "Можна подати рапорт" : "Умови ще не виконано"}</span>` : "")}
@@ -554,6 +557,10 @@ async function vAct() {
 async function uploadFiles(input) {
   const ids = [];
   for (const f of [...input.files].slice(0, 5)) {
+    if (/\.(url|lnk|webloc|desktop)$/i.test(f.name)) {  // ярлик з браузера замість скріну — підкажемо одразу
+      const m = /^\s*URL\s*=\s*(\S+)/im.exec(await f.text().catch(() => ""));
+      throw new Error(`«${f.name}» — це ярлик посилання, а не сам файл. Прикріпіть скрін або відео${m ? `, а посилання вставте в поле для посилання: ${m[1]}` : "."}`);
+    }
     const fd = new FormData();
     fd.append("file", f, f.name);
     const r = await call("/api/files", { method: "POST", body: fd });
@@ -996,7 +1003,10 @@ async function openViewer(id) {
     const r = await call(`/api/files/${encodeURIComponent(id)}/url`);
     if (box.dataset.id !== id) return;
     const ext = (new URL(r.url).pathname.split(".").pop() || "").toLowerCase();
-    const media = /^(png|jpe?g|gif|webp|bmp)$/.test(ext) ? `<img src="${esc(r.url)}" alt="Файл">`
+    const link = safeUrl(r.link || "");
+    const media = link ? `<div class="viewer-file"><p>🔗 Це ярлик посилання (.${esc(ext)}), а не сам файл. Він веде сюди:</p><code class="viewer-link">${esc(link)}</code>
+        <a class="btn gold" href="${esc(link)}" target="_blank" rel="noopener">Відкрити посилання</a></div>`
+      : /^(png|jpe?g|gif|webp|bmp)$/.test(ext) ? `<img src="${esc(r.url)}" alt="Файл">`
       : /^(mp4|webm|mov|m4v)$/.test(ext) ? `<video src="${esc(r.url)}" controls autoplay playsinline></video>`
       : `<div class="viewer-file"><p>Цей файл (.${esc(ext)}) не відкривається в переглядачі.</p><a class="btn gold" href="${esc(r.url)}" target="_blank" rel="noopener">Відкрити файл</a></div>`;
     box.innerHTML = `<div class="viewer-bar"><a class="btn sm" href="${esc(r.url)}" target="_blank" rel="noopener" download>⬇ Завантажити</a><span class="sp"></span><button class="btn sm" data-vclose>✕ Закрити</button></div><div class="viewer-body">${media}</div>`;

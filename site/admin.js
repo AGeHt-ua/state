@@ -5,7 +5,7 @@ const { esc, call, toast, fmtDT } = S;
 const st = { tab: "users", d: null };
 const kb = (n) => n > 1048576 ? `${(n / 1048576).toFixed(1)} МБ` : `${Math.round(n / 1024)} КБ`;
 const ago = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? `${h} год ${m} хв` : `${m} хв`; };
-const TABS = [["users", "Користувачі"], ["mgmt", "Управління"], ["promo", "Підвищення"], ["nick", "Нікнейми й позивні"], ["perms", "Доступи"], ["roles", "Ролі Discord"], ["chan", "Канали й згадки"], ["sys", "Система"], ["log", "Журнал адміністрування"]];
+const TABS = [["users", "Користувачі"], ["cfg", "Налаштування"], ["mgmt", "Управління"], ["promo", "Підвищення"], ["nick", "Нікнейми й позивні"], ["perms", "Доступи"], ["roles", "Ролі Discord"], ["chan", "Канали й згадки"], ["sys", "Система"], ["log", "Журнал адміністрування"]];
 
 function usersView(d) {
   const blocked = d.users.filter((u) => u.blocked).length;
@@ -92,16 +92,52 @@ function actsCard(p) {
       @media (max-width:760px){.adm-act{grid-template-columns:1fr 90px}.adm-act select,.adm-act .adm-art,.adm-act .acts{grid-column:1/-1}}</style></div>`;
 }
 
+// групи прав за префіксом ключа — щоб довгий список читався розділами
+const PERM_GROUPS = [["act", "Звіти"], ["rap", "Рапорти"], ["docs", "Документи"], ["case", "Кейс-файли"], ["disc", "Дисципліна"], ["cand", "Кадри"], ["audit", "Кадри"],
+  ["order", "Накази"], ["bonus", "Премії"], ["fin", "Клопотання Мінфіну"], ["lib", "База даних"], ["exam", "База даних"], ["kb", "База даних"], ["memo", "База даних"],
+  ["dept", "Статистика відділів"], ["news", "Комунікації"], ["castro", "Комунікації"]];
+const permGroup = (k) => (PERM_GROUPS.find(([p]) => k.startsWith(p)) || [0, "Інше"])[1];
+function permRow(d, p) {
+  return `<label class="adm-perm ${p.value !== p.default ? "chg" : ""}"><div><b>${esc(p.label)}</b>${p.note ? `<span>${esc(p.note)}</span>` : ""}</div>
+      <select class="i" name="${p.key}">${d.ranks.map((n, i) => `<option value="${i + 1}" ${p.value === i + 1 ? "selected" : ""}>від ${i + 1} · ${esc(n)}${p.default === i + 1 ? " (стандарт)" : ""}</option>`).join("")}</select></label>`;
+}
 function permsView(d) {
-  return `<form class="card" data-f="admperms"><header><h3>Хто що може на сайті</h3></header>
-    <p class="note">Мінімальне звання для кожної дії. За замовчуванням — як у статуті. Зміни діють одразу, без перезапуску бота.</p>
-    <div class="adm-perms">${d.perms.map((p) => `<label class="adm-perm ${p.value !== p.default ? "chg" : ""}"><div><b>${esc(p.label)}</b>${p.note ? `<span>${esc(p.note)}</span>` : ""}</div>
-      <select class="i" name="${p.key}">${d.ranks.map((n, i) => `<option value="${i + 1}" ${p.value === i + 1 ? "selected" : ""}>від ${i + 1} · ${esc(n)}${p.default === i + 1 ? " (стандарт)" : ""}</option>`).join("")}</select></label>`).join("")}</div>
+  const groups = [...new Set(d.perms.map((p) => permGroup(p.key)))];
+  return `<form class="card" data-f="admperms"><header><h3>Хто що може на сайті</h3><span class="sp muted small">змінено: ${d.perms.filter((p) => p.value !== p.default).length} з ${d.perms.length}</span></header>
+    <p class="note">Мінімальне звання для кожної дії. За замовчуванням — як у статуті. Зміни діють одразу, без перезапуску бота. Жовтим — змінене.</p>
+    ${groups.map((g) => `<div class="adm-pg"><div class="eyebrow">${esc(g)}</div><div class="adm-perms">${d.perms.filter((p) => permGroup(p.key) === g).map((p) => permRow(d, p)).join("")}</div></div>`).join("")}
     <div class="acts"><button class="btn" type="button" data-a="admpermreset">Скинути до стандартних</button><button class="btn gold" type="submit">Зберегти доступи</button></div></form>
     <div class="card"><header><h3>Постійні правила (не змінюються)</h3></header><ul class="adm-fixed">
       <li>Адмін-панель — лише Голова СБУ та Куратор.</li><li>Куратор бачить усі розділи, але нічого не змінює, окрім адмін-панелі та схвалення відомостей премій.</li>
       <li>Генеральний прокурор бачить лише кейс-файли, що дійшли до нього.</li><li>Нарахувати премію собі не можна (ст. 22 ТК).</li>
       <li>Звання й відділ кожного беруться з ролей Discord (синхронізація кожні 4 хв).</li></ul></div>`;
+}
+
+function cfgView(c) {
+  const v = c.values, b = c.banner, dd = (ms) => ms ? new Date(ms).toISOString().slice(0, 10) : "";
+  const DAYS = ["понеділок", "вівторок", "середа", "четвер", "п'ятниця", "субота", "неділя"];
+  const num = (f) => f.key === "dept_report_day" ? `<select class="i" name="${f.key}">${DAYS.map((n, i) => `<option value="${i}" ${v[f.key] === i ? "selected" : ""}>${n}</option>`).join("")}</select>`
+    : `<input class="i mono" type="number" name="${f.key}" min="${f.min}" max="${f.max}" value="${v[f.key]}">`;
+  const field = (f) => `<label class="adm-perm ${v[f.key] !== f.default ? "chg" : ""}"><div><b>${esc(f.label)}</b><span>${esc(f.note || "")}${f.note ? " · " : ""}стандарт: ${f.key === "dept_report_day" ? DAYS[f.default] : f.default}</span></div>${num(f)}</label>`;
+  const F = (keys) => c.fields.filter((f) => keys.includes(f.key)).map(field).join("");
+  return `<form class="card" data-f="admcfg"><header><h3>Строки й пороги</h3></header>
+      <p class="note">Діють одразу, без перезапуску бота. Строки доган застосовуються до нових наказів.</p>
+      <div class="adm-perms">${F(["inactive_days", "reprimand_days", "severe_days", "exam_retry_h", "upload_mb"])}</div>
+    <h3 class="adm-h">Тижневі звіти відділів</h3>
+      <label class="adm-chk adm-sw"><input type="checkbox" name="dept_report_on" ${c.dept_report_on ? "checked" : ""}> Надсилати звіти всіх підрозділів у Discord автоматично</label>
+      <div class="adm-perms">${F(["dept_report_day", "dept_report_hour"])}</div>
+      <div class="acts"><button class="btn" type="button" data-a="admreports">📤 Надіслати звіти всіх відділів зараз</button></div>
+    <h3 class="adm-h">Розділи сайту</h3>
+      <p class="note">Вимкнений розділ зникає з меню для всіх (адмін-панель лишається завжди). Дані не видаляються — увімкніть, і все повернеться.</p>
+      <div class="adm-mods">${Object.entries(c.moduleNames).map(([k, n]) => `<label class="adm-chk ${c.modules[k] ? "" : "off"}"><input type="checkbox" name="m-${k}" ${c.modules[k] ? "checked" : ""}> ${esc(n)}</label>`).join("")}</div>
+    <h3 class="adm-h">Оголошення на сайті</h3>
+      <p class="note">Банер угорі кожної сторінки для всього особового складу. Порожній текст — оголошення немає.</p>
+      <div class="adm-banner">
+        <label class="f wide"><span>Текст оголошення</span><textarea class="i" name="b-text" maxlength="400" rows="2" placeholder="Напр.: Сьогодні о 20:00 загальний збір біля управління.">${esc(b.text)}</textarea></label>
+        <label class="f"><span>Вигляд</span><select class="i" name="b-tone">${[["info", "📢 Інформація"], ["warn", "⚠ Увага"], ["bad", "⛔ Терміново"], ["ok", "✅ Добра новина"]].map(([k, n]) => `<option value="${k}" ${b.tone === k ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+        <label class="f"><span>Показувати до (включно)</span><input class="i" type="date" name="b-until" value="${dd(b.until ? b.until - 1 : 0)}"><i class="muted small">порожньо — безстроково</i></label></div>
+      ${b.text ? `<div class="site-banner t-${esc(b.tone)}"><b>${({ info: "📢", warn: "⚠", bad: "⛔", ok: "✅" })[b.tone] || "📢"}</b><span>${esc(b.text)}</span></div>` : ""}
+    <div class="acts"><button class="btn gold" type="submit">Зберегти налаштування</button></div></form>`;
 }
 
 function mgmtView(m) {
@@ -173,7 +209,8 @@ async function view() {
   const d = st.d = await call("/api/admin");
   if (st.tab === "promo") st.promo = await call("/api/admin/promo");
   if (st.tab === "mgmt") st.mgmt = await call("/api/admin/mgmt");
-  const body = { users: usersView, mgmt: () => mgmtView(st.mgmt), promo: () => promoView(st.promo), nick: nickView, perms: permsView, roles: rolesView, chan: chanView, sys: sysView, log: logView }[st.tab](d);
+  if (st.tab === "cfg") st.cfg = await call("/api/admin/cfg");
+  const body = { users: usersView, cfg: () => cfgView(st.cfg), mgmt: () => mgmtView(st.mgmt), promo: () => promoView(st.promo), nick: nickView, perms: permsView, roles: rolesView, chan: chanView, sys: sysView, log: logView }[st.tab](d);
   return `<div class="adm-head"><div><div class="eyebrow">Керування ЄІС «Сова»</div><b>Адмін-панель</b></div><span class="muted small">Доступ: Голова СБУ та Куратор</span></div>
     <div class="tabs">${TABS.map(([k, l]) => `<button class="tb ${st.tab === k ? "on" : ""}" data-a="admtab" data-v="${k}">${l}</button>`).join("")}</div>${body}`;
 }
@@ -245,6 +282,20 @@ S.forms.admnick = (f) => run(f.querySelector("[type=submit]"), async () => {
     ranks: [...f.querySelectorAll("[name=rank]")].map((el) => el.value.trim() || el.placeholder),
     depts: [...f.querySelectorAll("[name=dept]:checked")].map((el) => el.value) };
   await call("/api/admin/nick", { json: body }); toast("Формат нікнеймів збережено"); S.render();
+});
+S.forms.admcfg = (f) => run(f.querySelector("[type=submit]"), async () => {
+  const body = { modules: {}, dept_report_on: f.dept_report_on.checked };
+  for (const el of f.querySelectorAll("input[type=number], select[name]")) if (!el.name.startsWith("b-")) body[el.name] = el.value;
+  for (const el of f.querySelectorAll("input[name^=m-]")) body.modules[el.name.slice(2)] = el.checked;
+  const until = f["b-until"].value ? new Date(f["b-until"].value + "T23:59:59").getTime() + 1000 : 0;
+  body.banner = { text: f["b-text"].value, tone: f["b-tone"].value, until };
+  st.cfg = await call("/api/admin/cfg", { json: body });
+  toast("Налаштування збережено — діють одразу"); await S.refreshMe(); S.render();
+});
+S.actions.admreports = (b) => run(b, async () => {
+  if (!confirm("Надіслати тижневі звіти всіх підрозділів у Discord зараз?")) return;
+  const r = await call("/api/admin/dept-reports", { json: {} });
+  toast(`Надіслано звітів: ${r.sent}`);
 });
 S.forms.admmgmt = (f) => run(f.querySelector("[type=submit]"), async () => {
   const heads = {};

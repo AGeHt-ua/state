@@ -19,6 +19,7 @@ try { sel = sessionStorage.getItem("sova.trainer"); } catch (e) { /* без сх
 const setSel = (k) => { sel = k; try { if (k) sessionStorage.setItem("sova.trainer", k); else sessionStorage.removeItem("sova.trainer"); } catch (e) { /* нічого */ } };
 
 async function view() {
+  if (sel && (S.ME().modules || {})["game_" + sel] === false) sel = null;
   if (sel && S.games && S.games[sel]) return S.games[sel].view();
   for (const g of Object.values(S.games || {})) if (g.stop) g.stop();
   const h = await call("/api/game/hub").catch(() => ({ games: {}, badges: [] }));
@@ -27,7 +28,7 @@ async function view() {
       <p>Ігрові тренажери підрозділів: тактика, закон і робота в парі з колегами. У кожної гри — свої операції, рейтинг тижня, підрозділ тижня й нагороди на посвідченні.</p>
       ${(h.badges || []).length ? `<div class="gm-badges">${h.badges.map((x) => `<span title="${esc(x.t)}">${x.icon} ${esc(x.t)}</span>`).join("")}</div>` : ""}
       <p class="muted small">Результати не впливають на бали підвищення й премії. Потрібні клавіатура й миша.</p></div></div>
-    <div class="tr-grid">${GAMES.map((G) => {
+    <div class="tr-grid">${GAMES.filter((G) => (S.ME().modules || {})["game_" + G.k] !== false).map((G) => {
       const d = (h.games || {})[G.k] || {}, ld = d.leader;
       return `<article class="tr-card" style="--acc:${G.accent}">
         <div class="tr-top"><span class="tr-icon">${G.icon}</span><div><div class="eyebrow">${esc(G.dept)}</div><div class="tr-name">${esc(G.name)}</div></div>${G.fresh ? '<span class="tr-new">Новинка</span>' : ""}</div>

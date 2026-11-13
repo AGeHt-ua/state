@@ -80,7 +80,7 @@ async def week_data(d: str) -> dict:
             "pts": sum(pts(a) for a in week if a["status"] == "ok"),
             "ptsPrev": sum(pts(a) for a in mine if a["t"] < ws and a["status"] == "ok"),
             "acts": len(week), "wait": len([a for a in week if a["status"] == "wait"]),
-            "reps": reps.get(p["sid"], 0), "last": lt, "inactive": p["status"] == "active" and (not lt or now - lt > INACTIVE_DAYS * DAY),
+            "reps": reps.get(p["sid"], 0), "last": lt, "inactive": p["status"] == "active" and (not lt or now - lt > ov.C("inactive_days") * DAY),
         })
 
     week = [a for a in acts if a["t"] >= ws]
@@ -182,7 +182,7 @@ async def report_embed(d: str, by: dict | None = None) -> discord.Embed:
                            style.kv("ЗВІТІВ ПОДАНО", f"{t['submitted']} · підтверджено {t['approved']} · відхилено {t['rejected']}"),
                            style.kv("ЯКІСТЬ ЗВІТІВ", f"{quality}%"),
                            style.kv("НА ПЕРЕВІРЦІ", t["pending"]),
-                           style.kv("НЕАКТИВНІ >3 ДІБ", t["inactive"])))
+                           style.kv(f"НЕАКТИВНІ >{ov.C('inactive_days')} ДІБ", t["inactive"])))
     top = [p for p in o["people"] if p["pts"] > 0][:5]
     medal = ["🥇", "🥈", "🥉", "4.", "5."]
     e.add_field(name="🏆 Найкращі за тиждень", value="\n".join(f"{medal[i]} {style.esc(p['rankName'])} **{style.esc(p['name'])}** — {p['pts']} б. ({p['acts']} зв.)"
@@ -191,7 +191,7 @@ async def report_embed(d: str, by: dict | None = None) -> discord.Embed:
         e.add_field(name="📋 Структура роботи", value="\n".join(f"• {style.esc(x['name'])} — {x['n']}" for x in o["types"]), inline=True)
     idle = [p for p in o["people"] if p["inactive"]]
     if idle:
-        e.add_field(name=f"⚠ Неактивні понад 3 доби · {len(idle)}", value="\n".join(f"• {style.esc(p['name'])}" for p in idle[:12]) + (f"\n… ще {len(idle) - 12}" if len(idle) > 12 else ""), inline=True)
+        e.add_field(name=f"⚠ Неактивні понад {ov.C('inactive_days')} доб. · {len(idle)}", value="\n".join(f"• {style.esc(p['name'])}" for p in idle[:12]) + (f"\n… ще {len(idle) - 12}" if len(idle) > 12 else ""), inline=True)
     return e
 
 
@@ -212,6 +212,19 @@ async def report_now(u: dict, d: str) -> dict:
     return {"ok": True}
 
 
+async def post_all(by: dict | None = None) -> int:
+    """Звіти всіх підрозділів, де є особовий склад (окремим повідомленням кожен)."""
+    sent = 0
+    for d in CONTROL_DEPTS:
+        if await db.one("SELECT sid FROM users WHERE dept=? AND status NOT IN ('dismissed','removed') LIMIT 1", d):
+            if await post_report(d, by):
+                sent += 1
+            await asyncio.sleep(2)
+    if not sent and not await core.channel("dept_report"):
+        raise Fail("Канал тижневих звітів не налаштовано (адмін-панель → Канали).")
+    return sent
+
+
 async def weekly_loop():
     """Щонеділі ввечері — звіт кожного підрозділу окремим повідомленням (один раз за тиждень)."""
     await asyncio.sleep(90)
@@ -219,12 +232,11 @@ async def weekly_loop():
         try:
             now = datetime.now(core.TZ or timezone.utc)
             ws = core.week_start(0)
-            if now.weekday() == 6 and now.hour >= REPORT_HOUR and await db.get_setting("dept_report_posted") != ws:
+            # день і година — адмін-панель → «Налаштування»; там же їх можна вимкнути
+            if ov.C("dept_report_on") and now.weekday() == ov.C("dept_report_day") and now.hour >= ov.C("dept_report_hour") \
+                    and await db.get_setting("dept_report_posted") != ws:
                 await db.set_setting("dept_report_posted", ws)
-                for d in CONTROL_DEPTS:
-                    if await db.one("SELECT sid FROM users WHERE dept=? AND status NOT IN ('dismissed','removed') LIMIT 1", d):
-                        await post_report(d)
-                        await asyncio.sleep(2)
+                await post_all()
         except Exception:
             log.exception("Тижневі звіти відділів")
         await asyncio.sleep(600)

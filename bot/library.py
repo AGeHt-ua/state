@@ -144,11 +144,12 @@ async def start(u: dict, eid: int) -> dict:
                             eid, u["sid"])
         if last and last["status"] == "submitted":
             raise Fail("Попередня спроба ще на перевірці ВКПП.")
-        if last and now_ms() - (last["finished"] or 0) < RETRY_MS:
+        retry = ov.C("exam_retry_h") * 3600 * 1000  # адмін-панель → «Налаштування»
+        if last and now_ms() - (last["finished"] or 0) < retry:
             ok = last["total"] and last["score"] is not None and 100 * last["score"] / last["total"] >= e["pass_pct"] and not last["late"]
             if not ok:
-                left = RETRY_MS - (now_ms() - (last["finished"] or 0))
-                raise Fail(f"Нову спробу можна почати через {left // 3_600_000} год {left % 3_600_000 // 60_000} хв (між спробами — 24 години).")
+                left = retry - (now_ms() - (last["finished"] or 0))
+                raise Fail(f"Нову спробу можна почати через {left // 3_600_000} год {left % 3_600_000 // 60_000} хв (між спробами — {ov.C('exam_retry_h')} год).")
         aid = await db.run("INSERT INTO attempts(exam_id,sid,status,started) VALUES(?,?,?,?)", eid, u["sid"], "progress", now_ms())
         a = await db.one("SELECT * FROM attempts WHERE id=?", aid)
     return {"attempt": a["id"], "started": a["started"], "exam": public_exam(e)}

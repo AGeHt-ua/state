@@ -895,7 +895,7 @@ async def _delete_doc(u: dict, kind: str, rid: int) -> dict:
     if not row or row["status"] == "deleted":
         raise Fail("Документ не знайдено.", 404)
     own = row["by_sid"] == u["sid"] and row["status"] in ("wait", "rej", "cancel")
-    if not (own or u["rank"] >= 14):
+    if not (own or u["rank"] >= ov.P("docs_manage")):
         raise Fail("Видалити можна власний документ до погодження (або після відмови). Погоджені анулює лише керівництво СБУ.", 403)
     await db.run(f"UPDATE {table} SET status='deleted', reviewer=?, reviewed=? WHERE id=?", u["sid"], now_ms(), rid)
     if kind == "act":
@@ -916,7 +916,7 @@ async def delete_file(u: dict, fid: str, force: bool = False):
     row = await db.one("SELECT * FROM files WHERE id=?", fid)
     if not row:
         raise Fail("Файл не знайдено.", 404)
-    if not force and row["uploader"] != u["sid"] and u["rank"] < 14:
+    if not force and row["uploader"] != u["sid"] and u["rank"] < ov.P("docs_manage"):
         raise Fail("Видалити можна лише власний файл.", 403)
     try:
         ch = bot.get_channel(int(row["ch_id"])) or await bot.fetch_channel(int(row["ch_id"]))
@@ -1678,8 +1678,9 @@ async def _remember_url(fid: str, url: str):
 
 
 async def store_file(data: bytes, filename: str, ctype: str, uploader: int) -> str:
-    if len(data) > config.MAX_UPLOAD_MB * 1024 * 1024:
-        raise Fail(f"Файл більший за {config.MAX_UPLOAD_MB:g} МБ.", 413)
+    max_mb = ov.upload_limit_mb(config.MAX_UPLOAD_MB)
+    if len(data) > max_mb * 1024 * 1024:
+        raise Fail(f"Файл більший за {max_mb:g} МБ.", 413)
     ch = await channel("files")
     if not ch:
         raise Fail("Сховище файлів ще не налаштовано.", 503)

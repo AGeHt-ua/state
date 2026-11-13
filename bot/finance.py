@@ -35,11 +35,11 @@ def no(d: dict) -> str:
 def can_prepare(u: dict) -> bool:
     if u.get("curator_ro"):
         return False
-    return (u["rank"] in (11, 12) and core.has_dept_role(u, "deb")) or u["rank"] >= ov.P("rap_override")
+    return (u["rank"] >= ov.P("fin_deb") and core.has_dept_role(u, "deb")) or u["rank"] >= ov.P("fin_any")
 
 
 def can_approve(u: dict) -> bool:
-    return u["rank"] >= ov.P("rap_override") and not u.get("curator_ro")
+    return u["rank"] >= ov.P("fin_approve") and not u.get("curator_ro")
 
 
 def can_view(u: dict) -> bool:

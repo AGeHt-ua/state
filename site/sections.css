@@ -532,3 +532,18 @@
 .home .cs-card>header{border-bottom:1px solid var(--line2);padding-bottom:10px;margin-bottom:12px}
 .home .cs-card>header h3{font:16px var(--display);letter-spacing:.08em;text-transform:uppercase}
 .home .idcard{border-radius:4px}
+.viewer-link{display:block;max-width:min(640px,90vw);margin:6px auto 14px;padding:8px 12px;border:1px solid var(--line2);border-radius:3px;background:rgba(0,0,0,.35);font:12.5px var(--mono);color:var(--gold2);overflow-wrap:anywhere}
+/* оголошення угорі кожної сторінки (адмін-панель → «Налаштування») */
+.site-banner{--bt:var(--gold);display:flex;gap:12px;align-items:center;margin:0 0 16px;padding:11px 16px;border:1px solid color-mix(in srgb,var(--bt) 55%,transparent);border-left:4px solid var(--bt);
+  border-radius:3px;background:linear-gradient(100deg,color-mix(in srgb,var(--bt) 16%,transparent),transparent 70%),var(--panel);font-size:14px;line-height:1.5}
+.site-banner b{font-size:18px}.site-banner span{white-space:pre-line}
+.site-banner.t-warn{--bt:#e8a33c}.site-banner.t-bad{--bt:#e0645c}.site-banner.t-ok{--bt:#6fbf8a}
+/* адмін-панель: групи прав і налаштування */
+.adm-pg{display:grid;gap:8px;margin-bottom:14px}.adm-pg .eyebrow{padding-bottom:4px;border-bottom:1px solid var(--line)}
+.adm-h{margin:18px 0 8px;padding-top:14px;border-top:1px solid var(--line2);font:15px var(--display);letter-spacing:.06em;text-transform:uppercase}
+.adm-sw{margin-bottom:10px}
+.adm-mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}
+.adm-mods .adm-chk{padding:9px 12px;border:1px solid var(--line2);border-radius:3px;background:var(--bg2)}
+.adm-mods .adm-chk.off{opacity:.6;border-style:dashed}
+.adm-banner{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:start;margin-bottom:10px}
+@media (max-width:760px){.adm-banner{grid-template-columns:1fr}}

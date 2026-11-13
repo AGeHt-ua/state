@@ -9,6 +9,7 @@ import random
 import discord
 
 import core
+import overrides as ov
 import style
 from core import DAY, Fail
 from db import db, now_ms
@@ -59,6 +60,8 @@ def week_seed(offset: int = 0) -> int:
 
 async def save(u: dict, b: dict) -> dict:
     game = game_key(b.get("game") or "assault")
+    if not (ov.module_on("game") and ov.module_on("game_" + game)):
+        raise Fail("Цей тренажер вимкнено в адмін-панелі.", 403)
     lvl, sc, ms = int(b.get("level") or 0), int(b.get("score") or 0), int(b.get("ms") or 0)
     if not 0 <= lvl <= WEEKLY or not 0 <= sc <= GAMES[game]["max"] or ms < 8000:  # грубий захист від підробки
         raise Fail("Некоректний результат.")

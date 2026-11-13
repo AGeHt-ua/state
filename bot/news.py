@@ -102,6 +102,8 @@ async def _post_discord(n: dict, u: dict) -> tuple[str, str] | None:
 
 
 async def create(u: dict, b: dict) -> dict:
+    if not ov.module_on("news"):
+        raise Fail("Новини вимкнено в адмін-панелі.", 403)
     if not can_post(u):
         raise Fail("Публікувати новини може керівництво й Прес-служба (адмін-панель → Права).", 403)
     title = " ".join(str(b.get("title") or "").split())[:200]

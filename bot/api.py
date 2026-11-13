@@ -1,6 +1,7 @@
 """HTTP API для сайту (GitHub Pages). Сайт не має своєї бази — усе тут."""
 import asyncio
 import json
+import re
 import logging
 import secrets
 import time
@@ -229,6 +230,7 @@ async def me(request):
     return web.json_response({
         "me": public_user(u),
         "points": await core.week_points(u["sid"]), "pointsPrev": await core.week_points(u["sid"], 1),
+        "modules": ov.C("modules"), "banner": (lambda b: b if b["text"] and (not b["until"] or b["until"] > now_ms()) else None)(ov.C("banner")),
         # за весь час: бали підтверджених звітів (за поточною вартістю) і їх кількість — без обмеження списку звітів
         "pointsAll": await promo._points(u["sid"]),
         "actsOk": (await db.one("SELECT COUNT(*) AS n FROM acts WHERE by_sid=? AND status='ok'", u["sid"]))["n"],
@@ -475,7 +477,7 @@ async def raps_get(request):
     r = await db.one("SELECT * FROM raps WHERE id=?", int(request.match_info["id"]))
     if not r or r["status"] == "deleted":
         raise Fail("Рапорт не знайдено.", 404)
-    if not (r["by_sid"] == u["sid"] or core.can_approve_rap(u, r) or u["rank"] >= 13 or core.has_dept_role(u, "vkpp")
+    if not (r["by_sid"] == u["sid"] or core.can_approve_rap(u, r) or u["rank"] >= ov.P("rap_view_all") or core.has_dept_role(u, "vkpp")
             or core.lead_of(u, r["dept"]) or core.lead_of(u, json.loads(r["data"] or "{}").get("to"))):
         raise Fail("Немає доступу до цього рапорту.", 403)
     data = json.loads(r["data"] or "{}")
@@ -809,9 +811,9 @@ DOC_IMAGE_RIGHTS = {
     "np": lambda u, i: orders.can_prepare(u),
     "ng": lambda u, i: orders.can_sign(u),
     "act": lambda u, i: _row_ok("acts", i, lambda r: r["by_sid"] == u["sid"] or core.can_view_act(u, r)),
-    "rap": lambda u, i: _row_ok("raps", i, lambda r: r["by_sid"] == u["sid"] or u["rank"] >= 14 or core.can_approve_rap(u, r)),
-    "ns": lambda u, i: _row_ok("discipline", i, lambda r: u["sid"] in (r["issued_by"], r["sid"]) or u["rank"] >= 14),  # і сам покараний (скарга)
-    "pz": lambda u, i: _row_ok("protocols", i, lambda r: r["author"] == u["sid"] or u["rank"] >= 14 or core.lead_of(u, r["dept"])),
+    "rap": lambda u, i: _row_ok("raps", i, lambda r: r["by_sid"] == u["sid"] or u["rank"] >= ov.P("docs_view_all") or core.can_approve_rap(u, r)),
+    "ns": lambda u, i: _row_ok("discipline", i, lambda r: u["sid"] in (r["issued_by"], r["sid"]) or u["rank"] >= ov.P("docs_view_all")),  # і сам покараний (скарга)
+    "pz": lambda u, i: _row_ok("protocols", i, lambda r: r["author"] == u["sid"] or u["rank"] >= ov.P("docs_view_all") or core.lead_of(u, r["dept"])),
     "fin": lambda u, i: finance.can_view(u),
     "bn": lambda u, i: bonus.can_manage(u) or bonus.can_finalize(u) or bool(u.get("curator")),
 }
@@ -1246,7 +1248,7 @@ async def public_candidate(request):
 
 # ---------------------------------------------------------------- кадри: анкети кандидатів і заявки на допуск
 def hr_rights(u: dict) -> dict:
-    return {"vvb": u["rank"] >= 13 or core.has_dept_role(u, "vvb"), "vkpp": u["rank"] >= 14 or core.has_dept_role(u, "vkpp")}
+    return {"vvb": u["rank"] >= ov.P("cand_vvb") or core.has_dept_role(u, "vvb"), "vkpp": u["rank"] >= ov.P("cand_vkpp") or core.has_dept_role(u, "vkpp")}
 
 
 async def hr_pending(u: dict) -> int:
@@ -1338,6 +1340,36 @@ async def news_delete(request):
 
 
 # ---------------------------------------------------------------- файли
+SHORTCUTS = (".url", ".lnk", ".webloc", ".desktop")  # ярлики замість самого файлу (так буває, коли перетягують посилання з браузера)
+_link_cache: dict[str, str | None] = {}
+
+
+def shortcut_target(data: bytes) -> str | None:
+    """Адреса з ярлика Windows (.url: рядок URL=...) або macOS (.webloc) — лише http(s)."""
+    text = data[:20000].decode("utf-8", "ignore")
+    m = re.search(r"^\s*URL\s*=\s*(\S+)", text, re.M | re.I) or re.search(r"<string>\s*(https?://[^<\s]+)\s*</string>", text)
+    link = m.group(1).strip() if m else ""
+    return link if re.match(r"^https?://", link, re.I) else None
+
+
+async def file_link(fid: str) -> str | None:
+    """Для вже прикріплених ярликів .url — адреса, на яку вони ведуть (читаємо файл зі сховища один раз)."""
+    if fid in _link_cache:
+        return _link_cache[fid]
+    row = await db.one("SELECT * FROM files WHERE id=?", fid)
+    link = None
+    if row and str(row["filename"] or "").lower().endswith((".url", ".webloc")):
+        try:
+            ch = core.bot.get_channel(int(row["ch_id"])) or await core.bot.fetch_channel(int(row["ch_id"]))
+            msg = await ch.fetch_message(int(row["msg_id"]))
+            if msg.attachments:
+                link = shortcut_target(await msg.attachments[0].read())
+        except Exception as ex:  # файл недоступний — переглядач просто запропонує завантажити
+            log.warning("Ярлик %s не прочитано: %r", fid, ex)
+    _link_cache[fid] = link
+    return link
+
+
 @routes.post("/api/files")
 async def files_upload(request):
     u = await auth(request)
@@ -1346,12 +1378,18 @@ async def files_upload(request):
     if part is None or part.name != "file":
         raise Fail("Додайте файл у поле «file».")
     data = bytearray()
-    limit = int(config.MAX_UPLOAD_MB * 1024 * 1024)
+    max_mb = ov.upload_limit_mb(config.MAX_UPLOAD_MB)  # ліміт з адмін-панелі, не більше за серверний
+    limit = int(max_mb * 1024 * 1024)
     while chunk := await part.read_chunk(64 * 1024):
         data.extend(chunk)
         if len(data) > limit:
-            raise Fail(f"Файл більший за {config.MAX_UPLOAD_MB:g} МБ.", 413)
-    fid = await core.store_file(bytes(data), part.filename or "file", part.headers.get("Content-Type", ""), u["sid"])
+            raise Fail(f"Файл більший за {max_mb:g} МБ.", 413)
+    name = part.filename or "file"
+    if name.lower().endswith(SHORTCUTS):
+        link = shortcut_target(bytes(data))
+        raise Fail("Це ярлик посилання, а не сам файл. Прикріпіть скрін або відео"
+                   + (f", а посилання вставте в поле для посилання: {link}" if link else " (збережіть файл на комп'ютер і прикріпіть його)."))
+    fid = await core.store_file(bytes(data), name, part.headers.get("Content-Type", ""), u["sid"])
     return web.json_response({"id": fid, "url": f"/api/files/{fid}"}, status=201)
 
 
@@ -1359,7 +1397,12 @@ async def files_upload(request):
 async def files_url(request):
     """Свіже посилання Discord на файл (сайт відкриває його без передачі токена в адресі)."""
     await auth(request)
-    return web.json_response({"url": await core.file_url(request.match_info["id"])})
+    fid = request.match_info["id"]
+    out = {"url": await core.file_url(fid)}
+    link = await file_link(fid)
+    if link:
+        out["link"] = link
+    return web.json_response(out)
 
 
 @routes.get("/api/files/{id}")
@@ -1441,6 +1484,30 @@ async def admin_mgmt(request):
 async def admin_mgmt_save(request):
     u = await admin_auth(request)
     return web.json_response(await admin.save_mgmt(u, (await body(request)).get("heads") or {}))
+
+
+@routes.get("/api/admin/cfg")
+async def admin_cfg(request):
+    await admin_auth(request)
+    return web.json_response(ov.cfg_view())
+
+
+@routes.post("/api/admin/cfg")
+async def admin_cfg_save(request):
+    u = await admin_auth(request)
+    v = await ov.save_cfg(db, await body(request))
+    off = [ov.MODULES[k] for k, on in v["modules"].items() if not on]
+    await admin.note(u, "⚙ Змінено налаштування сайту", 0, ", ".join(f"{f['label']}: {v['values'][f['key']]}" for f in v["fields"])
+                     + (f"; вимкнено: {', '.join(off)}" if off else "") + ("; оголошення: " + v["banner"]["text"][:60] if v["banner"]["text"] else ""))
+    return web.json_response(v)
+
+
+@routes.post("/api/admin/dept-reports")
+async def admin_dept_reports(request):
+    u = await admin_auth(request)
+    sent = await depts.post_all(u)
+    await admin.note(u, "⚙ Тижневі звіти всіх відділів надіслано вручну", 0, f"повідомлень: {sent}")
+    return web.json_response({"sent": sent})
 
 
 @routes.post("/api/admin/perms")
