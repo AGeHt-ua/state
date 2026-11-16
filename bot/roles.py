@@ -51,12 +51,13 @@ OPS_DEPTS = ["orv", "vvb", "atc", "alpha", "deb", "vkpp"]
 
 
 # Скорочення звань для нікнейму (Discord дозволяє не більше 32 символів)
-RANK_SHORT = ["Стажер", "Мол. агент", "Агент", "Ст. агент", "Мол. опер", "Опер", "Ст. опер", "Інструктор",
-              "Кер. групи", "Кер. сектору", "Заст. нач. від.", "Нач. відділу", "Нач. управл.", "Заст. Голови", "Голова СБУ"]
+RANK_SHORT = ["Стажер", "МА", "Агент", "СА", "МО", "Опер", "СО", "Інстр", "КГ", "КС", "ЗНВ", "НВ", "НУ", "ЗГ", "Голова"]
 
 
-NICK_TPL = "{rank} | {name} | {sid}"            # звичайний нікнейм
-CALLSIGN_TPL = "{dept} | {callsign} | {sid}"    # з затвердженим позивним (АТЦ | LEO | 256)
+NICK_TPL = "{rank} | {dept} | {name} | {sid}"   # нікнейм у Discord для всіх: НВ | АТЦ | Dominic Castro | 256
+OLD_NICK_TPLS = ("{rank} | {name} | {sid}",)    # колишній стандарт — вважаємо незміненим і беремо новий
+CALLSIGN_TPL = "{dept} | {callsign} | {sid}"    # більше не застосовується: позивний — лише в «Сові» й на документах
+NICK_DEPT = {"lead": "СБУ"}                      # «Керівництво» задовге для 32 символів нікнейму
 CALLSIGN_DEPTS = ["atc", "deb", "alpha", "vvb"]
 
 
@@ -70,12 +71,14 @@ def rank_short(rank: int) -> str:
 
 
 def nickname(rank: int, name: str, sid: int, dept: str | None = None, callsign: str | None = None) -> str:
-    """Службовий нікнейм за шаблоном з адмін-панелі. Позивний — лише у відділах із позивними.
+    """Службовий нікнейм у Discord за шаблоном з адмін-панелі: звання | підрозділ | ім'я | Static ID.
+    Позивний у нікнейм не потрапляє — він лише в «Сові» й на документах (параметр callsign лишено для сумісності).
     Discord дозволяє 32 символи: довге ім'я скорочується до «І. Прізвище»."""
-    use_cs = bool(callsign) and dept in callsign_depts()
-    tpl = (ov.nick.get("callsign_tpl") or CALLSIGN_TPL) if use_cs else (ov.nick.get("tpl") or NICK_TPL)
-    d = DEPTS.get(dept or "", {}).get("s", "СБУ")
-    fill = lambda n: tpl.replace("{rank}", rank_short(rank)).replace("{name}", n).replace("{sid}", str(sid)).replace("{dept}", d).replace("{callsign}", callsign or "")
+    tpl = ov.nick.get("tpl") or NICK_TPL
+    if tpl in OLD_NICK_TPLS or "{callsign}" in tpl:
+        tpl = NICK_TPL
+    d = NICK_DEPT.get(dept or "") or DEPTS.get(dept or "", {}).get("s", "СБУ")
+    fill = lambda n: tpl.replace("{rank}", rank_short(rank)).replace("{name}", n).replace("{sid}", str(sid)).replace("{dept}", d)
     # скорочуємо лише ім'я — звання, позивний і Static ID лишаються цілими: «Ім'я Прізвище» → «І. Прізвище» → «Прізвище» → обрізане прізвище
     parts = name.split()
     variants = [name] + ([f"{parts[0][0]}. {' '.join(parts[1:])}", " ".join(parts[1:])] if len(parts) >= 2 else [])

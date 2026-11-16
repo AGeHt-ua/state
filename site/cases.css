@@ -131,3 +131,6 @@
 .act-stamp.ok{color:#24603a}.act-stamp.bad{color:#8e1d17}.act-stamp.wait{color:#1e4f8c}.act-stamp.mute{color:#6b6253}
 @media (max-width:1100px){.act-page{grid-template-columns:1fr}.act-trail{position:static}}
 @media (max-width:760px){.act-stamp{position:static;display:inline-block;margin-top:14px}.act-row{grid-template-columns:1fr}.act-row::after{display:none}.act-row .doc-side{justify-items:start;text-align:left}}
+/* передача кейс-файлу іншому агенту */
+.kf-modal{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:16px;background:rgba(3,5,9,.78)}
+.kf-tr{width:min(520px,100%);display:grid;gap:12px;border-top:3px solid var(--gold)}

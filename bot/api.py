@@ -398,7 +398,7 @@ async def me_verify(request):
 def act_out(a: dict, people: dict) -> dict:
     return {**{k: a[k] for k in ("id", "type", "qty", "t", "subj", "evidence", "note", "status", "reviewed", "dept")}, "custom": a.get("custom"),
             "arts": json.loads(a["arts"] or "[]"), "files": json.loads(a["files"] or "[]"),
-            "by": people.get(a["by_sid"]), "reviewer": people.get(a["reviewer"])}
+            "by": people.get(a["by_sid"]), "reviewer": people.get(a["reviewer"]), "rejNote": a.get("rej_note") if a["status"] == "rej" else None}
 
 
 @routes.get("/api/acts")
@@ -435,14 +435,14 @@ async def acts_create(request):
 async def acts_decide(request):
     u = await auth(request)
     b = await body(request)
-    row = await core.decide_act(u, int(request.match_info["id"]), b.get("decision"), b.get("score"))
+    row = await core.decide_act(u, int(request.match_info["id"]), b.get("decision"), b.get("score"), str(b.get("note") or ""))
     return web.json_response(act_out(row, await people_map([row["by_sid"], row["reviewer"]])))
 
 
 # ---------------------------------------------------------------- рапорти
 def rap_out(r: dict, people: dict) -> dict:
     return {**{k: r[k] for k in ("id", "type", "t", "status", "reviewed", "dept")}, "data": json.loads(r["data"] or "{}"),
-            "by": people.get(r["by_sid"]), "reviewer": people.get(r["reviewer"])}
+            "by": people.get(r["by_sid"]), "reviewer": people.get(r["reviewer"]), "rejNote": r.get("rej_note") if r["status"] == "rej" else None}
 
 
 @routes.get("/api/raps")
@@ -489,7 +489,8 @@ async def raps_get(request):
 @routes.post("/api/raps/{id}/decision")
 async def raps_decide(request):
     u = await auth(request)
-    row = await core.decide_rap(u, int(request.match_info["id"]), (await body(request)).get("decision"))
+    b = await body(request)
+    row = await core.decide_rap(u, int(request.match_info["id"]), b.get("decision"), str(b.get("note") or ""))
     return web.json_response(rap_out(row, await people_map([row["by_sid"], row["reviewer"]])))
 
 
@@ -549,6 +550,20 @@ async def cases_update(request):
 async def cases_submit(request):
     u = await auth(request)
     c = await cases.submit(u, int(request.match_info["id"]))
+    return web.json_response(cases.out(c, u))
+
+
+@routes.get("/api/cases/{id}/transfer")
+async def cases_transfer_targets(request):
+    u = await auth(request)
+    return web.json_response(await cases.transfer_targets(u, int(request.match_info["id"])))
+
+
+@routes.post("/api/cases/{id}/transfer")
+async def cases_transfer(request):
+    u = await auth(request)
+    b = await body(request)
+    c = await cases.transfer(u, int(request.match_info["id"]), int(b.get("sid") or 0), str(b.get("note") or ""))
     return web.json_response(cases.out(c, u))
 
 
@@ -1215,12 +1230,17 @@ _cand_hits: dict[str, list[float]] = {}
 
 @routes.post("/api/public/candidate")
 async def public_candidate(request):
-    ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.remote or "?"
+    # Запити йдуть через ретранслятор Cloudflare: без X-Sova-Client-IP (передає relay/worker.js) у CF-Connecting-IP — адреса
+    # самого ретранслятора, однакова для всіх. Тому основне обмеження — за Discord кандидата, а за адресою — лише якщо вона справжня.
+    real_ip = request.headers.get("X-Sova-Client-IP", "").strip()
     now = time.time()
-    for key, cap in ((ip, 3), ("*", 40)):  # не більше 3 анкет з однієї адреси й 40 загалом за годину
+    limits = [("*", 60, "Забагато анкет за останню годину. Спробуйте пізніше.")]
+    if real_ip:
+        limits.append(("ip:" + real_ip, 5, "З вашої адреси вже подано кілька анкет. Спробуйте пізніше."))
+    for key, cap, msg in limits:
         hits = [t for t in _cand_hits.get(key, []) if now - t < 3600]
         if len(hits) >= cap:
-            raise Fail("Забагато анкет. Спробуйте пізніше.", 429)
+            raise Fail(msg, 429)
         _cand_hits[key] = hits
     # multipart: поле data (JSON анкети) і photo (фото персонажа, до 5 МБ)
     # і work (скриншот трудової книжки з гри, до 5 МБ)
@@ -1239,9 +1259,15 @@ async def public_candidate(request):
                 if len(data) > 5 * 1024 * 1024:
                     raise Fail("Фото більше за 5 МБ." if part.name == "photo" else "Скриншот трудової книжки більший за 5 МБ.", 413)
             imgs[part.name] = (bytes(data), part.filename or part.name)
+    dkey = "d:" + " ".join(str(b.get("discord") or "").lower().split())
+    if dkey != "d:":
+        hits = [t for t in _cand_hits.get(dkey, []) if now - t < 3600]
+        if len(hits) >= 3:
+            raise Fail("Від цього Discord уже подано кілька анкет за годину. Зачекайте рішення або спробуйте пізніше.", 429)
+        _cand_hits[dkey] = hits
     cid = await candidates.submit_form(str(b.get("discord") or ""), b, imgs.get("photo"), imgs.get("work"))
-    for key in (ip, "*"):
-        _cand_hits[key].append(now)
+    for key in ("*", dkey, *(["ip:" + real_ip] if real_ip else [])):
+        _cand_hits.setdefault(key, []).append(now)
     c = await db.one("SELECT discord_id FROM candidates WHERE id=?", cid)
     return web.json_response({"no": f"АНК-{cid:04d}", "found": bool(c["discord_id"])}, status=201)
 

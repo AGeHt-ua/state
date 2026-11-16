@@ -32,12 +32,11 @@ function usersView(d) {
 function nickView(d) {
   const n = d.nick, cs = n.people.filter((p) => n.depts.includes(p.dept));
   return `<form class="card" data-f="admnick"><header><h3>Формат нікнеймів у Discord</h3></header>
-    <p class="note">Підстановки: <span class="mono">{rank}</span> — скорочене звання, <span class="mono">{name}</span> — ім'я, <span class="mono">{sid}</span> — Static ID,
-      <span class="mono">{dept}</span> — відділ, <span class="mono">{callsign}</span> — позивний. Discord дозволяє 32 символи: довге ім'я скорочується до «І. Прізвище».</p>
+    <p class="note">Підстановки: <span class="mono">{rank}</span> — скорочене звання, <span class="mono">{dept}</span> — підрозділ, <span class="mono">{name}</span> — ім'я, <span class="mono">{sid}</span> — Static ID.
+      Discord дозволяє 32 символи: довге ім'я скорочується до «І. Прізвище». <b>Позивний у нікнейм не додається</b> — він показується лише в «Сові» та на документах.</p>
     <div class="form-grid">
-      <label class="f"><span>Звичайний нікнейм <i class="muted">· стандарт: ${esc(n.defTpl)}</i></span><input class="i mono" name="tpl" value="${esc(n.tpl)}"></label>
-      <label class="f"><span>Нікнейм із позивним <i class="muted">· стандарт: ${esc(n.defCallsignTpl)}</i></span><input class="i mono" name="callsignTpl" value="${esc(n.callsignTpl)}"></label>
-      <div class="f wide"><span>Відділи з позивними</span><div class="adm-checks">${n.allDepts.map((x) => `<label><input type="checkbox" name="dept" value="${x.key}" ${n.depts.includes(x.key) ? "checked" : ""}> ${esc(x.s)}</label>`).join("")}</div></div>
+      <label class="f wide"><span>Нікнейм у Discord для всіх <i class="muted">· стандарт: ${esc(n.defTpl)}</i></span><input class="i mono" name="tpl" value="${esc(n.tpl)}"></label>
+      <div class="f wide"><span>Відділи з позивними <i class="muted">· де можна подати заявку на позивний (показується в «Сові» й на документах)</i></span><div class="adm-checks">${n.allDepts.map((x) => `<label><input type="checkbox" name="dept" value="${x.key}" ${n.depts.includes(x.key) ? "checked" : ""}> ${esc(x.s)}</label>`).join("")}</div></div>
     </div>
     <h4 class="adm-sub">Скорочення звань у нікнеймі</h4>
     <div class="adm-ranks">${n.ranks.map((r, i) => `<label><span>${i + 1}. ${esc(d.ranks[i])}</span><input class="i mono" name="rank" maxlength="16" value="${esc(r)}" placeholder="${esc(n.defRanks[i])}"></label>`).join("")}</div>
@@ -278,7 +277,7 @@ Object.assign(S.actions, {
 const formData = (f) => Object.fromEntries([...f.querySelectorAll("[name]")].map((el) => [el.name, el.value]));
 S.forms.admperms = (f) => run(f.querySelector("[type=submit]"), async () => { await call("/api/admin/perms", { json: formData(f) }); toast("Доступи збережено"); await S.refreshMe(); S.render(); });
 S.forms.admnick = (f) => run(f.querySelector("[type=submit]"), async () => {
-  const body = { tpl: f.querySelector("[name=tpl]").value, callsignTpl: f.querySelector("[name=callsignTpl]").value,
+  const body = { tpl: f.querySelector("[name=tpl]").value,
     ranks: [...f.querySelectorAll("[name=rank]")].map((el) => el.value.trim() || el.placeholder),
     depts: [...f.querySelectorAll("[name=dept]:checked")].map((el) => el.value) };
   await call("/api/admin/nick", { json: body }); toast("Формат нікнеймів збережено"); S.render();

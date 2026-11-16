@@ -553,3 +553,9 @@
 .tt-link:hover{border-color:var(--gold);background:var(--gold-soft);color:var(--fg)}
 .tt-link svg{width:15px;height:15px;fill:currentColor;filter:drop-shadow(1px 0 0 rgba(37,244,238,.55)) drop-shadow(-1px 0 0 rgba(254,44,85,.55))}
 @media (max-width:560px){.tt-link span{display:none}.tt-link{padding:6px 8px}}
+/* причина відмови звіту чи рапорту — бачить автор */
+.rej-note{margin:6px 0;padding:8px 12px;border:1px solid rgba(224,100,92,.45);border-left:3px solid #e0645c;border-radius:3px;background:rgba(224,100,92,.08);font-size:13px;line-height:1.5;color:#f0c4c0;overflow-wrap:anywhere}
+.rej-note b{color:#ef8a83;font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;margin-right:4px}
+.act-trail .rej-note{margin:0 0 10px}
+.rap-rej{margin-top:6px;padding:6px 10px;border-left:3px solid #c0392b;background:rgba(192,57,43,.06);font-size:13px}
+.hm-act-rej{display:block;margin-top:2px;font-size:11.5px;font-weight:400;color:#ef8a83;white-space:normal}

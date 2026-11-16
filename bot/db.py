@@ -245,7 +245,8 @@ class DB:
                     "ALTER TABLE doc_msgs ADD COLUMN who TEXT", "ALTER TABLE doc_msgs ADD COLUMN extra TEXT",
                     "ALTER TABLE users ADD COLUMN vac_until INTEGER",
                     "ALTER TABLE files ADD COLUMN url TEXT", "ALTER TABLE files ADD COLUMN url_exp INTEGER",
-                    "ALTER TABLE acts ADD COLUMN custom TEXT"):
+                    "ALTER TABLE acts ADD COLUMN custom TEXT",
+                    "ALTER TABLE acts ADD COLUMN rej_note TEXT", "ALTER TABLE raps ADD COLUMN rej_note TEXT"):  # причина відмови — бачить автор
             try:
                 await self.conn.execute(sql)
             except Exception:

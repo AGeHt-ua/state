@@ -202,21 +202,23 @@ class RegisterModal(discord.ui.Modal, title="Оформлення допуску
         self.member = member
 
     async def on_submit(self, interaction: discord.Interaction):
+        raw = str(self.sid.value).strip()
+        if not raw.isdigit():
+            return await interaction.response.send_message("Static ID — лише цифри.", ephemeral=True, view=ResetView())
+        # Discord чекає відповідь лише 3 с, а реєстрація заявки (база + канал ВКПП) буває довшою: спершу «обробляю», потім результат
+        await interaction.response.defer(ephemeral=True, thinking=True)
         try:
-            raw = str(self.sid.value).strip()
-            if not raw.isdigit():
-                raise Fail("Static ID — лише цифри.")
             name = str(self.name.value).strip()
             rid = await core.request_access(self.member, int(raw), name)
             lines = [style.kv("ЗАЯВНИК", name, "white", True), style.kv("НОМЕР ЖЕТОНА", f"№{raw}", "cyan", True),
                      style.kv("СТАТУС", "ПЕРЕДАНО НА ПЕРЕВІРКУ ВКПП", "gold", True), style.rule(),
                      style.c("Після підтвердження код доступу надійде", "gray"), style.c("вам в особисті повідомлення. Тримайте", "gray"),
                      style.c("особисті від учасників сервера відкритими.", "gray")]
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=style.document("ЗАЯВКУ НА ДОПУСК ЗАРЕЄСТРОВАНО", 0xD9A23D, desc=style.block(*lines), no=style.doc_no("ЗД", rid)),
                 ephemeral=True)
         except Fail as e:
-            await interaction.response.send_message(str(e), ephemeral=True, view=ResetView())
+            await interaction.followup.send(str(e), ephemeral=True, view=ResetView())
 
 
 def status_embed(s: dict) -> discord.Embed:

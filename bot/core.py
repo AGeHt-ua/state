@@ -636,6 +636,7 @@ async def act_embed(a: dict) -> discord.Embed:
         ("Статті КК", style.esc(", ".join(arts))),
         ("Фігурант", style.esc(a["subj"][:100]) if a["subj"] else None),
         ("Матеріали", ev, False),
+        ("Причина відмови", style.esc(a.get("rej_note") or "")[:1000] if a["status"] == "rej" and a.get("rej_note") else None, False),
     ])
 
 
@@ -717,6 +718,8 @@ async def rap_embed(r: dict) -> discord.Embed:
     elif t == "refund":
         fields.append(("Сума", f"**${data.get('amount', 0):,}**".replace(",", " ")))
     fields.append(("Матеріали", await materials(data.get("evidence"), data.get("files")), False))
+    if r["status"] == "rej" and r.get("rej_note"):
+        fields.append(("Причина відмови", style.esc(r["rej_note"])[:1000], False))
     return style.card(style.doc_no("РАП", r["id"]), RAP_TYPES.get(t, "Рапорт"), state, color, t=r["t"], fields=fields)
 
 
@@ -790,7 +793,29 @@ async def actor_from_discord(member: discord.Member) -> dict:
     return u
 
 
+class RejectModal(discord.ui.Modal, title="Причина відмови"):
+    """Відмова кнопкою в Discord (старі картки): причина обов'язкова, її побачить автор."""
+    reason = discord.ui.TextInput(label="Чому відхилено (побачить автор)", style=discord.TextStyle.paragraph, min_length=3, max_length=500)
+
+    def __init__(self, kind: str, rid: int):
+        super().__init__()
+        self.kind, self.rid = kind, rid
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            actor = await actor_from_discord(interaction.user)
+            if self.kind == "act":
+                await decide_act(actor, self.rid, "rej", note=str(self.reason.value))
+            else:
+                await decide_rap(actor, self.rid, "rej", note=str(self.reason.value))
+            await interaction.response.send_message("Відхилено. Автор побачить причину на сайті й в особистих.", ephemeral=True)
+        except Fail as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
+
+
 async def button_decision(interaction: discord.Interaction, kind: str, rid: int, decision: str):
+    if decision != "ok":
+        return await interaction.response.send_modal(RejectModal(kind, rid))
     try:
         actor = await actor_from_discord(interaction.user)
         if kind == "act":
@@ -843,11 +868,13 @@ async def post_card(kind: str, row: dict, tag: str | None = None):
         data = json.loads(row["data"] or "{}")
         copies = []
         for d in dict.fromkeys(["vkpp" if row["dept"] == "academy" else row["dept"], data.get("to")]):
-            cid = config.CHANNELS.get(f"rapdept:{d}")
-            if not cid or cid == ch.id:
+            # канал начальника відділу: з адмін-панелі (Канали) або стандартний; якщо його немає — загальний канал відділу
+            c = await channel(f"rapdept:{d}") or await channel(d)
+            if not c or c.id == ch.id:
+                if not c:
+                    log.warning("Копія рапорту: немає каналу для відділу %s (адмін-панель → Канали → «Рапорти на переведення»)", d)
                 continue
             try:
-                c = bot.get_channel(cid) or await bot.fetch_channel(cid)
                 m = await c.send(embed=embed, **tags, **({"view": docpost.link_view(kind, row["id"])} if link else {}))
                 copies.append([str(c.id), str(m.id)])
                 sent.append(m)
@@ -880,7 +907,8 @@ async def refresh_card(kind: str, row: dict):
         author = await user(row["by_sid"])
         what = act_name(row) if kind == "act" else RAP_TYPES.get(row["type"], "Рапорт")
         await post_log(row["ch_id"], row["msg_id"], style.doc_no("ЗВТ" if kind == "act" else "РАП", row["id"]), what,
-                       who(author), row["status"], who(author if row["status"] == "cancel" else reviewer), row.get("reviewed"))
+                       who(author), row["status"], who(author if row["status"] == "cancel" else reviewer), row.get("reviewed"),
+                       f"причина: {row['rej_note']}" if row["status"] == "rej" and row.get("rej_note") else "")
 
 
 async def delete_doc(u: dict, kind: str, rid: int) -> dict:
@@ -1047,13 +1075,44 @@ async def vacation_loop():
         await asyncio.sleep(1800)
 
 
+def rej_reason(decision: str, note) -> str | None:
+    """Причина відмови обов'язкова: автор документа бачить її на сайті, у картці Discord і в особистих."""
+    if decision == "ok":
+        return None
+    note = " ".join(str(note or "").split())[:500]
+    if len(note) < 3:
+        raise Fail("Вкажіть причину відмови — її побачить автор документа.")
+    return note
+
+
+async def notify_rejected(kind: str, row: dict, actor: dict):
+    """Автору — в особисті: що відхилено, ким і чому (без змісту документа)."""
+    author = await user(row["by_sid"])
+    if not author or not author.get("discord_id"):
+        return
+    m = await member_of(author["discord_id"])
+    if not m:
+        return
+    what = act_name(row) if kind == "act" else RAP_TYPES.get(row["type"], "Рапорт")
+    no = style.doc_no("ЗВТ" if kind == "act" else "РАП", row["id"])
+    try:
+        await m.send(embed=style.document("ДОКУМЕНТ ВІДХИЛЕНО", style.RED, no=no, desc=style.block(
+            style.kv("ДОКУМЕНТ", f"{'Звіт' if kind == 'act' else 'Рапорт'} · {what}", bold=True),
+            style.kv("РОЗГЛЯНУВ", f"{rank_name(actor['rank'])} {actor['name']}"),
+            style.kv("ПРИЧИНА", row.get("rej_note") or "—", bold=True), style.rule(),
+            style.c("Виправте зауваження й подайте документ повторно в ЄІС «Сова»."))), view=style.site_view())
+    except discord.HTTPException:
+        pass
+
+
 @serialized("act")
-async def decide_act(actor: dict, act_id: int, decision: str, score=None) -> dict:
+async def decide_act(actor: dict, act_id: int, decision: str, score=None, note: str = "") -> dict:
     a = await db.one("SELECT * FROM acts WHERE id=?", act_id)
     if not a:
         raise Fail("Звіт не знайдено.", 404)
     if not can_approve_act(actor, a):
         raise Fail("Ви не можете розглядати цей звіт (свій звіт, уже розглянутий або інший відділ).", 403)
+    reason = rej_reason(decision, note)
     qty = a["qty"]
     if decision == "ok" and a["type"] == OTHER:
         try:
@@ -1062,10 +1121,12 @@ async def decide_act(actor: dict, act_id: int, decision: str, score=None) -> dic
             qty = 0
         if not 1 <= qty <= OTHER_MAX:
             raise Fail(f"Оцініть звіт «Інше»: від 1 до {OTHER_MAX} балів.")
-    await db.run("UPDATE acts SET status=?, reviewer=?, reviewed=?, qty=? WHERE id=?",
-                 "ok" if decision == "ok" else "rej", actor["sid"], now_ms(), qty, act_id)
+    await db.run("UPDATE acts SET status=?, reviewer=?, reviewed=?, qty=?, rej_note=? WHERE id=?",
+                 "ok" if decision == "ok" else "rej", actor["sid"], now_ms(), qty, reason, act_id)
     a = await db.one("SELECT * FROM acts WHERE id=?", act_id)
     await refresh_card("act", a)
+    if reason:
+        await notify_rejected("act", a, actor)
     if decision == "ok":
         import promo
         try:
@@ -1144,13 +1205,14 @@ async def create_rap(u: dict, body: dict) -> dict:
 
 
 @serialized("rap")
-async def decide_rap(actor: dict, rap_id: int, decision: str) -> dict:
+async def decide_rap(actor: dict, rap_id: int, decision: str, note: str = "") -> dict:
     r = await db.one("SELECT * FROM raps WHERE id=?", rap_id)
     if not r:
         raise Fail("Рапорт не знайдено.", 404)
     if not can_approve_rap(actor, r):
         raise Fail("Ви не можете розглядати цей рапорт.", 403)
     ok = decision == "ok"
+    reason = rej_reason(decision, note)
     if ok and r["type"] == "promo":  # за час розгляду звання могли змінити наказом або анулювати звіти — тоді рапорт застарів
         import promo
         target, data = await user(r["by_sid"]), json.loads(r["data"] or "{}")
@@ -1165,7 +1227,7 @@ async def decide_rap(actor: dict, rap_id: int, decision: str) -> dict:
         st = data.get("stage", "from")
         chain = STAGES[r["type"]]
         data.setdefault("visas", []).append({"stage": st, "sid": actor["sid"], "name": actor["name"], "rank": actor["rank"],
-                                             "t": now_ms(), "ok": ok})
+                                             "t": now_ms(), "ok": ok, **({"note": reason} if reason else {})})
         if ok and st != chain[-1]:
             data["stage"] = chain[chain.index(st) + 1]
             await db.run("UPDATE raps SET data=? WHERE id=?", json.dumps(data, ensure_ascii=False), rap_id)
@@ -1179,11 +1241,13 @@ async def decide_rap(actor: dict, rap_id: int, decision: str) -> dict:
                 log.exception("Сповіщення про чергу візи")
             return r
         await db.run("UPDATE raps SET data=? WHERE id=?", json.dumps(data, ensure_ascii=False), rap_id)
-    await db.run("UPDATE raps SET status=?, reviewer=?, reviewed=? WHERE id=?", "ok" if ok else "rej", actor["sid"], now_ms(), rap_id)
+    await db.run("UPDATE raps SET status=?, reviewer=?, reviewed=?, rej_note=? WHERE id=?", "ok" if ok else "rej", actor["sid"], now_ms(), reason, rap_id)
     if ok:
         await apply_rap(actor, r)
     r = await db.one("SELECT * FROM raps WHERE id=?", rap_id)
     await refresh_card("rap", r)
+    if reason:
+        await notify_rejected("rap", r, actor)
     return r
 
 

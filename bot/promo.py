@@ -65,12 +65,25 @@ async def exam_passed(sid: int, eid: int) -> bool:
     e = await db.one("SELECT pass_pct FROM exams WHERE id=?", eid)
     if not e:
         return True  # іспит видалено — вимога не діє
-    # прострочена спроба (здано після ліміту часу) не зараховується
+    # прострочена спроба (здано після ліміту часу) не зараховується; відсоток — той самий, що бачить людина на сайті
+    from library import attempt_pct
     for a in await db.all("SELECT score, total FROM attempts WHERE sid=? AND exam_id=? AND score IS NOT NULL AND status!='deleted' AND COALESCE(late,0)=0",
                           sid, eid):
-        if a["total"] and 100 * a["score"] / a["total"] >= e["pass_pct"]:
+        if (attempt_pct(a) or 0) >= e["pass_pct"]:
             return True
     return False
+
+
+async def exam_state(sid: int, eid: int) -> str:
+    """Чому іспит не зараховано: wait — спроба на перевірці ВКПП; late — складено, але після ліміту часу; none — не складено."""
+    if await db.one("SELECT id FROM attempts WHERE sid=? AND exam_id=? AND status='submitted'", sid, eid):
+        return "wait"
+    from library import attempt_pct
+    e = await db.one("SELECT pass_pct FROM exams WHERE id=?", eid)
+    for a in await db.all("SELECT score, total FROM attempts WHERE sid=? AND exam_id=? AND score IS NOT NULL AND status!='deleted' AND COALESCE(late,0)=1", sid, eid):
+        if e and (attempt_pct(a) or 0) >= e["pass_pct"]:
+            return "late"
+    return "none"
 
 
 async def check(u: dict) -> dict | None:
@@ -82,12 +95,16 @@ async def check(u: dict) -> dict | None:
     items = []
     if c["mode"] == "order":
         items.append({"ok": False, "soft": True, "t": f"Звання «{rank_name(nxt)}» присвоюється наказом Голови СБУ (рапорт не подається)"})
-    items.append({"ok": bal >= c["pts"], "t": f"Бали: {bal} з {c['pts']}" + (f" (надлишок {bal - c['pts']} перейде на наступне звання)" if bal > c["pts"] else ""),
+    bal = max(0, bal)  # від'ємний баланс (напр., після анулювання звітів) не має блокувати звання з порогом 0 (Академія)
+    items.append({"ok": c["pts"] <= 0 or bal >= c["pts"], "t": f"Бали: {bal} з {c['pts']}" + (f" (надлишок {bal - c['pts']} перейде на наступне звання)" if bal > c["pts"] else ""),
                   "pct": min(1, bal / c["pts"]) if c["pts"] else 1})
     if c["exam"]:
         e = await db.one("SELECT title FROM exams WHERE id=?", c["exam"])
         if e:
-            items.append({"ok": await exam_passed(u["sid"], c["exam"]), "t": f"Іспит «{e['title']}» складено"})
+            ok = await exam_passed(u["sid"], c["exam"])
+            why = "складено" if ok else {"wait": "спроба на перевірці ВКПП", "late": "складено після ліміту часу — не зараховано, складіть ще раз",
+                                         "none": "ще не складено"}[await exam_state(u["sid"], c["exam"])]
+            items.append({"ok": ok, "t": f"Іспит «{e['title']}»: {why}"})
     blocked = await db.one("SELECT id FROM discipline WHERE sid=? AND status='active' AND kind IN ('reprimand','severe') AND expires>? ORDER BY expires DESC",
                            u["sid"], now_ms())
     if blocked:

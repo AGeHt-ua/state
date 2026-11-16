@@ -39,7 +39,10 @@ export default {
     const upstream = await env.SOVA.get("upstream", { cacheTtl: 30 });
     if (!upstream) return json({ error: "Бот «Сова» зараз не на зв'язку. Спробуйте за хвилину." }, 503);
 
-    const init = { method: request.method, headers: request.headers, redirect: "manual" };
+    // справжня адреса відвідувача: при пересиланні Cloudflare підміняє CF-Connecting-IP адресою самого ретранслятора
+    const headers = new Headers(request.headers);
+    headers.set("X-Sova-Client-IP", request.headers.get("CF-Connecting-IP") || "");
+    const init = { method: request.method, headers, redirect: "manual" };
     if (!["GET", "HEAD"].includes(request.method)) {
       init.body = request.body;
       init.duplex = "half";

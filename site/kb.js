@@ -283,7 +283,9 @@ async function examsView() {
   if (st.review) return resultView(st.review, true);
   const d = await call("/api/exams");
   S.cache.exams = d;
-  const pct = (a) => a.pct == null ? '<span class="chip wait">На перевірці ВКПП</span>' : `<span class="chip ${a.passed ? "ok" : "bad"}">${a.pct}% · ${a.passed ? "складено" : "не складено"}</span>`;
+  const pct = (a) => a.pct == null ? '<span class="chip wait">На перевірці ВКПП</span>'
+    : a.passed && a.late ? `<span class="chip bad" title="Здано після ліміту часу — для підвищення не зараховується">${a.pct}% · пізно, не зараховано</span>`
+    : `<span class="chip ${a.passed ? "ok" : "bad"}">${a.pct}% · ${a.passed ? "складено" : "не складено"}</span>`;
   return `${d.examiner ? '<div class="bn-actions"><button class="btn gold" data-a="exnew">+ Створити іспит</button></div>' : ""}
     <div class="ex-grid">${d.exams.map((e) => `<article class="ex-card ${e.status} ${e.locked ? "locked" : ""}"><div class="eyebrow">${e.status === "published" ? "Опубліковано" : "Чернетка"}</div><h3>${esc(e.title)}</h3>
       <p class="muted small">${esc(e.descr || "")}</p><div class="ex-meta"><span>${e.count} питань</span><span>прохідний ${e.pass_pct}%</span><span>${e.minutes ? e.minutes + " хв" : "без ліміту часу"}</span></div>
@@ -341,7 +343,7 @@ function resultView(a, review) {
   return `<div class="kd-bar"><button class="btn" data-a="exback">← До іспитів</button></div>
   <form class="card" data-f="exgrade"><header class="paper-head"><div><div class="eyebrow">${review ? "Перевірка ВКПП" : "Результат іспиту"}</div><h3>${esc(a.examTitle)}</h3>
     <div class="muted small">${esc(a.rankName)} ${esc(a.name)} · ${fmtDT(a.finished)}${a.late ? " · здано після ліміту часу (не зараховується)" : ""}</div></div>
-    <div class="ex-score ${a.pct == null ? "" : a.passed ? "ok" : "bad"}">${a.pct == null ? "?" : a.pct + "%"}<span>${a.pct == null ? "на перевірці" : a.passed ? "СКЛАДЕНО" : "НЕ СКЛАДЕНО"}</span></div></header>
+    <div class="ex-score ${a.pct == null ? "" : a.passed && !a.late ? "ok" : "bad"}">${a.pct == null ? "?" : a.pct + "%"}<span>${a.pct == null ? "на перевірці" : a.passed && a.late ? "НЕ ЗАРАХОВАНО" : a.passed ? "СКЛАДЕНО" : "НЕ СКЛАДЕНО"}</span></div></header>
     ${qs.map((q, i) => { const p = a.answers[q.id] || {}; return `<div class="ex-rq ${q.type === "text" ? "" : p.ok ? "ok" : "bad"}"><b>${i + 1}. ${esc(q.q)}</b>
       ${q.type === "text" ? `<p class="ex-txt">${esc(p.answer || "—")}</p>${review ? `<label class="f" style="max-width:200px"><span>Бали (з ${q.points})</span><input class="i" type="number" min="0" max="${q.points}" step="0.5" data-pts="${q.id}" value="${p.points ?? ""}"></label>` : `<div class="small muted">Бали: ${p.points ?? "на перевірці"} з ${q.points}</div>`}`
         : `<ul>${q.options.map((o, k) => `<li class="${(q.correct || []).includes(k) ? "right" : ""} ${(p.answer || []).includes(k) ? "chosen" : ""}">${esc(o)}</li>`).join("")}</ul>`}</div>`; }).join("") || '<p class="muted">Відповіді з\'являться після перевірки ВКПП.</p>'}
@@ -453,7 +455,9 @@ S.forms.exsubmit = async (f) => run(f.querySelector("button[type=submit]"), asyn
     else if (el.checked) answers[id] = el.type === "checkbox" ? [...(answers[id] || []), +el.value] : [+el.value];
   });
   st.result = await call(`/api/exams/${st.take.exam.id}/submit`, { json: { answers } });
-  st.take = null; toast("Іспит здано"); R();
+  st.take = null; toast("Іспит здано");
+  await S.refreshMe();  // умови для рапорту на підвищення — одразу, без очікування оновлення
+  R();
 });
 S.forms.exgrade = async (f) => run(f.querySelector("button[type=submit]"), async () => {
   const points = {};

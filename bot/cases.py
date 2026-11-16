@@ -15,7 +15,7 @@ import overrides as ov
 import style
 from core import Fail
 from db import db, now_ms
-from roles import DEPTS
+from roles import DEPTS, rank_name
 
 log = logging.getLogger("sova.cases")
 
@@ -84,6 +84,57 @@ def can_decide(u: dict, c: dict) -> bool:
             "prosecutor": is_prosecutor(u)}.get(c["status"], False)
 
 
+def can_transfer(u: dict, c: dict) -> bool:
+    """Передати справу іншому виконавцю: заступник і начальник відділу — справи свого відділу, начальник управління — своїх підрозділів,
+    керівництво СБУ — будь-яку. Мінімальне звання — адмін-панель → «Доступи» (case_transfer). Затверджені й видалені справи не передаються."""
+    if u.get("curator_ro") or is_prosecutor(u) or c["status"] in ("deleted", "approved"):
+        return False
+    if is_chief(u):
+        return True
+    if u["rank"] < ov.P("case_transfer"):
+        return False
+    if u["rank"] == 13:
+        return is_mgmt(u) or c["dept"] in depts_of(u)
+    return u["rank"] in (11, 12) and c["dept"] in depts_of(u)
+
+
+async def transfer_targets(u: dict, cid: int) -> list[dict]:
+    """Кому можна передати: чинні співробітники відділу справи (основний відділ або роль відділу), крім поточного виконавця."""
+    c = await get(cid)
+    if not can_transfer(u, c):
+        raise Fail("Передавати цю справу ви не можете.", 403)
+    rows = await db.all("SELECT * FROM users WHERE status IN ('active','vacation') AND dept NOT IN ('prosecutor','curator') AND sid!=? ORDER BY rank DESC, name",
+                        c["author"])
+    return [{"sid": r["sid"], "name": r["name"], "rank": r["rank"], "rankName": rank_name(r["rank"]), "vacation": r["status"] == "vacation"}
+            for r in rows if c["dept"] in depts_of(r)]
+
+
+@core.serialized("case")
+async def transfer(u: dict, cid: int, sid: int, note: str = "") -> dict:
+    c = await get(cid)
+    if not can_transfer(u, c):
+        raise Fail("Передавати цю справу ви не можете.", 403)
+    if sid not in {t["sid"] for t in await transfer_targets(u, cid)}:
+        raise Fail(f"Передати можна лише співробітнику відділу {DEPTS[c['dept']]['s']}.")
+    old, new = await core.user(c["author"]), await core.user(sid)
+    text = f"{old['name'] if old else '№' + str(c['author'])} → {new['name']}" + (f" · {note.strip()}" if note.strip() else "")
+    h = await _hist(c, u, "transfer", text)
+    await db.run("UPDATE cases SET author=?, history=?, updated=? WHERE id=?", sid, json.dumps(h, ensure_ascii=False), now_ms(), cid)
+    c = await get(cid)
+    await journal(c, u, f"Передано іншому виконавцю: {new['name']}")
+    await db.audit(u["sid"], "Кейс-файл передано іншому виконавцю", sid, f"КФ-{cid:04d} «{c['data'].get('title', '')}»")
+    try:  # новому виконавцю — в особисті (без змісту справи)
+        m = await core.member_of(new.get("discord_id")) if new.get("discord_id") else None
+        if m:
+            await m.send(embed=style.document("ВАМ ПЕРЕДАНО КЕЙС-ФАЙЛ", style.GOLD, no=f"КФ-{cid:04d}", desc=style.block(
+                style.kv("СПРАВА", f"«{c['data'].get('title', '')}»", bold=True), style.kv("ЕТАП", STAGE_NAME[c["status"]]),
+                style.kv("ПЕРЕДАВ", f"{rank_name(u['rank'])} {u['name']}"), *( [style.kv("ПРИМІТКА", note.strip()[:300])] if note.strip() else [] ),
+                style.rule(), style.c("Справа тепер у вашому реєстрі кейс-файлів у ЄІС «Сова»."))), view=style.site_view())
+    except discord.HTTPException:
+        pass
+    return c
+
+
 def rights(u: dict) -> dict:
     return {"create": can_create(u), "view": bool(can_create(u)) or is_chief(u) or is_mgmt(u) or is_prosecutor(u)
             or any(is_head_for(u, d) for d in CASE_DEPTS)}
@@ -121,7 +172,7 @@ def out(c: dict, u: dict) -> dict:
     return {**c, "canEdit": c["author"] == u["sid"] and c["status"] == "draft", "canDecide": can_decide(u, c),
             "canWithdraw": c["author"] == u["sid"] and c["status"] in ON_REVIEW,
             "canDelete": (c["author"] == u["sid"] and c["status"] == "draft") or is_chief(u),
-            "canArchive": c["status"] == "approved" and is_chief(u), "archived": bool(c.get("arch_msg")),
+            "canArchive": c["status"] == "approved" and is_chief(u), "archived": bool(c.get("arch_msg")), "canTransfer": can_transfer(u, c),
             "stageName": STAGE_NAME[c["status"]]}
 
 

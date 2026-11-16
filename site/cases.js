@@ -92,7 +92,7 @@ function docHtml(c, pdf) {
 }
 
 function history(c) {
-  const W = { create: "Заведено справу", withdraw: "Відкликано виконавцем з погодження", submit: "Подано на погодження", ok: "Погоджено", return: "Повернуто на доопрацювання", rej: "Відмовлено", archive: "Відправлено в Discord (PDF + посилання)" };
+  const W = { create: "Заведено справу", transfer: "Передано іншому виконавцю", withdraw: "Відкликано виконавцем з погодження", submit: "Подано на погодження", ok: "Погоджено", return: "Повернуто на доопрацювання", rej: "Відмовлено", archive: "Відправлено в Discord (PDF + посилання)" };
   return `<div class="card"><header><h3>Рух документа</h3></header><div class="aud">${(c.history || []).slice().reverse().map((h) => `
     <div class="aud-it k-${h.action === "ok" || h.action === "submit" ? "in" : h.action === "rej" ? "down" : h.action === "return" ? "up" : "misc"}"><i></i>
       <div class="aud-when"><b>${new Date(h.t).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })}</b><span>${new Date(h.t).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span></div>
@@ -109,6 +109,7 @@ async function vCase(id) {
     ${c.canDecide ? `<button class="btn ok" data-a="kfdec" data-d="ok">${pros ? "Затвердити" : "Погодити"}</button><button class="btn" data-a="kfdec" data-d="return">Повернути на доопрацювання</button><button class="btn bad" data-a="kfdec" data-d="rej">Відмовити</button>` : ""}
     ${c.status === "approved" ? '<button class="btn gold" data-a="kfpdf">⬇ Завантажити PDF</button>' : ""}
     ${c.canArchive ? `<button class="btn" data-a="kfsend">📤 ${c.archived ? "Відправити в ДС повторно" : "Відправити в ДС"}</button>` : ""}
+    ${c.canTransfer ? '<button class="btn" data-a="kftransfer">⇄ Передати іншому агенту</button>' : ""}
     ${c.canDelete && c.status !== "deleted" ? '<button class="btn bad" data-a="kfdelete">🗑 Видалити справу</button>' : ""}</div>`;
   // автор не може погоджувати власну справу (навіть якщо пізніше отримав роль прокурора чи керівника)
   const me = S.ME().me;
@@ -445,6 +446,27 @@ Object.assign(S.actions, {
       toast("Файл видалено. Збережіть чернетку.");
     } catch (e) { toast(e.message, 1); }
   },
+  // передача справи іншому агенту: вибір співробітника відділу справи + примітка
+  kftransfer: async (b) => {
+    b.disabled = true;
+    let list;
+    try { list = await call(`/api/cases/${UIc.id}/transfer`); } catch (e) { toast(e.message, 1); b.disabled = false; return; }
+    b.disabled = false;
+    const c = S.cache.case;
+    if (!list.length) return toast("У відділі немає інших співробітників, яким можна передати справу", 1);
+    const el = document.createElement("div");
+    el.className = "kf-modal";
+    el.innerHTML = `<form class="card kf-tr" data-f="kftransfer"><header><h3>Передати кейс-файл іншому агенту</h3></header>
+      <p class="muted small">КФ-${String(c.id).padStart(4, "0")} «${esc(c.data.title || "")}». Новий виконавець отримає справу у свій реєстр і повідомлення в Discord.
+        Етап погодження не змінюється.</p>
+      <label class="f"><span>Новий виконавець</span><select class="i" name="sid" required><option value="">— оберіть співробітника —</option>
+        ${list.map((p) => `<option value="${p.sid}">${esc(p.rankName)} · ${esc(p.name)} · №${p.sid}${p.vacation ? " · у відпустці" : ""}</option>`).join("")}</select></label>
+      <label class="f"><span>Примітка (необов'язково)</span><input class="i" name="note" maxlength="300" placeholder="Напр.: на час відпустки виконавця"></label>
+      <div class="acts"><button class="btn" type="button" data-a="kftrx">Скасувати</button><button class="btn gold" type="submit">⇄ Передати</button></div></form>`;
+    el.addEventListener("click", (e) => { if (e.target === el) el.remove(); });
+    document.body.appendChild(el);
+  },
+  kftrx: () => document.querySelector(".kf-modal")?.remove(),
   kfwd: async (b) => {
     if (!confirm("Відкликати справу з погодження? Вона повернеться у вашу чернетку.")) return;
     b.disabled = true;
@@ -481,6 +503,16 @@ Object.assign(S.actions, {
     b.disabled = false; b.textContent = t;
   },
 });
+S.forms.kftransfer = async (f) => {
+  const sid = +f.sid.value, opt = f.sid.selectedOptions[0];
+  if (!sid) return toast("Оберіть нового виконавця", 1);
+  if (!confirm(`Передати справу: ${opt.textContent}?`)) return;
+  const btn = f.querySelector("[type=submit]"); btn.disabled = true;
+  try {
+    await call(`/api/cases/${UIc.id}/transfer`, { json: { sid, note: f.note.value } });
+    f.closest(".kf-modal").remove(); toast("Справу передано іншому виконавцю"); await S.refreshMe(); S.render();
+  } catch (e) { toast(e.message, 1); btn.disabled = false; }
+};
 S.forms.kfsave = async (f, ev) => {
   const then = (ev.submitter && ev.submitter.dataset.then) || "save";
   const btns = f.querySelectorAll("button[type=submit]");

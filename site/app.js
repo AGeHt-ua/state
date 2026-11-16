@@ -230,7 +230,8 @@ function callsignCard(c) {
           <button class="btn sm" data-a="cswd" data-id="${wait.id}">↩ Відкликати</button></div>`
         : `<form class="cs-form" data-f="cs"><input class="i mono" id="cs-in" maxlength="16" placeholder="${c.current ? "Новий позивний" : "Напр. LEO, ВОВК-7"}" autocomplete="off">
           <button class="btn gold" type="submit">${c.current ? "Подати зміну" : "Подати на затвердження"}</button></form>
-          <p class="muted small">2–16 символів: літери, цифри, дефіс. Після затвердження начальником відділу нікнейм стане: <b class="mono" id="cs-prev" data-s="${esc(c.sample || "")}">${esc(c.sample || "")}</b></p>`}
+          <p class="muted small">2–16 символів: літери, цифри, дефіс. Після затвердження начальником відділу позивний <b class="mono" id="cs-prev">ПОЗИВНИЙ</b>
+            з'явиться в «Сові» та на документах. Нікнейм у Discord не змінюється.</p>`}
       ${c.mine.filter((r) => r.status !== "wait").slice(0, 3).map((r) => `<div class="cs-hist"><span class="chip ${CS_ST[r.status][1]}">${CS_ST[r.status][0]}</span><b class="mono">${esc(r.callsign)}</b><span class="muted small">${fmtDT(r.reviewed || r.t)}${r.reviewerName ? " · " + esc(r.reviewerName) : ""}${r.note ? " · «" + esc(r.note) + "»" : ""}</span></div>`).join("")}`
       : ""}
     ${c.todo.length ? `<div class="cs-todo"><div class="eyebrow">На затвердження · ${c.todo.length}</div>${c.todo.map((r) => `<div class="cs-req">
@@ -330,7 +331,7 @@ async function vHome() {
 
   <section class="hm-panel hm-recent">${sec("Журнал", "Останні звіти", `<button class="btn sm gold" data-a="go" data-v="act" data-tab="new">+ Новий звіт</button>`)}
     ${acts.length ? `<div class="hm-acts">${acts.slice(0, 8).map((a) => `<button class="hm-act st-${a.status}" data-a="actopen" data-id="${a.id}" title="Відкрити звіт">
-        <span class="hm-act-no mono">${docNo("ЗВТ", a.id)}</span><span class="hm-act-t">${esc(actName(a))}${a.type !== "other" && a.qty > 1 ? ` <i>×${a.qty}</i>` : ""}</span>
+        <span class="hm-act-no mono">${docNo("ЗВТ", a.id)}</span><span class="hm-act-t">${esc(actName(a))}${a.type !== "other" && a.qty > 1 ? ` <i>×${a.qty}</i>` : ""}${a.rejNote ? `<small class="hm-act-rej">Причина: ${esc(a.rejNote)}</small>` : ""}</span>
         <span class="hm-act-d">${fmtDT(a.t)}</span><span class="hm-act-p">${a.type === "other" && a.status !== "ok" ? "" : "+"}${actPts(a)}</span>
         <span class="hm-act-s">${stLabel[a.status] || a.status}</span></button>`).join("")}</div>
       <div class="hm-more"><button class="btn sm" data-a="go" data-v="act" data-tab="mine">Усі мої звіти →</button></div>`
@@ -499,6 +500,7 @@ function actFeed(list, review) {
         ${a.subj ? `<div class="doc-line"><span>Фігурант</span>${esc(a.subj)}</div>` : ""}
         ${a.arts.length ? `<div class="art-list">${a.arts.map((n) => `<span class="art">ст. ${esc(n)}</span>`).join("")}</div>` : ""}
         ${a.note ? `<div class="doc-note">${esc(a.note)}</div>` : ""}
+        ${rejBox(a.rejNote)}
         <div class="files"><button class="btn sm gold" data-a="actopen" data-id="${a.id}">📂 Відкрити звіт</button><button class="btn sm" data-a="actpdf" data-id="${a.id}">⬇ PDF</button>${safeUrl(a.evidence) ? `<a class="btn sm" href="${esc(safeUrl(a.evidence))}" target="_blank" rel="noopener">▶ Відкат</a>` : ""}${a.files.map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}">📎 Файл ${i + 1}</button>`).join("")}</div>
       </div>
       <div class="doc-side">${review === "review"
@@ -512,16 +514,16 @@ async function vActView(id) {
   const a = await call(`/api/acts/${id}`);
   window.SOVA.cache.acts = { ...(window.SOVA.cache.acts || {}), [a.id]: a };
   const ev = [[a.t, "Звіт складено й подано на перевірку", a.by]];
-  if (a.reviewed) ev.push([a.reviewed, a.status === "ok" ? "Підтверджено, бали нараховано" : a.status === "rej" ? "Відхилено" : stLabel[a.status], a.reviewer]);
+  if (a.reviewed) ev.push([a.reviewed, a.status === "ok" ? "Підтверджено, бали нараховано" : a.status === "rej" ? "Відхилено" : stLabel[a.status], a.reviewer, a.rejNote]);
   return `<div class="kd-bar"><button class="btn" data-a="actback">← До звітів</button><span class="sp"></span>
       <button class="btn" data-a="actpdf" data-id="${a.id}">⬇ PDF</button>${window.SOVA.docImgBtn("act", a.id)}
       ${a.canDecide ? `${scoreSel(a)}<button class="btn ok" data-a="actd" data-id="${a.id}" data-d="ok">Підтвердити</button><button class="btn bad" data-a="actd" data-id="${a.id}" data-d="rej">Відхилити</button>` : ""}
       ${a.mine && a.status === "wait" ? `<button class="btn" data-a="wd" data-k="acts" data-id="${a.id}">↩ Відкликати</button>` : ""}
       ${a.mine && ["wait", "rej", "cancel"].includes(a.status) ? `<button class="btn bad" data-a="del" data-url="/api/acts/${a.id}/delete" data-q="Видалити звіт?">🗑 Видалити</button>` : ""}</div>
     <div class="act-page"><div class="kd-wrap">${actDoc(a)}</div>
-      <aside class="card act-trail"><header><h3>Рух документа</h3></header><div class="aud">${ev.map(([t, l, u]) => `<div class="aud-it k-${l.startsWith("Відхил") ? "down" : "in"}"><i></i>
+      <aside class="card act-trail"><header><h3>Рух документа</h3></header>${rejBox(a.rejNote)}<div class="aud">${ev.map(([t, l, u, note]) => `<div class="aud-it k-${l.startsWith("Відхил") ? "down" : "in"}"><i></i>
         <div class="aud-when"><b>${new Date(t).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })}</b><span>${new Date(t).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span></div>
-        <div class="aud-body"><div class="aud-act">${esc(l)}</div><div class="aud-who">${u ? `<b>${esc(u.name)}</b> · ${esc(u.rankName || "")}` : ""}</div></div></div>`).join("")}</div></aside></div>`;
+        <div class="aud-body"><div class="aud-act">${esc(l)}</div><div class="aud-who">${u ? `<b>${esc(u.name)}</b> · ${esc(u.rankName || "")}` : ""}${note ? ` · «${esc(note)}»` : ""}</div></div></div>`).join("")}</div></aside></div>`;
 }
 
 async function vAct() {
@@ -596,6 +598,18 @@ const rapEvidence = (d) => (d.files || []).length || d.evidence ? `<div class="r
   ${d.evidence ? `<div class="mono small">▶ ${esc(d.evidence)}</div>` : ""}${(d.files || []).length ? `<div class="small">Файлів: ${d.files.length} (зберігаються в ЄІС «Сова»)</div>` : ""}
   <div class="files">${safeUrl(d.evidence) ? `<a class="btn sm" href="${esc(safeUrl(d.evidence))}" target="_blank" rel="noopener">▶ Відкрити відео</a>` : ""}${(d.files || []).map((f, i) => `<button class="btn sm" data-a="file" data-id="${esc(f)}">📎 Файл ${i + 1}</button>`).join("")}</div></div>` : "";
 
+// причина відмови: обов'язкова (бачить автор); null — передумали відхиляти
+function askReject(decision, what) {
+  if (decision === "ok") return "";
+  for (;;) {
+    const n = prompt(`Причина відмови — автор побачить її на сайті й у Discord.\nЧому відхиляєте ${what}?`, "");
+    if (n === null) return null;
+    if (n.trim().length >= 3) return n.trim();
+    toast("Вкажіть причину відмови (хоча б кілька слів)", 1);
+  }
+}
+const rejBox = (note) => note ? `<div class="rej-note"><b>Причина відмови:</b> ${esc(note)}</div>` : "";
+
 const RAP_STAMP = { ok: ["ПОГОДЖЕНО", "ok"], rej: ["ВІДМОВЛЕНО", "bad"], wait: ["НА РОЗГЛЯДІ", "wait"], cancel: ["ВІДКЛИКАНО", "mute"] };
 async function vRapView(id) {
   const r = await call(`/api/raps/${id}`);
@@ -623,7 +637,8 @@ function rapDoc(r) {
       <div class="blank-sign"><span>${new Date(r.t).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span><span class="kf-sign">${esc(a.name)}</span></div>
       ${["transfer", "assign"].includes(r.type) ? `<div class="rap-visas"><b>Візи погодження</b>${trVisas(r)}</div>` : ""}
       <div class="rap-res"><b>Резолюція:</b> ${r.status === "wait" ? `очікує розгляду${r.stageLabel ? " · зараз: " + esc(r.stageLabel) : ""}` : esc(sw.toLowerCase())}
-        ${r.reviewer ? ` · ${esc(r.reviewer.rankName || "")} <span class="kf-sign">${esc(r.reviewer.name)}</span>` : ""}${r.reviewed ? ` · ${fmtDT(r.reviewed)}` : ""}</div>
+        ${r.reviewer ? ` · ${esc(r.reviewer.rankName || "")} <span class="kf-sign">${esc(r.reviewer.name)}</span>` : ""}${r.reviewed ? ` · ${fmtDT(r.reviewed)}` : ""}
+        ${r.rejNote ? `<div class="rap-rej"><b>Причина відмови:</b> ${esc(r.rejNote)}</div>` : ""}</div>
       <div class="rap-stamp ${sc}">${sw}</div>
     </div>`;
 }
@@ -639,7 +654,7 @@ async function vRap() {
   return head + `<div class="docs">${list.map((r) => `<article class="doc st-${r.status} clickable" data-a="rapopen" data-id="${r.id}" title="Відкрити рапорт">
       <div class="doc-no"><b>${docNo("РАП", r.id)}</b><span>${fmtDT(r.t)}</span></div>
       <div class="doc-main">${t === "review" ? `<div class="doc-who">${who(r.by)} ${deptTag(r.dept)}</div>` : ""}
-        <div class="doc-title">${esc(META.rapTypes[r.type])}</div><div class="doc-line">${rapDesc(r)}</div></div>
+        <div class="doc-title">${esc(META.rapTypes[r.type])}</div><div class="doc-line">${rapDesc(r)}</div>${rejBox(r.rejNote)}</div>
       <div class="doc-side">${t === "review" && r.canDecide === false
         ? `<span class="doc-stamp">Чекає візи</span><span class="muted small">${esc(r.stageLabel || "іншої сторони")}</span>`
         : t === "review"
@@ -1174,10 +1189,12 @@ const A = {
   },
   rappdf: (b) => { const r = window.SOVA.cache.rap; if (r) window.SOVA.pdfA4(b, rapA4(r), `${docNo("РАП", r.id)}_${META.rapTypes[r.type] || ""}`); },
   actd: async (b) => {
-    b.disabled = true;
     const sel = document.getElementById(`act-score-${b.dataset.id}`);
-    if (b.dataset.d === "ok" && sel && !sel.value) { b.disabled = false; sel.focus(); return toast(`Оберіть оцінку за звіт «Інше»: від 1 до ${OTHER_MAX} балів`, 1); }
-    try { await call(`/api/acts/${b.dataset.id}/decision`, { json: { decision: b.dataset.d, score: sel ? +sel.value || null : null } }); toast(b.dataset.d === "ok" ? `Звіт підтверджено${sel ? ` · ${sel.value} б.` : ""}` : "Звіт відхилено"); await actImage(+b.dataset.id); await refreshMe(); render(); }
+    if (b.dataset.d === "ok" && sel && !sel.value) { sel.focus(); return toast(`Оберіть оцінку за звіт «Інше»: від 1 до ${OTHER_MAX} балів`, 1); }
+    const note = askReject(b.dataset.d, "звіт");
+    if (note === null) return;
+    b.disabled = true;
+    try { await call(`/api/acts/${b.dataset.id}/decision`, { json: { decision: b.dataset.d, score: sel ? +sel.value || null : null, note } }); toast(b.dataset.d === "ok" ? `Звіт підтверджено${sel ? ` · ${sel.value} б.` : ""}` : "Звіт відхилено"); await actImage(+b.dataset.id); await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
   cand: async (b) => {
@@ -1206,8 +1223,10 @@ const A = {
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
   rapd: async (b) => {
+    const note = askReject(b.dataset.d, "рапорт");
+    if (note === null) return;
     b.disabled = true;
-    try { await call(`/api/raps/${b.dataset.id}/decision`, { json: { decision: b.dataset.d } }); toast(b.dataset.d === "ok" ? "Рапорт погоджено. Бот оновив ролі й журнал аудиту" : "Рапорт відхилено"); await rapImage(+b.dataset.id); await refreshMe(); render(); }
+    try { await call(`/api/raps/${b.dataset.id}/decision`, { json: { decision: b.dataset.d, note } }); toast(b.dataset.d === "ok" ? "Рапорт погоджено. Бот оновив ролі й журнал аудиту" : "Рапорт відхилено"); await rapImage(+b.dataset.id); await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
   },
 };
@@ -1282,11 +1301,11 @@ const F = {
   },
 };
 
-// живий приклад нікнейму під полем позивного
+// живий приклад позивного під полем
 document.addEventListener("input", (e) => {
   if (e.target.id !== "cs-in") return;
   const p = document.getElementById("cs-prev");
-  if (p) p.textContent = p.dataset.s.replace("ПОЗИВНИЙ", e.target.value.replace(/\s+/g, "").toUpperCase() || "ПОЗИВНИЙ").slice(0, 32);
+  if (p) p.textContent = e.target.value.replace(/\s+/g, "").toUpperCase().slice(0, 16) || "ПОЗИВНИЙ";
 });
 document.addEventListener("click", (e) => { const b = e.target.closest("[data-a]"); if (!b || b.disabled) return; const ln = e.target.closest("a[href], select, input, textarea"); if (ln && ln !== b && b.contains(ln)) return; const f = A[b.dataset.a]; if (f) { e.preventDefault(); if (leaveOk(b)) f(b); } });
 document.addEventListener("submit", (e) => { const f = e.target.closest("[data-f]"); if (!f) return; e.preventDefault(); const h = F[f.dataset.f]; if (h) h(f, e); });

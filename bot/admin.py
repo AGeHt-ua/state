@@ -281,7 +281,7 @@ async def nick_view() -> dict:
     from roles import CALLSIGN_DEPTS, CALLSIGN_TPL, NICK_TPL, RANK_SHORT, callsign_depts, nickname, rank_short
     rows = await db.all("SELECT * FROM users WHERE status NOT IN ('dismissed','removed') AND dept NOT IN ('prosecutor','curator') ORDER BY rank DESC, sid")
     return {
-        "tpl": ov.nick.get("tpl") or NICK_TPL, "callsignTpl": ov.nick.get("callsign_tpl") or CALLSIGN_TPL,
+        "tpl": (lambda t: NICK_TPL if (not t or "{callsign}" in t or t == "{rank} | {name} | {sid}") else t)(ov.nick.get("tpl")), "callsignTpl": CALLSIGN_TPL,
         "defTpl": NICK_TPL, "defCallsignTpl": CALLSIGN_TPL, "defRanks": RANK_SHORT, "defDepts": CALLSIGN_DEPTS,
         "ranks": [rank_short(i + 1) for i in range(15)], "depts": callsign_depts(),
         "allDepts": [{"key": k, "s": DEPTS[k]["s"]} for k in ("orv", "vvb", "atc", "alpha", "deb", "vkpp")],
@@ -294,11 +294,11 @@ async def nick_view() -> dict:
 async def save_nick(u: dict, b: dict):
     from roles import CALLSIGN_DEPTS, CALLSIGN_TPL, NICK_TPL, RANK_SHORT
     tpl = str(b.get("tpl") or "").strip()[:60] or NICK_TPL
-    ctpl = str(b.get("callsignTpl") or "").strip()[:60] or CALLSIGN_TPL
+    ctpl = CALLSIGN_TPL  # шаблон із позивним більше не застосовується: позивний — лише в «Сові» й на документах
     if "{name}" not in tpl and "{sid}" not in tpl:
-        raise Fail("У шаблоні звичайного нікнейму має бути {name} або {sid}.")
-    if "{callsign}" not in ctpl:
-        raise Fail("У шаблоні з позивним має бути {callsign}.")
+        raise Fail("У шаблоні нікнейму має бути {name} або {sid}.")
+    if "{callsign}" in tpl:
+        raise Fail("Позивний у нікнейм Discord не додається — він лише в «Сові» й на документах. Приберіть {callsign}.")
     ranks = [str(x or "").strip()[:16] for x in (b.get("ranks") or [])][:15]
     ranks = ranks + RANK_SHORT[len(ranks):]
     depts = [d for d in (b.get("depts") or []) if d in DEPTS and DEPTS[d].get("role")]
@@ -306,7 +306,7 @@ async def save_nick(u: dict, b: dict):
                              "ranks": ranks if ranks != RANK_SHORT else None, "depts": depts if sorted(depts) != sorted(CALLSIGN_DEPTS) else None}.items() if v}
     await db.set_setting("admin_nick", cfg)
     ov.nick.clear(); ov.nick.update(cfg)
-    await note(u, "Змінено формат нікнеймів", 0, f"{tpl} · з позивним: {ctpl} · позивні: {', '.join(DEPTS[d]['s'] for d in (depts or CALLSIGN_DEPTS))}")
+    await note(u, "Змінено формат нікнеймів", 0, f"{tpl} · відділи з позивними: {', '.join(DEPTS[d]['s'] for d in (depts or CALLSIGN_DEPTS))}")
 
 
 _applying = {"busy": False, "done": 0, "total": 0}

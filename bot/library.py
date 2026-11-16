@@ -121,6 +121,11 @@ def public_exam(e: dict) -> dict:
 RETRY_MS = 24 * 3600 * 1000  # пауза між спробами іспиту після нескладеної
 
 
+def attempt_pct(a: dict) -> int | None:
+    """Відсоток спроби — один для сайту й для умов підвищення (округлений: 69,7% = 70%, як бачить людина)."""
+    return round(100 * (a["score"] or 0) / a["total"]) if a.get("total") and a.get("score") is not None else None
+
+
 async def min_ranks() -> dict[int, int]:
     """З якого звання відкривається іспит: той, що потрібен для підвищення до звання N, доступний зі звання N−1
     (адмін-панель → «Підвищення»). Так Стажер бачить лише 1-й іспит, Молодший агент — ще 2-й, Агент — 3-й. Решта — для всіх."""
@@ -214,7 +219,7 @@ async def attempt_out(a: dict, e: dict | None = None, reveal: bool = False, keys
     e = e or await exam_get(a["exam_id"])
     p = await core.user(a["sid"])
     g = await core.user(a["grader"]) if a.get("grader") else None
-    pct = round(100 * (a["score"] or 0) / a["total"]) if a.get("total") and a.get("score") is not None else None
+    pct = attempt_pct(a)
     out = {**{k: a[k] for k in ("id", "exam_id", "sid", "status", "started", "finished", "score", "total", "auto", "note", "late")},
            "examTitle": e["title"], "pass_pct": e["pass_pct"], "pct": pct, "passed": pct is not None and pct >= e["pass_pct"],
            "name": p["name"] if p else f"№{a['sid']}", "rankName": rank_name(p["rank"]) if p else "", "graderName": g["name"] if g else None,
