@@ -353,9 +353,9 @@ function resultView(a, review) {
 
 /* ---------- сторінка ---------- */
 async function view() {
-  const tabs = [["law", "Законодавство"], ["memo", "Пам'ятка"], ["detain", "Порядок затримання"], ["codes", "Тен-коди"], ["changes", "Зміни законодавства"], ["lib", "Бібліотека"], ["exams", "Іспити", ME().pending.exams || undefined], ["prot", "Протоколи затримання"]];
+  const tabs = [["law", "Законодавство"], ["memo", "Пам'ятка"], ["detain", "Порядок затримання"], ["codes", "Тен-коди"], ["changes", "Зміни законодавства"], ["lib", "Бібліотека"], ["exams", "Іспити", ME().pending.exams || undefined], ["prot", "Протоколи затримання"], ...((S.ME().modules || {}).cars === false || S.ME().me.dept === "prosecutor" ? [] : [["cars", "Особистий транспорт", (ME().pending || {}).cars || undefined]])];
   const head = `<div class="tabs">${tabs.map(([v, l, n]) => `<button class="tb ${st.tab === v ? "on" : ""}" data-a="kbtab" data-v="${v}">${l}${n ? `<span class="cnt">${n}</span>` : ""}</button>`).join("")}</div>`;
-  const body = st.tab === "memo" ? await S.memoView() : st.tab === "detain" ? await S.detainView() : st.tab === "codes" ? await S.codesView() : st.tab === "prot" ? await S.protView() : st.tab === "changes" ? await changesView() : st.tab === "lib" ? await libView() : st.tab === "exams" ? await examsView() : await lawView();
+  const body = st.tab === "memo" ? await S.memoView() : st.tab === "detain" ? await S.detainView() : st.tab === "codes" ? await S.codesView() : st.tab === "prot" ? await S.protView() : st.tab === "cars" && S.carsView ? await S.carsView() : st.tab === "changes" ? await changesView() : st.tab === "lib" ? await libView() : st.tab === "exams" ? await examsView() : await lawView();
   return head + body;
 }
 S.views.kb = view;
@@ -503,6 +503,7 @@ S.onNav.push((v) => { if (v !== "kb") { st.take = null; } });
 // адреса: #/kb/law/<документ> · #/kb/lib/4 · #/kb/prot/… · #/kb/exams · #/kb/changes · #/kb/codes
 S.routes.kb = {
   get: () => st.tab === "prot" ? ["prot", ...((S.protRoute && S.protRoute.get()) || [])]
+    : st.tab === "cars" ? ["cars", ...((S.carsRoute && S.carsRoute.get()) || [])]
     : st.tab === "lib" ? ["lib", st.lib] : st.tab === "law" || !st.tab ? ["law", st.doc] : [st.tab],
   set: (p) => {
     st.tab = p[0] || "law";
@@ -510,6 +511,7 @@ S.routes.kb = {
     st.doc = st.tab === "law" ? p[1] || null : null;
     st.lib = st.tab === "lib" && /^\d+$/.test(p[1] || "") ? +p[1] : null;
     if (st.tab === "prot" && S.protRoute) S.protRoute.set(p.slice(1));
+    if (st.tab === "cars" && S.carsRoute) S.carsRoute.set(p.slice(1));
   },
 };
 })();

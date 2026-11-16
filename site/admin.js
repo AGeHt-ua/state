@@ -32,7 +32,7 @@ function usersView(d) {
 function nickView(d) {
   const n = d.nick, cs = n.people.filter((p) => n.depts.includes(p.dept));
   return `<form class="card" data-f="admnick"><header><h3>Формат нікнеймів у Discord</h3></header>
-    <p class="note">Підстановки: <span class="mono">{rank}</span> — скорочене звання, <span class="mono">{dept}</span> — підрозділ, <span class="mono">{name}</span> — ім'я, <span class="mono">{sid}</span> — Static ID.
+    <p class="note">Підстановки: <span class="mono">{rank}</span> — скорочене звання, <span class="mono">{dept}</span> — підрозділ (без підрозділу, напр. у керівництва, ця частина прибирається разом із «|»), <span class="mono">{name}</span> — ім'я, <span class="mono">{sid}</span> — Static ID.
       Discord дозволяє 32 символи: довге ім'я скорочується до «І. Прізвище». <b>Позивний у нікнейм не додається</b> — він показується лише в «Сові» та на документах.</p>
     <div class="form-grid">
       <label class="f wide"><span>Нікнейм у Discord для всіх <i class="muted">· стандарт: ${esc(n.defTpl)}</i></span><input class="i mono" name="tpl" value="${esc(n.tpl)}"></label>

@@ -57,7 +57,7 @@ RANK_SHORT = ["Стажер", "МА", "Агент", "СА", "МО", "Опер", 
 NICK_TPL = "{rank} | {dept} | {name} | {sid}"   # нікнейм у Discord для всіх: НВ | АТЦ | Dominic Castro | 256
 OLD_NICK_TPLS = ("{rank} | {name} | {sid}",)    # колишній стандарт — вважаємо незміненим і беремо новий
 CALLSIGN_TPL = "{dept} | {callsign} | {sid}"    # більше не застосовується: позивний — лише в «Сові» й на документах
-NICK_DEPT = {"lead": "СБУ"}                      # «Керівництво» задовге для 32 символів нікнейму
+NICK_DEPT = {"lead": ""}                         # керівництво без підрозділу: Звання | Ім'я | Static ID
 CALLSIGN_DEPTS = ["atc", "deb", "alpha", "vvb"]
 
 
@@ -72,12 +72,16 @@ def rank_short(rank: int) -> str:
 
 def nickname(rank: int, name: str, sid: int, dept: str | None = None, callsign: str | None = None) -> str:
     """Службовий нікнейм у Discord за шаблоном з адмін-панелі: звання | підрозділ | ім'я | Static ID.
+    Без підрозділу (керівництво, невідомий відділ) — без цієї частини: звання | ім'я | Static ID.
     Позивний у нікнейм не потрапляє — він лише в «Сові» й на документах (параметр callsign лишено для сумісності).
     Discord дозволяє 32 символи: довге ім'я скорочується до «І. Прізвище»."""
     tpl = ov.nick.get("tpl") or NICK_TPL
     if tpl in OLD_NICK_TPLS or "{callsign}" in tpl:
         tpl = NICK_TPL
-    d = NICK_DEPT.get(dept or "") or DEPTS.get(dept or "", {}).get("s", "СБУ")
+    d = NICK_DEPT[dept] if dept in NICK_DEPT else DEPTS.get(dept or "", {}).get("s", "")
+    if not d:  # немає підрозділу — частину {dept} прибираємо разом із роздільником, без «СБУ»
+        for part in ("{dept} | ", " | {dept}", "{dept}"):
+            tpl = tpl.replace(part, "")
     fill = lambda n: tpl.replace("{rank}", rank_short(rank)).replace("{name}", n).replace("{sid}", str(sid)).replace("{dept}", d)
     # скорочуємо лише ім'я — звання, позивний і Static ID лишаються цілими: «Ім'я Прізвище» → «І. Прізвище» → «Прізвище» → обрізане прізвище
     parts = name.split()

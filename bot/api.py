@@ -15,6 +15,7 @@ import games
 import promo
 import finance
 import protocols
+import cars
 import candidates
 import bonus
 import cases
@@ -246,6 +247,7 @@ async def me(request):
             "orders": (await db.one("SELECT COUNT(*) AS n FROM orders WHERE status='draft'"))["n"] if orders.can_sign(u) else 0,
             "callsign": await callsigns.pending(u),
             "fin": await finance.pending(u) if finance.can_view(u) else 0,
+            "cars": await cars.pending(u) if ov.module_on("cars") else 0,
         },
         "fin": finance.rights(u),
         "callsign": {"eligible": callsigns.eligible(u), "current": u.get("callsign")},
@@ -292,6 +294,42 @@ async def prot_list(request):
     u = await auth(request)
     return web.json_response({"items": await protocols.listing(u), "rights": protocols.rights(u), "people": await protocols.people(),
                               "basis": protocols.BASIS, "force": protocols.FORCE, "decision": protocols.DECISION})
+
+
+def _cars_on(u: dict):
+    if not ov.module_on("cars"):
+        raise Fail("Реєстр особистого транспорту вимкнено в адмін-панелі.", 403)
+    if u["dept"] == "prosecutor":
+        raise Fail("Реєстр особистого транспорту — внутрішня база СБУ.", 403)
+
+
+@routes.get("/api/cars")
+async def cars_list(request):
+    u = await auth(request)
+    _cars_on(u)
+    return web.json_response({"items": await cars.listing(u), "rights": cars.rights(u),
+                              "kind": cars.KIND, "category": cars.CATEGORY, "purpose": cars.PURPOSE})
+
+
+@routes.post("/api/cars")
+async def cars_save(request):
+    u = await auth(request)
+    _cars_on(u)
+    return web.json_response(await cars.save(u, await body(request)))
+
+
+@routes.get("/api/cars/{id}")
+async def cars_one(request):
+    u = await auth(request)
+    _cars_on(u)
+    return web.json_response(await cars.get(int(request.match_info["id"]), u))
+
+
+@routes.post("/api/cars/{id}/{action}")
+async def cars_act(request):
+    u = await auth(request)
+    _cars_on(u)
+    return web.json_response(await cars.act(u, int(request.match_info["id"]), request.match_info["action"], await body(request)))
 
 
 @routes.get("/api/protocols/{id}")
