@@ -41,6 +41,7 @@
 .car-cert-id b{font-size:18px}
 .car-cert-id span{color:#555}
 .car-cert .car-pic{background:#ddd}
+.car-cert .prot-stamp{top:auto;bottom:96px;right:60px}  /* печатка біля підпису, не на заголовку */
 
 @media (max-width:640px){
   .car-up,.car-cert-top{grid-template-columns:1fr}

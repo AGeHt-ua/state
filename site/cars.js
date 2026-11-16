@@ -29,6 +29,33 @@ async function loadImgs() {
 new MutationObserver(() => { if (document.querySelector("img.car-img[data-fid]:not([src])")) loadImgs(); })
   .observe(document.body, { childList: true, subtree: true });
 
+// фото для PDF / PNG: вирізаємо 16:9 «cover» і вбудовуємо як data: (html2canvas не вміє object-fit і чужі адреси без CORS)
+const printed = new Map();
+async function photoData(fid) {
+  if (printed.has(fid)) return printed.get(fid);
+  if (!urls.has(fid)) urls.set(fid, (await call(`/api/files/${encodeURIComponent(fid)}/url`)).url);
+  const blob = await (await fetch(urls.get(fid), { mode: "cors" })).blob();
+  const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = URL.createObjectURL(blob); });
+  const W = 960, H = 540, k = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const w = img.naturalWidth * k, h = img.naturalHeight * k;
+  cv.getContext("2d").drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+  URL.revokeObjectURL(img.src);
+  const data = cv.toDataURL("image/jpeg", 0.9);
+  printed.set(fid, data);
+  return data;
+}
+async function printHtml(c) {
+  let html = cert(c);
+  for (const fid of [c.data.photo, ...(c.data.photos || [])].filter(Boolean)) {
+    let src = "";
+    try { src = await photoData(fid); } catch (e) { console.warn("фото для PDF", e); }
+    html = html.split(`<img class="car-img" data-fid="${esc(fid)}" alt="">`).join(src ? `<img class="car-img" src="${src}" alt="">` : "");
+  }
+  return html;
+}
+const docName = (c) => `${c.status === "ok" || c.status === "revoked" ? c.no : "Заявка_" + c.id}_Свідоцтво_${c.data.model || ""}_${c.data.plate || ""}`;
+
 const pic = (fid, cls = "") => `<div class="car-pic ${cls}${fid ? "" : " none"}">${fid ? `<img class="car-img" data-fid="${esc(fid)}" alt="">` : ""}<span>🚗</span></div>`;
 const plate = (p) => `<span class="car-plate"><i>NG</i>${esc(p || "—")}</span>`;
 const who = (u) => u ? `${esc(u.rankName)} ${esc(u.name)} · №${u.sid}` : "—";
@@ -99,6 +126,7 @@ async function docView(id) {
   st.doc = c;
   const me = S.ME().me, mine = c.owner === me.sid, R = st.meta.rights;
   const btn = [
+    `<button class="btn gold" data-a="carpdf">⬇ PDF</button><button class="btn" data-a="carpng">⬇ PNG</button>`,
     c.status === "wait" && R.approve && `<button class="btn ok" data-a="carx" data-x="approve">✔ Затвердити</button><button class="btn bad" data-a="carx" data-x="reject">✖ Відмовити…</button>`,
     mine && (c.status === "wait" || c.status === "rej") && `<button class="btn" data-a="caredit">${c.status === "rej" ? "Виправити й подати знову" : "Редагувати"}</button>`,
     c.status === "ok" && (mine || R.approve) && `<button class="btn bad" data-a="carx" data-x="revoke">Анулювати…</button>`,
@@ -186,6 +214,16 @@ Object.assign(S.actions, {
     await S.refreshMe?.();
     S.render();
   }),
+  carpdf: async (b) => {
+    const old = b.textContent; b.disabled = true; b.textContent = "Готую фото…";
+    let html; try { html = await printHtml(st.doc); } finally { b.disabled = false; b.textContent = old; }
+    await S.pdfA4(b, S.a4(html, st.doc.no, { bare: true }), docName(st.doc));
+  },
+  carpng: async (b) => {
+    const old = b.textContent; b.disabled = true; b.textContent = "Готую фото…";
+    let html; try { html = await printHtml(st.doc); } finally { b.disabled = false; b.textContent = old; }
+    await S.pngBtn(b, html, docName(st.doc));
+  },
   carx: (b) => run(b, async () => {
     const x = b.dataset.x, body = {}, c = st.doc, mine = c.owner === S.ME().me.sid;
     if (x === "reject" || (x === "revoke" && !mine)) {
