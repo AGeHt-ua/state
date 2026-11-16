@@ -247,9 +247,6 @@ async def system() -> dict:
     files = sorted(config.BACKUP_DIR.glob("sova-*.db.gz"), key=lambda f: f.stat().st_mtime, reverse=True)
     db_size = os.path.getsize(config.DB_PATH) if os.path.exists(config.DB_PATH) else 0
     warn = []
-    if not core.bot.intents.members:
-        warn.append("Вимкнено Server Members Intent: не працюють привітання новачків і миттєве закриття доступу при виході з сервера. "
-                    "Увімкніть у Discord Developer Portal → Bot → Privileged Gateway Intents.")
     if g and g.me and not g.me.guild_permissions.manage_nicknames:
         warn.append("Бот не має права «Керувати нікнеймами» — службові нікнейми не ставляться.")
     if g and g.me and not g.me.guild_permissions.manage_roles:

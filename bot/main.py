@@ -61,8 +61,6 @@ class Sova(commands.Bot):
         if not backup_loop.is_running():
             backup_loop.start()
         log.info("Сова на зв'язку як %s · сервер %s", self.user, g.name)
-        if not self.members_intent:
-            log.warning("Server Members Intent вимкнено: привітання новачків і миттєве закриття доступу при виході не працюють.")
 
     async def on_member_join(self, member: discord.Member):
         g = core.guild()
