@@ -1128,6 +1128,8 @@ async def decide_act(actor: dict, act_id: int, decision: str, score=None, note: 
     if reason:
         await notify_rejected("act", a, actor)
     if decision == "ok":
+        import tasks  # завдання тижня за звітами: могло виконатися
+        await tasks.on_act(a)
         import promo
         try:
             await promo.notify_if_ready(a["by_sid"])

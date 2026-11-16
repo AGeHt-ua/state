@@ -16,6 +16,7 @@ import promo
 import finance
 import protocols
 import cars
+import tasks
 import candidates
 import bonus
 import cases
@@ -81,7 +82,8 @@ async def auth(request: web.Request) -> dict:
         # Куратор: бачить усе як Голова, але лише переглядає; змінювати може тільки адмін-панель і схвалення премій
         u = {**u, "rank": 15, "curator": True, "curator_ro": True}
         if request.method != "GET" and not (request.path.startswith("/api/admin") or request.path in ("/api/logout",)
-                                             or (request.path.startswith("/api/bonus/") and request.path.endswith("/status"))):
+                                             or (request.path.startswith("/api/bonus/") and request.path.endswith("/status"))
+                                             or request.path.startswith("/api/tasks")):  # завдання тижня ставить саме Куратор
             raise Fail("Куратор має наглядовий доступ: лише перегляд.", 403)
     return u
 
@@ -248,11 +250,13 @@ async def me(request):
             "callsign": await callsigns.pending(u),
             "fin": await finance.pending(u) if finance.can_view(u) else 0,
             "cars": await cars.pending(u) if ov.module_on("cars") else 0,
+            "tasks": await tasks.pending(u) if ov.module_on("tasks") and u["dept"] != "prosecutor" else 0,
         },
         "fin": finance.rights(u),
         "callsign": {"eligible": callsigns.eligible(u), "current": u.get("callsign")},
         "hr": hr_rights(u),
         "cases": cases.rights(u),
+        "tasks": tasks.rights(u) if u["dept"] != "prosecutor" else None,
         "control": depts.control_depts(u),
         "admin": core.is_admin(u), "curator": bool(u.get("curator_ro")),
         "kb": {"sync": u["rank"] >= ov.P("kb_sync"), "lib": library.can_edit_lib(u), "exam": library.is_examiner(u), "memo": memo.can_edit(u)},
@@ -294,6 +298,60 @@ async def prot_list(request):
     u = await auth(request)
     return web.json_response({"items": await protocols.listing(u), "rights": protocols.rights(u), "people": await protocols.people(),
                               "basis": protocols.BASIS, "force": protocols.FORCE, "decision": protocols.DECISION})
+
+
+def _tasks_on(u: dict):
+    if not ov.module_on("tasks"):
+        raise Fail("Завдання тижня вимкнено в адмін-панелі.", 403)
+    if u["dept"] == "prosecutor":
+        raise Fail("Завдання тижня — внутрішній розділ СБУ.", 403)
+
+
+@routes.get("/api/tasks")
+async def tasks_list(request):
+    u = await auth(request)
+    _tasks_on(u)
+    return web.json_response(await tasks.listing(u, request.query.get("w")))
+
+
+@routes.post("/api/tasks")
+async def tasks_create(request):
+    u = await auth(request)
+    _tasks_on(u)
+    return web.json_response(await tasks.create(u, await body(request)))
+
+
+@routes.post("/api/tasks/summary")
+async def tasks_summary(request):
+    u = await auth(request)
+    _tasks_on(u)
+    if not tasks.can_manage(u):
+        raise Fail("Підсумок надсилає керівництво, яке ставить завдання.", 403)
+    n = await tasks.post_summary((await body(request)).get("w"), u)
+    if not n:
+        raise Fail("На цей тиждень завдань немає — підсумок не надіслано.")
+    return web.json_response({"ok": True, "n": n})
+
+
+@routes.post("/api/tasks/carry")
+async def tasks_carry(request):
+    u = await auth(request)
+    _tasks_on(u)
+    return web.json_response(await tasks.carry_all(u))
+
+
+@routes.get("/api/tasks/{id}")
+async def tasks_one(request):
+    u = await auth(request)
+    _tasks_on(u)
+    return web.json_response(await tasks.get(int(request.match_info["id"]), u))
+
+
+@routes.post("/api/tasks/{id}/{action}")
+async def tasks_act(request):
+    u = await auth(request)
+    _tasks_on(u)
+    return web.json_response(await tasks.act(u, int(request.match_info["id"]), request.match_info["action"], await body(request)))
 
 
 def _cars_on(u: dict):
@@ -1491,6 +1549,7 @@ async def start() -> web.AppRunner:
     asyncio.create_task(core.vacation_loop())     # повернення з відпусток
     asyncio.create_task(games.weekly_loop())
     asyncio.create_task(depts.weekly_loop())      # щонеділі — тижневі звіти відділів у Discord
+    asyncio.create_task(tasks.weekly_loop())      # завдання тижня: повтори, нагадування, недільний підсумок
     asyncio.create_task(structure_loop())
     asyncio.create_task(kb.ensure_seeded())
     return runner

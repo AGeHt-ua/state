@@ -200,6 +200,13 @@ CREATE TABLE IF NOT EXISTS cars (                -- реєстр особист�
   id INTEGER PRIMARY KEY AUTOINCREMENT, owner INTEGER, status TEXT DEFAULT 'wait',  -- wait | ok | rej | revoked | deleted
   data TEXT, history TEXT, approver INTEGER, decided INTEGER, msg TEXT, created INTEGER, updated INTEGER
 );
+CREATE TABLE IF NOT EXISTS tasks (               -- завдання тижня для відділів (ставить Куратор / Голова / Заступник)
+  id INTEGER PRIMARY KEY AUTOINCREMENT, week INTEGER, dept TEXT, kind TEXT DEFAULT 'auto',   -- auto (за звітами) | manual
+  status TEXT DEFAULT 'open',                     -- open | review | done | cancel | deleted
+  data TEXT, proof TEXT, history TEXT, by_sid INTEGER, done_by INTEGER, done_at INTEGER,
+  repeat INTEGER DEFAULT 0, parent INTEGER, msg TEXT, created INTEGER, updated INTEGER
+);
+CREATE INDEX IF NOT EXISTS tasks_week ON tasks(week, dept);
 CREATE TABLE IF NOT EXISTS game_scores (
   id INTEGER PRIMARY KEY AUTOINCREMENT, sid INTEGER, game TEXT, level INTEGER, score INTEGER, ms INTEGER, data TEXT, t INTEGER
 );

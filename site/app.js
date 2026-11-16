@@ -132,6 +132,7 @@ const IC = {
   soon: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',
   game: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v5M12 18v5M1 12h5M18 12h5"/>',
   fin: '<rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9v6M18 9v6"/>',
+  tasks: '<path d="M9 5h11M9 12h11M9 19h11"/><path d="M3.5 5l1.3 1.3L7 4M3.5 12l1.3 1.3L7 11M3.5 19l1.3 1.3L7 18"/>',
   admin: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
 };
 const ico = (k) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${IC[k] || IC.soon}</svg>`;
@@ -143,6 +144,7 @@ const NAV = [
   ["kb", "База даних", () => true],
   ["bonus", "Премії", () => true],
   ["disc", "Дисципліна", () => true],
+  ["tasks", "Завдання тижня", () => !!(ME.tasks && (ME.tasks.manage || ME.tasks.depts.length))],
   ["dept", "Статистика відділів", () => !!(ME.control && ME.control.length)],
   ["cases", "Кейс-файли", () => !!(ME.cases && ME.cases.view)],
   ["hr", "Кадри", () => !!(ME.hr && (ME.hr.vvb || ME.hr.vkpp))],
@@ -156,11 +158,11 @@ const SOON = [];
 // розділи, вимкнені в адмін-панелі («Налаштування»), зникають з меню (адмін-панель — завжди)
 const navOk = (n) => n[2](ME.me) && (ME.me.dept !== "prosecutor" || n[0] === "cases") && (n[0] === "admin" || (ME.modules || {})[n[0]] !== false);
 const BANNER_TONE = { info: "📢", warn: "⚠", bad: "⛔", ok: "✅" };
-const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Статистика відділів", bonus: "Премії", disc: "Дисципліна", kb: "База даних", admin: "Адмін-панель", fin: "Клопотання до Мінфіну", game: "Тренажери СБУ" };
+const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Статистика відділів", tasks: "Завдання тижня", bonus: "Премії", disc: "Дисципліна", kb: "База даних", admin: "Адмін-панель", fin: "Клопотання до Мінфіну", game: "Тренажери СБУ" };
 
 function viewShell(inner) {
   const p = ME.pending || {};
-  const badge = { kb: p.exams, staff: p.orders, act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases, fin: p.fin, disc: p.disc || (ME.disc && ME.disc.active) || 0 };
+  const badge = { kb: p.exams, staff: p.orders, act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases, fin: p.fin, tasks: p.tasks, disc: p.disc || (ME.disc && ME.disc.active) || 0 };
   const c = META.depts[ME.me.dept].color;
   return `<div class="shell" style="--dept:${c}">
   <aside class="side">
