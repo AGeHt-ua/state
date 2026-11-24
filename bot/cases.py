@@ -1,4 +1,4 @@
-"""Кейс-файли: оперативні справи ОРВ, ДЕБ, АТЦ, ЦСО «А», ВВБ.
+"""Кейс-файли: оперативні справи ОРВ, ДЕБ, АТЦ, ЦСО «А» (ВВБ веде службові розслідування — discipline.py).
 Маршрут: виконавець → начальник свого відділу → начальник управління (лише для відділів його управління: ОРВ, ДЕБ
 або як задано в адмін-панелі → «Управління») → Голова СБУ або заступник → Генеральний прокурор → затверджено.
 Начальник управління бачить справу своїх підрозділів лише після погодження начальником відділу.
@@ -20,7 +20,7 @@ from roles import DEPTS, rank_name
 
 log = logging.getLogger("sova.cases")
 
-CASE_DEPTS = ("orv", "deb", "atc", "alpha", "vvb")
+CASE_DEPTS = ("orv", "deb", "atc", "alpha")
 STAGES = ("draft", "head", "mgmt", "chief", "prosecutor", "approved", "rejected")
 STAGE_NAME = {"deleted": "Видалено", "draft": "Чернетка виконавця", "head": "Погодження начальника відділу",
               "mgmt": "Погодження начальника управління", "chief": "Погодження Голови СБУ",
@@ -201,7 +201,7 @@ async def create(u: dict, b: dict) -> dict:
     allowed = can_create(u)
     dept = b.get("dept") if b.get("dept") in allowed else (allowed[0] if allowed else None)
     if not dept:
-        raise Fail("Кейс-файли ведуть ОРВ, ДЕБ, АТЦ, ЦСО «А» та ВВБ.", 403)
+        raise Fail("Кейс-файли ведуть ОРВ, ДЕБ, АТЦ та ЦСО «А».", 403)
     data = clean(b)
     if not data["title"]:
         raise Fail("Вкажіть кодову назву операції.")

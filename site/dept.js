@@ -131,7 +131,7 @@ async function view() {
         <button class="btn sm" data-a="go" data-v="act" data-tab="review">Перейти до перевірки</button>` : '<div class="empty">Черга порожня.</div>'}</div>
     <div class="card"><header><h3>Рапорти на розгляді</h3><span class="sp cnt-b">${o.queue.raps.length}</span></header>
       ${o.queue.raps.length ? `<ul>${o.queue.raps.map((r) => `<li><span class="mono">РАП-${String(r.id).padStart(4, "0")}</span><b>${esc(r.name)}</b><span>${esc(S.META().rapTypes[r.type] || r.type)}</span><em>${ago(r.t)}</em></li>`).join("")}</ul>` : '<div class="empty">Немає.</div>'}</div>
-    ${["orv", "deb", "atc", "alpha", "vvb"].includes(o.dept) ? `<div class="card"><header><h3>Кейс-файли в роботі</h3><span class="sp cnt-b">${o.queue.cases.length}</span></header>
+    ${["orv", "deb", "atc", "alpha"].includes(o.dept) ? `<div class="card"><header><h3>Кейс-файли в роботі</h3><span class="sp cnt-b">${o.queue.cases.length}</span></header>
       ${o.queue.cases.length ? `<ul>${o.queue.cases.map((c) => `<li><span class="mono">КФ-${String(c.id).padStart(4, "0")}</span><b>«${esc(c.title)}»</b><span>${{ draft: "чернетка", head: "у начальника", chief: "у Голови", prosecutor: "у прокурора" }[c.status] || c.status}</span><em>${ago(c.updated)}</em></li>`).join("")}</ul>
         <button class="btn sm" data-a="nav" data-v="cases">Відкрити кейс-файли</button>` : '<div class="empty">Немає.</div>'}</div>` : ""}
   </div>`}`;

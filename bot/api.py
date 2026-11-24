@@ -941,8 +941,10 @@ async def disc_pending(u: dict) -> int:
     if u["rank"] == 15:
         rows = await db.all("SELECT appeal FROM discipline WHERE status='active' AND appeal IS NOT NULL")
         n += len([r for r in rows if not json.loads(r["appeal"]).get("decision")])
-    if u["rank"] >= 14:
+    if u["rank"] >= ov.P("disc_chief"):
         n += (await db.one("SELECT COUNT(*) AS n FROM inspections WHERE status='sent'"))["n"]
+    elif discipline.is_vvb_head(u):
+        n += (await db.one("SELECT COUNT(*) AS n FROM inspections WHERE status='head' AND author!=?", u["sid"]))["n"]
     return n
 
 
@@ -998,7 +1000,8 @@ async def insp_update(request):
 @routes.post("/api/inspections/{id}/move")
 async def insp_move(request):
     u = await auth(request)
-    await discipline.insp_move(u, int(request.match_info["id"]), (await body(request)).get("to"))
+    b = await body(request)
+    await discipline.insp_move(u, int(request.match_info["id"]), str(b.get("to") or ""), str(b.get("note") or ""))
     return web.json_response({"ok": True})
 
 

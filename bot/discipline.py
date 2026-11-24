@@ -2,6 +2,7 @@
 За Регламентом «Дисциплінарні стягнення СБУ» та р. VII Внутрішнього статуту СБУ."""
 import json
 import logging
+from datetime import datetime, timezone
 
 import discord
 
@@ -333,68 +334,169 @@ async def alert_three(target: dict, reps: list[dict]):
 
 
 # ---------------------------------------------------------------- службові перевірки ВВБ
+INSP_KINDS = {"invest": "Службове розслідування", "check": "Службова перевірка"}
+INSP_STATUS = {"open": "У провадженні", "paused": "Зупинено", "head": "На погодженні начальника ВВБ", "sent": "Направлено Голові СБУ",
+               "closed": "Висновок затверджено", "deleted": "Видалено"}
+MAT_TYPES = ["Відеозапис з боді-камери", "Пояснення фігуранта", "Пояснення свідків / потерпілих", "Протокол допиту",
+             "Відеозапис допиту", "Рапорт", "Розпорядження / інший документ", "Інше"]
+GRIFS = {"top": "Цілком таємно", "secret": "Таємно", "dsk": "Для службового користування"}
+# текстові поля справи: ключ → максимальна довжина
+INSP_TEXT = {"basis": 300, "qual": 300, "when": 120, "place": 200, "fabula": 6000, "statute": 2000, "regs": 2000, "crim": 1000,
+             "mitig": 1000, "aggr": 1000, "callsign": 40}
+
+
+def is_vvb_head(u: dict) -> bool:
+    """Начальник ВВБ або заступник (з роллю ВВБ) — погоджує висновок перед направленням Голові."""
+    return u["rank"] in (11, 12) and "vvb" in depts_of(u)
+
+
+def _j(v, d):
+    try:
+        x = json.loads(v or d)
+        return x if isinstance(x, type(json.loads(d))) else json.loads(d)
+    except ValueError:
+        return json.loads(d)
+
+
 async def insp_get(iid: int) -> dict:
     i = await db.one("SELECT * FROM inspections WHERE id=?", iid)
     if not i or i["status"] == "deleted":
         raise Fail("Перевірку не знайдено.", 404)
-    i["files"] = json.loads(i["files"] or "[]")
+    i["files"] = _j(i["files"], "[]")
+    i["data"] = _j(i.get("data"), "{}")
+    i["visas"] = _j(i.get("visas"), "[]")
+    i["history"] = _j(i.get("history"), "[]")
     return i
+
+
+def _ihist(i: dict | None, u: dict, action: str, note: str = "") -> str:
+    h = (i["history"] if i else []) + [{"t": now_ms(), "sid": u["sid"], "name": u["name"], "rank": u["rank"], "rankName": rank_name(u["rank"]),
+                                        "action": action, "note": note[:1000]}]
+    return json.dumps(h, ensure_ascii=False)
+
+
+async def _regno() -> str:
+    """Реєстраційний номер справи: ВВБ-РІК-NNN (наскрізна нумерація в межах року)."""
+    year = datetime.now(core.TZ).year if getattr(core, "TZ", None) else datetime.now(timezone.utc).year
+    n = (await db.one("SELECT COUNT(*) AS n FROM inspections WHERE regno LIKE ?", f"ВВБ-{year}-%"))["n"]
+    return f"ВВБ-{year}-{n + 1:03d}"
 
 
 async def insp_save(u: dict, b: dict, iid: int | None = None) -> dict:
     if not is_vvb(u):
-        raise Fail("Службові перевірки проводить ВВБ.", 403)
-    target = await core.user(int(b.get("sid") or 0))
+        raise Fail("Службові перевірки й розслідування проводить ВВБ.", 403)
+    try:
+        target = await core.user(int(b.get("sid") or 0))
+    except (TypeError, ValueError):
+        target = None
     if not target:
-        raise Fail("Співробітника не знайдено.")
+        raise Fail("Оберіть співробітника (фігуранта).")
     s = lambda k, n: str(b.get(k) or "").strip()[:n]
     rec = b.get("recommend") if b.get("recommend") in KINDS else None
-    vals = (target["sid"], s("title", 120), s("materials", 5000), s("conclusion", 3000), rec, json.dumps([str(f)[:40] for f in (b.get("files") or [])[:10]]))
-    if not vals[1]:
-        raise Fail("Вкажіть предмет перевірки.")
+    kind = b.get("kind") if b.get("kind") in INSP_KINDS else "invest"
+    data = {k: s(k, n) for k, n in INSP_TEXT.items()}
+    data["grif"] = b.get("grif") if b.get("grif") in GRIFS else "top"
+    data["opened"] = s("opened", 20)
+    mats = []
+    for m in (b.get("mats") or [])[:30]:
+        if not isinstance(m, dict):
+            continue
+        row = {"type": m.get("type") if m.get("type") in MAT_TYPES else "Інше", "desc": str(m.get("desc") or "").strip()[:500],
+               "ref": str(m.get("ref") or "").strip()[:500]}
+        if row["desc"] or row["ref"]:
+            mats.append(row)
+    data["mats"] = mats
+    title = s("title", 120)
+    if not title:
+        raise Fail("Вкажіть предмет розслідування (коротко).")
+    vals = (target["sid"], title, s("materials", 5000), s("conclusion", 4000), rec,
+            json.dumps([str(f)[:40] for f in (b.get("files") or [])[:10]]), kind, json.dumps(data, ensure_ascii=False))
     if iid:
+        async with core.doc_lock("insp", iid):
+            i = await insp_get(iid)
+            if i["status"] not in ("open", "paused"):
+                raise Fail("Справу вже передано на погодження — редагувати не можна.")
+            await db.run("UPDATE inspections SET sid=?, title=?, materials=?, conclusion=?, recommend=?, files=?, kind=?, data=?, history=?, updated=? WHERE id=?",
+                         *vals, _ihist(i, u, "edit"), now_ms(), iid)
+    else:
+        iid = await db.run("INSERT INTO inspections(sid,title,materials,conclusion,recommend,files,kind,data,status,author,created,updated,regno,visas,history) "
+                           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", *vals, "open", u["sid"], now_ms(), now_ms(), await _regno(), "[]",
+                           _ihist(None, u, "create"))
+    return await insp_get(iid)
+
+
+async def insp_move(u: dict, iid: int, to: str, note: str = "") -> dict:
+    """Рух справи: open ⇄ paused → head (начальник ВВБ) → sent (Голова) → closed; повернення на доопрацювання — до open."""
+    async with core.doc_lock("insp", iid):
         i = await insp_get(iid)
-        if i["status"] != "open":
-            raise Fail("Перевірку вже направлено Голові.")
-        await db.run("UPDATE inspections SET sid=?, title=?, materials=?, conclusion=?, recommend=?, files=?, updated=? WHERE id=?", *vals, now_ms(), iid)
-    else:
-        iid = await db.run("INSERT INTO inspections(sid,title,materials,conclusion,recommend,files,status,author,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                           *vals, "open", u["sid"], now_ms(), now_ms())
+        st, chief = i["status"], u["rank"] >= ov.P("disc_chief")
+        note = (note or "").strip()
+        if to == "paused" and st == "open" and is_vvb(u):
+            await db.run("UPDATE inspections SET status='paused', history=?, updated=? WHERE id=?", _ihist(i, u, "pause", note), now_ms(), iid)
+        elif to == "open" and st == "paused" and is_vvb(u):
+            await db.run("UPDATE inspections SET status='open', history=?, updated=? WHERE id=?", _ihist(i, u, "resume", note), now_ms(), iid)
+        elif to in ("head", "sent") and st == "open" and is_vvb(u) and (to == "head" or not i["visas"]):
+            if not i["conclusion"]:
+                raise Fail("Додайте висновок розслідування.")
+            # начальник / заступник ВВБ (або керівництво) направляє одразу Голові — це і є погодження відділу
+            direct = is_vvb_head(u) or chief
+            nxt = "sent" if direct else "head"
+            visas = i["visas"] + ([{"stage": "head", "sid": u["sid"], "name": u["name"], "rankName": rank_name(u["rank"]), "t": now_ms()}] if direct else [])
+            await db.run("UPDATE inspections SET status=?, visas=?, completed=?, history=?, updated=? WHERE id=?", nxt,
+                         json.dumps(visas, ensure_ascii=False), now_ms(), _ihist(i, u, "submit"), now_ms(), iid)
+            await insp_notice(await insp_get(iid), u, "head" if nxt == "head" else "sent")
+        elif to == "sent" and st == "head" and (is_vvb_head(u) or chief):
+            if i["author"] == u["sid"] and not chief:
+                raise Fail("Власну справу погоджує інший керівник ВВБ.", 403)
+            visas = i["visas"] + [{"stage": "head", "sid": u["sid"], "name": u["name"], "rankName": rank_name(u["rank"]), "t": now_ms()}]
+            await db.run("UPDATE inspections SET status='sent', visas=?, history=?, updated=? WHERE id=?",
+                         json.dumps(visas, ensure_ascii=False), _ihist(i, u, "visa", note), now_ms(), iid)
+            await insp_notice(await insp_get(iid), u, "sent")
+        elif to == "closed" and st == "sent" and chief:
+            res = {"decision": "approve", "comment": note[:1000], "sid": u["sid"], "name": u["name"], "rankName": rank_name(u["rank"]), "t": now_ms()}
+            await db.run("UPDATE inspections SET status='closed', resolution=?, history=?, updated=? WHERE id=?",
+                         json.dumps(res, ensure_ascii=False), _ihist(i, u, "approve", note), now_ms(), iid)
+        elif to == "return" and ((st == "head" and (is_vvb_head(u) or chief)) or (st == "sent" and chief)):
+            if not note:
+                raise Fail("Вкажіть, що доопрацювати.")
+            res = {"decision": "return", "comment": note[:1000], "sid": u["sid"], "name": u["name"], "rankName": rank_name(u["rank"]), "t": now_ms()} \
+                if st == "sent" else None
+            await db.run("UPDATE inspections SET status='open', visas='[]', resolution=?, history=?, updated=? WHERE id=?",
+                         json.dumps(res, ensure_ascii=False) if res else None, _ihist(i, u, "return", note), now_ms(), iid)
+        elif to == "deleted" and (chief or (i["author"] == u["sid"] and st in ("open", "paused"))):
+            await db.run("UPDATE inspections SET status='deleted', history=?, updated=? WHERE id=?", _ihist(i, u, "delete"), now_ms(), iid)
+            return i
+        else:
+            raise Fail("Такий перехід неможливий.", 403)
     return await insp_get(iid)
 
 
-async def insp_move(u: dict, iid: int, to: str) -> dict:
-    i = await insp_get(iid)
-    if to == "sent" and i["status"] == "open" and is_vvb(u):
-        if not i["conclusion"]:
-            raise Fail("Додайте висновок перевірки.")
-        await db.run("UPDATE inspections SET status='sent', updated=? WHERE id=?", now_ms(), iid)
-        await insp_notice(i, u)
-    elif to == "closed" and i["status"] == "sent" and u["rank"] >= ov.P("disc_chief"):
-        await db.run("UPDATE inspections SET status='closed', updated=? WHERE id=?", now_ms(), iid)
-    elif to == "deleted" and (i["author"] == u["sid"] or u["rank"] >= ov.P("disc_chief")):
-        await db.run("UPDATE inspections SET status='deleted', updated=? WHERE id=?", now_ms(), iid)
-        return i
-    else:
-        raise Fail("Такий перехід неможливий.", 403)
-    return await insp_get(iid)
-
-
-async def insp_notice(i: dict, u: dict):
-    """Матеріали службової перевірки направлено Голові: сповіщення в канал дисципліни (без змісту матеріалів)."""
-    ch = await core.channel("disc")
+async def insp_notice(i: dict, u: dict, stage: str = "sent"):
+    """Сповіщення без змісту матеріалів: на погодження начальнику ВВБ (канал ВВБ) або Голові (канал дисципліни)."""
+    ch = await core.channel("vvb" if stage == "head" else "disc")
     if not ch:
         return
     t = await core.user(i["sid"])
-    lines = [style.kv("ПЕРЕВІРКА", f"СП-{i['id']:04d} · {i['title'][:40]}", "white", True),
+    lines = [style.kv("СПРАВА", f"{i.get('regno') or 'СП-%04d' % i['id']} · {i['title'][:40]}", "white", True),
              style.kv("ЩОДО", f"{t['name']} · №{t['sid']}" if t else f"№{i['sid']}", "white"),
              style.kv("РЕКОМЕНДАЦІЯ", KINDS[i["recommend"]][0] if i.get("recommend") else "без стягнення", "gold", True),
              style.rule(), style.kv("НАПРАВИВ", f"{u['name']} · ВВБ", "white"), style.kv("ДАТА", style.when(), "gray")]
-    e = style.document("СЛУЖБОВА ПЕРЕВІРКА · НА РІШЕННЯ ГОЛОВИ", 0x6F9FD6, desc=style.block(*lines), footer="Матеріали — в ЄІС «Сова» → Дисципліна → Службові перевірки")
+    head = INSP_KINDS.get(i.get("kind") or "check", "Службова перевірка").upper()
+    title = f"{head} · " + ("НА ПОГОДЖЕННЯ НАЧАЛЬНИКА ВВБ" if stage == "head" else "НА РІШЕННЯ ГОЛОВИ")
+    e = style.document(title, 0x6F9FD6, desc=style.block(*lines), footer="Матеріали — в ЄІС «Сова» → Дисципліна → Службові перевірки")
     try:
-        await ch.send(embed=e, **core.mention("insp"))
+        await ch.send(embed=e, **(core.mention("insp") if stage == "sent" else {"allowed_mentions": discord.AllowedMentions.none()}))
     except discord.HTTPException as ex:
         log.warning("Сповіщення про перевірку: %s", ex)
+
+
+async def background(sid: int) -> dict:
+    """Дисциплінарне минуле фігуранта: активні догани (блокують підвищення) і попередні стягнення."""
+    rows = await db.all("SELECT kind, status, expires, issued FROM discipline WHERE sid=? AND status!='deleted' ORDER BY issued DESC", sid)
+    now = now_ms()
+    act = [r for r in rows if r["status"] == "active" and r["kind"] in BLOCKING and (r["expires"] or 0) > now]
+    past = [KINDS[r["kind"]][0] for r in rows if r not in act and r["kind"] in KINDS]
+    return {"active": len(act), "past": past[:10]}
 
 
 # ---------------------------------------------------------------- вибірки для сайту
@@ -418,17 +520,23 @@ async def listing(u: dict) -> dict:
     else:
         journal_rows = []
     insp = await db.all("SELECT * FROM inspections WHERE status!='deleted' ORDER BY updated DESC LIMIT 100") if (is_vvb(u) or u["rank"] >= 14) else []
+    for i in insp:
+        i["files"], i["data"], i["visas"], i["history"] = _j(i["files"], "[]"), _j(i.get("data"), "{}"), _j(i.get("visas"), "[]"), _j(i.get("history"), "[]")
+        i["resolution"] = _j(i.get("resolution"), "{}") or None
+        i["background"] = await background(i["sid"])
     sids = {o["sid"] for o in rows} | {o["issued_by"] for o in rows} | {i["sid"] for i in insp} | {i["author"] for i in insp}
     people = {}
     for sid in sids:
         p = await core.user(sid)
         if p:
-            people[sid] = {"sid": sid, "name": p["name"], "rank": p["rank"], "rankName": rank_name(p["rank"]), "dept": p["dept"]}
+            people[sid] = {"sid": sid, "name": p["name"], "rank": p["rank"], "rankName": rank_name(p["rank"]), "dept": p["dept"],
+                           "callsign": p.get("callsign")}
     return {
         "mine": [out(o, people) for o in mine],
         "journal": [out(o, people) for o in journal_rows],
-        "inspections": [{**i, "files": json.loads(i["files"] or "[]"), "target": people.get(i["sid"]), "author": people.get(i["author"])} for i in insp],
-        "rights": {"journal": can_journal(u), "vvb": is_vvb(u), "chief": u["rank"] >= ov.P("disc_chief"), "head": u["rank"] == 15,
+        "inspections": [{**i, "target": people.get(i["sid"]), "author": people.get(i["author"])} for i in insp],
+        "insp": {"kinds": INSP_KINDS, "status": INSP_STATUS, "mats": MAT_TYPES, "grifs": GRIFS},
+        "rights": {"journal": can_journal(u), "vvb": is_vvb(u), "vvbHead": is_vvb_head(u), "chief": u["rank"] >= ov.P("disc_chief"), "head": u["rank"] == 15,
                    "kinds": kinds_for(u)},
         "kinds": {k: v[0] for k, v in KINDS.items()},
         "violations": [{"id": v[0], "t": v[1], "kinds": v[2], "fine": v[3]} for v in VIOLATIONS],

@@ -33,19 +33,76 @@ function nsDoc(o) {
     <div class="blank-sign"><span>${o.issuer ? esc(o.issuer.rankName) : ""}</span><span class="kf-sign">${o.issuer ? esc(o.issuer.name) : ""}</span></div>
     <div class="blank-stamp">ЄІС «СОВА»</div></div>`;
 }
+// Справа службового розслідування / перевірки ВВБ — бланк за зразком реєстру ВВБ (PDF і PNG)
+const spNo = (i) => i.regno || `СП-${String(i.id).padStart(4, "0")}`;
+const SP_DEPTS = [["alpha", "ЦСО «А»"], ["atc", "АТЦ"], ["orv", "ОРВ"], ["deb", "ДЕБ"], ["vkpp", "ВКПП"], ["vvb", "ВВБ"], ["academy", "Молодший склад"]];
 function spDoc(i, kinds) {
-  const n = `СП-${String(i.id).padStart(4, "0")}`, sec = (t, v) => `<p style="text-indent:0"><b>${t}:</b> ${esc(v || "—").replace(/\n/g, "<br>")}</p>`;
-  return `<div class="blank ns-blank">
-    <div class="rap-no">${n}</div>
-    <div class="blank-to">СЛУЖБА БЕЗПЕКИ ШТАТУ NG<br>Відділ внутрішньої безпеки</div>
-    <div class="blank-title">М А Т Е Р І А Л И</div>
-    <div style="text-align:center;margin:-8px 0 18px">службової перевірки № ${n} · ${fmtDT(i.updated)}</div>
-    ${sec("Предмет перевірки", i.title)}${sec("Щодо співробітника", i.target ? i.target.rankName + " " + i.target.name + ", жетон №" + i.sid : "№" + i.sid)}
-    ${sec("Матеріали", i.materials)}${sec("Висновок ВВБ", i.conclusion)}${sec("Рекомендоване стягнення", i.recommend ? kinds[i.recommend] : "без стягнення")}
-    ${i.order_id ? sec("За результатами", "наказ " + no(i.order_id)) : ""}
-    <div class="blank-sign"><span>Перевірку провів</span><span class="kf-sign">${i.author ? esc(i.author.name) : ""}</span></div>
+  const M = (S.cache.disc && S.cache.disc.insp) || { kinds: {}, status: {}, grifs: {} };
+  const x = i.data || {}, t = i.target || {}, a = i.author || {}, bg = i.background || { active: 0, past: [] };
+  const v = (s) => esc(s || "").replace(/\n/g, "<br>") || "—";
+  const box = (on) => `[${on ? " + " : "   "}]`;
+  const row = (k, val) => `<tr><td class="sr-k">${k}</td><td>${val}</td></tr>`;
+  const head = (i.visas || []).find((z) => z.stage === "head"), res = i.resolution;
+  const st = i.status;
+  return `<div class="blank ns-blank sr-blank">
+    <div class="sr-cap"><b>СЛУЖБА БЕЗПЕКИ ШТАТУ NG</b><b>ВІДДІЛ ВНУТРІШНЬОЇ БЕЗПЕКИ (ВВБ)</b><span>ЄІС «Сова» | Реєстр службових перевірок та розслідувань</span>
+      <span>ГРИФ: ${esc((M.grifs[x.grif] || "Цілком таємно").toUpperCase())} / СЛУЖБОВА ТАЄМНИЦЯ</span></div>
+    <div class="blank-title" style="font-size:20px">СПРАВА ${i.kind === "invest" ? "СЛУЖБОВОГО РОЗСЛІДУВАННЯ" : "СЛУЖБОВОЇ ПЕРЕВІРКИ"} № ${esc(spNo(i))}</div>
+    <h4 class="sr-h">1. РЕЄСТРАЦІЙНІ ВІДОМОСТІ</h4><table class="sr-t">
+      ${row("Дата та час відкриття провадження", x.opened ? esc(x.opened.replace("T", " ")) : fmtDT(i.created))}
+      ${row("Ініціатор розслідування / Підстава", v(x.basis))}
+      ${row("Слідчий / Інспектор ВВБ", `${esc(a.rankName || "")}, ВВБ, ${esc(a.name || "")}`)}
+      ${row("Попередня правова кваліфікація", v(x.qual))}
+      ${row("Поточний процесуальний статус", `${box(["open", "head"].includes(st))} У провадженні ${box(st === "paused")} Зупинено ${box(st === "sent")} Передано Голові СБУ ${box(st === "closed")} Завершено`)}
+      ${row("Рівень доступу та секретності", esc(M.grifs[x.grif] || "Цілком таємно"))}</table>
+    <h4 class="sr-h">2. ВІДОМОСТІ ПРО ФІГУРАНТА</h4><table class="sr-t">
+      ${row("Прізвище, ім'я", esc(t.name || "№" + i.sid))}
+      ${row("Структурний підрозділ СБУ", SP_DEPTS.map(([k, n]) => `${box(t.dept === k)} ${n}`).join(" "))}
+      ${row("Спеціальне звання та посада", esc(t.rankName || ""))}
+      ${row("Службовий жетон / Позивний", `№ ${i.sid}${x.callsign || t.callsign ? ` / Позивний: ${esc(x.callsign || t.callsign)}` : ""}`)}
+      ${row("Дисциплінарний бекграунд", `Активні догани: ${bg.active}/3 · Попередні стягнення: ${bg.past.length ? esc(bg.past.join(", ")) : "немає"}`)}</table>
+    <h4 class="sr-h">3. ОПИСОВА ЧАСТИНА (ФАБУЛА ТА ОБСТАВИНИ)</h4>
+    <p style="text-indent:0"><b>Предмет:</b> ${esc(i.title || "")}</p>
+    <p style="text-indent:0"><b>Дата, час та місце інциденту:</b> ${v([x.when, x.place].filter(Boolean).join(", "))}</p>
+    <p style="text-indent:0"><b>Хронологія та суть правопорушення:</b><br>${v(x.fabula || i.materials)}</p>
+    <h4 class="sr-h">4. МАТЕРІАЛИ СЛУЖБОВОГО РОЗСЛІДУВАННЯ</h4>
+    ${(x.mats || []).length ? `<table class="sr-t sr-m"><tr><th>№</th><th>Джерело та тип доказу</th><th>Зміст фіксації</th><th>Статус / посилання</th></tr>
+      ${x.mats.map((m, n) => `<tr><td>${n + 1}</td><td>${esc(m.type)}</td><td>${v(m.desc)}</td><td class="sr-ref">${esc(m.ref || "")}</td></tr>`).join("")}</table>` : '<p style="text-indent:0">—</p>'}
+    <h4 class="sr-h">5. ПРАВОВА КВАЛІФІКАЦІЯ ТА НОРМАТИВНІ АКТИ</h4>
+    <p style="text-indent:0"><b>Порушення Внутрішнього статуту СБУ / Класифікатора заборон:</b><br>${v(x.statute)}</p>
+    <p style="text-indent:0"><b>Порушення спеціальних регламентів та інструкцій:</b><br>${v(x.regs)}</p>
+    <p style="text-indent:0"><b>Кваліфікація за статтями Кримінального кодексу штату NG:</b><br>${v(x.crim)}</p>
+    <p style="text-indent:0"><b>Обставини:</b> пом'якшуючі — ${v(x.mitig)}; обтяжуючі — ${v(x.aggr)}</p>
+    <p style="text-indent:0"><b>Висновок ВВБ:</b> ${v(i.conclusion)}</p>
+    <p style="text-indent:0"><b>Рекомендовані заходи:</b> ${i.recommend ? esc(kinds[i.recommend]) : "без стягнення"}${i.order_id ? ` · застосовано наказом ${no(i.order_id)}` : ""}</p>
+    <h4 class="sr-h">6. ПІДПИСИ, РЕЗОЛЮЦІЯ КЕРІВНИЦТВА</h4>
+    <table class="sr-t">
+      ${row("Інспектор ВВБ, який проводив розслідування", `${esc(a.rankName || "")} <span class="kf-sign">${esc(a.name || "")}</span><br>Дата завершення: ${i.completed ? fmtDT(i.completed) : "—"}`)}
+      ${row("Начальник Відділу внутрішньої безпеки СБУ", head ? `${esc(head.rankName || "")} <span class="kf-sign">${esc(head.name)}</span><br>Дата погодження: ${fmtDT(head.t)}` : "—")}
+      ${row("Резолюція Голови Служби безпеки штату NG", `${box(res && res.decision === "approve")} ЗАТВЕРДИТИ ВИСНОВОК ТА ЗАСТОСУВАТИ ЗАХОДИ<br>${box(res && res.decision === "return")} ВІДХИЛИТИ / НАПРАВИТИ СПРАВУ НА ДООПРАЦЮВАННЯ ВВБ
+        ${res ? `<br>Коментар: ${v(res.comment) === "—" ? "—" : v(res.comment)}<br>Підпис: <span class="kf-sign">${esc(res.name)}</span> · ${fmtDT(res.t)}` : ""}`)}
+    </table>
     <div class="blank-stamp">ЄІС «СОВА»</div></div>`;
 }
+const spA4 = (i) => S.a4(spDoc(i, S.cache.disc.kinds), spNo(i), { noTo: true, date: fmtDT(i.updated), sub: "Відділ внутрішньої безпеки" });
+
+function spMatRow(m, n) {
+  const T = S.cache.disc.insp.mats;
+  return `<div class="sp-mat" style="display:grid;grid-template-columns:200px 1fr 1fr auto;gap:8px;margin-bottom:6px">
+    <select class="i" data-sm="type">${T.map((t) => `<option ${t === m.type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+    <input class="i" data-sm="desc" placeholder="Зміст фіксації" value="${esc(m.desc || "")}" maxlength="500">
+    <input class="i" data-sm="ref" placeholder="Посилання / статус (долучено, відмова…)" value="${esc(m.ref || "")}" maxlength="500">
+    <button type="button" class="btn sm" data-a="spmatdel" data-n="${n}">✕</button></div>`;
+}
+function spRead() {
+  const g = (id) => (S.$("#" + id) || {}).value || "";
+  const i = st.insp, x = (i.data = i.data || {});
+  Object.assign(i, { kind: g("sp-kind"), sid: g("sp-sid"), title: g("sp-title"), conclusion: g("sp-con"), recommend: g("sp-rec") });
+  for (const k of ["grif", "opened", "basis", "qual", "callsign", "when", "place", "fabula", "statute", "regs", "crim", "mitig", "aggr"]) x[k] = g("sp-" + k);
+  x.mats = [...document.querySelectorAll(".sp-mat")].map((r) => ({ type: r.querySelector("[data-sm=type]").value, desc: r.querySelector("[data-sm=desc]").value, ref: r.querySelector("[data-sm=ref]").value }));
+  return i;
+}
+
 
 // аркуш А4 наказу про стягнення (PDF і картинка в картці Discord)
 const nsA4 = (o) => S.a4(nsDoc(o), no(o.id), { noTo: true, date: fmtDT(o.issued), sub: "Наказ про дисциплінарне стягнення" });
@@ -150,32 +207,62 @@ function blankHtml(d, staff) {
 }
 
 function inspView(d, staff) {
-  const R = d.rights, me = S.ME().me;
+  const R = d.rights, me = S.ME().me, M = d.insp;
   if (st.insp) {
-    const i = st.insp;
-    return `<form class="card" data-f="nsinsp" style="max-width:900px"><header><h3>${i.id ? `Службова перевірка СП-${String(i.id).padStart(4, "0")}` : "Нова службова перевірка"}</h3></header>
+    const i = st.insp, x = i.data || {};
+    const ta = (id, label, rows) => `<label class="f wide"><span>${label}</span><textarea class="i" id="sp-${id}" ${rows ? `rows="${rows}"` : ""}>${esc(x[id] || "")}</textarea></label>`;
+    const tx = (id, label, ph) => `<label class="f"><span>${label}</span><input class="i" id="sp-${id}" value="${esc(x[id] || "")}" placeholder="${ph || ""}"></label>`;
+    const now = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
+    return `<form class="card" data-f="nsinsp" style="max-width:1000px"><header><h3>${i.id ? `Справа ${esc(spNo(i))}` : "Нова справа ВВБ"}</h3></header>
       <div class="form-grid">
-        <label class="f"><span>Щодо співробітника</span><select class="i" id="sp-sid">${staff.map((p) => `<option value="${p.sid}" ${String(p.sid) === String(i.sid) ? "selected" : ""}>${esc(p.name)} · ${esc(p.rankName)} · ${p.sid}</option>`).join("")}</select></label>
-        <label class="f"><span>Предмет перевірки</span><input class="i" id="sp-title" maxlength="120" value="${esc(i.title || "")}"></label>
-        <label class="f wide"><span>Матеріали: факти, пояснення, свідки, докази (посилання)</span><textarea class="i kf-big" id="sp-mat">${esc(i.materials || "")}</textarea></label>
-        <label class="f wide"><span>Висновок ВВБ</span><textarea class="i" id="sp-con">${esc(i.conclusion || "")}</textarea></label>
+        <h4 class="wide sr-h">1. Реєстраційні відомості</h4>
+        <label class="f"><span>Вид</span><select class="i" id="sp-kind">${Object.entries(M.kinds).map(([k, n]) => `<option value="${k}" ${k === (i.kind || "invest") ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+        <label class="f"><span>Гриф</span><select class="i" id="sp-grif">${Object.entries(M.grifs).map(([k, n]) => `<option value="${k}" ${k === (x.grif || "top") ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+        <label class="f"><span>Дата та час відкриття провадження</span><input class="i" type="datetime-local" id="sp-opened" value="${esc(x.opened || now)}"></label>
+        <label class="f wide"><span>Предмет (коротко)</span><input class="i" id="sp-title" maxlength="120" value="${esc(i.title || "")}" placeholder="напр. Неправомірне застосування сили під час допиту"></label>
+        ${tx("basis", "Ініціатор / підстава", "Розпорядження заступника начальника ВВБ")}
+        ${tx("qual", "Попередня правова кваліфікація", "напр. ч. 2 ст. 365 КК")}
+        <h4 class="wide sr-h">2. Фігурант</h4>
+        <label class="f"><span>Співробітник</span><select class="i" id="sp-sid"><option value="">— оберіть —</option>${staff.map((p) => `<option value="${p.sid}" ${String(p.sid) === String(i.sid) ? "selected" : ""}>${esc(p.name)} · ${esc(p.rankName)} · ${p.sid}</option>`).join("")}</select></label>
+        ${tx("callsign", "Позивний (якщо не вказано в картці)")}
+        <p class="note wide">Підрозділ, звання й дисциплінарний бекграунд (активні догани, попередні стягнення) бот підставить у справу сам.</p>
+        <h4 class="wide sr-h">3. Фабула</h4>
+        ${tx("when", "Дата й час інциденту", "06.11.2026 ~23:52")}${tx("place", "Місце", "ГУ СБУ")}
+        ${ta("fabula", "Хронологія дій та суть правопорушення", 8)}
+        <h4 class="wide sr-h">4. Матеріали</h4>
+        <div class="f wide" id="sp-mats">${(x.mats && x.mats.length ? x.mats : [{ type: M.mats[0] }]).map(spMatRow).join("")}</div>
+        <div class="wide"><button type="button" class="btn sm" data-a="spmatadd">+ Матеріал</button></div>
+        <h4 class="wide sr-h">5. Правова кваліфікація</h4>
+        ${ta("statute", "Порушення Внутрішнього статуту СБУ / Класифікатора заборон")}${ta("regs", "Порушення спеціальних регламентів та інструкцій")}
+        ${ta("crim", "Кваліфікація за статтями Кримінального кодексу")}${ta("mitig", "Пом'якшуючі обставини")}${ta("aggr", "Обтяжуючі обставини")}
+        <h4 class="wide sr-h">Висновок</h4>
+        <label class="f wide"><span>Висновок ВВБ</span><textarea class="i" id="sp-con" rows="4">${esc(i.conclusion || "")}</textarea></label>
         <label class="f"><span>Рекомендоване стягнення</span><select class="i" id="sp-rec"><option value="">— без стягнення —</option>${Object.entries(d.kinds).map(([k, n]) => `<option value="${k}" ${k === i.recommend ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></label>
       </div>
       <div class="acts"><button class="btn" type="button" data-a="nsinspback">Скасувати</button><button class="btn gold" type="submit">Зберегти</button></div></form>`;
   }
-  const lab = { open: ["Проводиться", "wait"], sent: ["Направлено Голові", "info"], closed: ["Закрито", "mute"] };
-  return `${R.vvb ? '<div class="bn-actions"><button class="btn gold" data-a="nsinspnew">+ Розпочати службову перевірку</button></div>' : ""}
-    ${d.inspections.length ? `<div class="docs">${d.inspections.map((i) => `<article class="doc st-${i.status === "closed" ? "ok" : i.status === "sent" ? "info" : "wait"}">
-      <div class="doc-no"><b>СП-${String(i.id).padStart(4, "0")}</b><span>${fmtDT(i.updated)}</span></div>
-      <div class="doc-main"><div class="doc-title">${esc(i.title)}</div>
-        <div class="doc-line"><span>Щодо</span>${i.target ? esc(i.target.rankName + " " + i.target.name) : "№" + i.sid} · <span>Перевіряє</span>${i.author ? esc(i.author.name) : "—"}</div>
+  const chip = { open: "wait", paused: "mute", head: "info", sent: "info", closed: "ok" };
+  return `${R.vvb ? '<div class="bn-actions"><button class="btn gold" data-a="nsinspnew">+ Відкрити справу (розслідування / перевірка)</button></div>' : ""}
+    ${d.inspections.length ? `<div class="docs">${d.inspections.map((i) => {
+      const mine = i.author && i.author.sid === me.sid, st_ = i.status;
+      const btn = (to, label, cls) => `<button class="btn sm ${cls || ""}" data-a="nsinspmove" data-id="${i.id}" data-to="${to}">${label}</button>`;
+      return `<article class="doc st-${st_ === "closed" ? "ok" : ["sent", "head"].includes(st_) ? "info" : "wait"}">
+      <div class="doc-no"><b>${esc(spNo(i))}</b><span>${fmtDT(i.updated)}</span></div>
+      <div class="doc-main"><div class="doc-title">${esc((M.kinds[i.kind] || "Службова перевірка"))} · ${esc(i.title)}</div>
+        <div class="doc-line"><span>Фігурант</span>${i.target ? esc(i.target.rankName + " " + i.target.name) : "№" + i.sid} · <span>Інспектор</span>${i.author ? esc(i.author.name) : "—"}</div>
         ${i.conclusion ? `<div class="doc-note"><b>Висновок:</b> ${esc(i.conclusion)}${i.recommend ? ` · рекомендовано: <b>${esc(d.kinds[i.recommend])}</b>` : ""}</div>` : ""}
-        ${i.order_id ? `<div class="small muted">За результатами — наказ ${no(i.order_id)}</div>` : ""}</div>
-      <div class="doc-side"><span class="chip ${lab[i.status][1]}">${lab[i.status][0]}</span><button class="btn sm" data-a="sppdf" data-id="${i.id}">⬇ PDF</button>
-        ${i.status === "open" && R.vvb ? `<button class="btn sm" data-a="nsinspedit" data-id="${i.id}">Редагувати</button><button class="btn sm gold" data-a="nsinspmove" data-id="${i.id}" data-to="sent">Направити Голові</button>` : ""}
-        ${i.status === "sent" && R.chief ? `<button class="btn sm ok" data-a="nsinspord" data-id="${i.id}">Накласти стягнення</button><button class="btn sm" data-a="nsinspmove" data-id="${i.id}" data-to="closed">Закрити без стягнення</button>` : ""}
-        ${i.author && (i.author.sid === me.sid || R.chief) ? `<button class="btn sm bad" data-a="nsinspmove" data-id="${i.id}" data-to="deleted">🗑</button>` : ""}</div>
-    </article>`).join("")}</div>` : '<div class="empty">Службових перевірок немає.</div>'}`;
+        ${i.resolution && i.resolution.decision === "return" && st_ === "open" ? `<div class="doc-note"><b>Повернуто на доопрацювання:</b> ${esc(i.resolution.comment)}</div>` : ""}
+        ${i.order_id ? `<div class="small muted">Застосовано наказом ${no(i.order_id)}</div>` : ""}</div>
+      <div class="doc-side"><span class="chip ${chip[st_] || ""}">${esc(M.status[st_] || st_)}</span>
+        <button class="btn sm" data-a="sppdf" data-id="${i.id}">⬇ PDF</button><button class="btn sm" data-a="sppng" data-id="${i.id}">⬇ PNG</button>
+        ${["open", "paused"].includes(st_) && R.vvb ? `<button class="btn sm" data-a="nsinspedit" data-id="${i.id}">Редагувати</button>` : ""}
+        ${st_ === "open" && R.vvb ? btn("paused", "⏸ Зупинити") + btn(R.vvbHead || R.chief ? "sent" : "head", R.vvbHead || R.chief ? "Направити Голові" : "На погодження начальнику ВВБ", "gold") : ""}
+        ${st_ === "paused" && R.vvb ? btn("open", "▶ Відновити") : ""}
+        ${st_ === "head" && (R.vvbHead && !mine || R.chief) ? btn("sent", "Погодити й направити Голові", "ok") + btn("return", "↩ На доопрацювання") : ""}
+        ${st_ === "sent" && R.chief ? btn("closed", "Затвердити висновок", "ok") + btn("return", "↩ На доопрацювання ВВБ") : ""}
+        ${["sent", "closed"].includes(st_) && R.chief && !i.order_id && i.recommend ? `<button class="btn sm gold" data-a="nsinspord" data-id="${i.id}">Застосувати заходи (наказ)</button>` : ""}
+        ${(mine && ["open", "paused"].includes(st_)) || R.chief ? btn("deleted", "🗑", "bad") : ""}</div>
+    </article>`; }).join("")}</div>` : '<div class="empty">Службових перевірок і розслідувань немає.</div>'}`;
 }
 
 async function view() {
@@ -199,7 +286,10 @@ const readForm = () => ({ sid: S.$("#ns-sid")?.value, violation: S.$("#ns-v")?.v
 S.views.disc = view;
 Object.assign(S.actions, {
   nspdf: (b) => { const o = ALL[b.dataset.id]; if (o) S.pdfA4(b, nsA4(o), `${no(o.id)}_${o.kindName}`); },
-  sppdf: (b) => { const i = (S.cache.disc.inspections || []).find((x) => String(x.id) === b.dataset.id); if (i) S.pdfBtn(b, spDoc(i, S.cache.disc.kinds), `СП-${String(i.id).padStart(4, "0")}_${i.title || ""}`); },
+  sppdf: (b) => { const i = (S.cache.disc.inspections || []).find((x) => String(x.id) === b.dataset.id); if (i) S.pdfA4(b, spA4(i), `${spNo(i)}_${i.title || ""}`); },
+  sppng: (b) => { const i = (S.cache.disc.inspections || []).find((x) => String(x.id) === b.dataset.id); if (i) S.pngBtn(b, spDoc(i, S.cache.disc.kinds), `${spNo(i)}_${i.title || ""}`); },
+  spmatadd: () => { spRead(); st.insp.data.mats.push({ type: S.cache.disc.insp.mats[0], desc: "", ref: "" }); S.render(); },
+  spmatdel: (b) => { spRead(); st.insp.data.mats.splice(+b.dataset.n, 1); S.render(); },
   nstab: (b) => { st.tab = b.dataset.v; st.insp = null; S.render(); },
   nsf: (b) => { st.f = b.dataset.v; S.render(); },
   nsappeal: (b) => run(b, async () => {
@@ -217,13 +307,18 @@ Object.assign(S.actions, {
     if (!confirm("Скасувати й видалити наказ? Пониження чи звільнення бот назад не поверне — це робиться окремо.")) return;
     await call(`/api/discipline/${b.dataset.id}/delete`, { json: {} }); toast("Наказ видалено"); await S.refreshMe(); S.render();
   }),
-  nsinspnew: () => { st.insp = {}; S.render(); },
+  nsinspnew: () => { st.insp = { kind: "invest", data: { mats: [] } }; S.render(); },
   nsinspback: () => { st.insp = null; S.render(); },
-  nsinspedit: (b) => { st.insp = S.cache.disc.inspections.find((i) => i.id === +b.dataset.id); S.render(); },
+  nsinspedit: (b) => { st.insp = JSON.parse(JSON.stringify(S.cache.disc.inspections.find((i) => i.id === +b.dataset.id))); S.render(); },
   nsinspmove: (b) => run(b, async () => {
     const to = b.dataset.to;
-    if (!confirm({ sent: "Направити матеріали Голові СБУ?", closed: "Закрити перевірку без стягнення?", deleted: "Видалити службову перевірку?" }[to])) return;
-    await call(`/api/inspections/${b.dataset.id}/move`, { json: { to } }); toast("Готово"); await S.refreshMe(); S.render();
+    const ask = { sent: "Направити справу Голові СБУ?", head: "Направити справу на погодження начальнику ВВБ?", closed: "Затвердити висновок?",
+      paused: "Зупинити провадження?", open: "Відновити провадження?", deleted: "Видалити справу?", return: "" }[to];
+    let note = "";
+    if (to === "return") { note = prompt("Що доопрацювати (побачить ВВБ):", ""); if (!note) return; }
+    else if (to === "closed") { note = prompt("Затвердити висновок.\nКоментар Голови (необов'язково), напр. «Не заперечую»:", "Не заперечую"); if (note === null) return; }
+    else if (!confirm(ask)) return;
+    await call(`/api/inspections/${b.dataset.id}/move`, { json: { to, note } }); toast("Готово"); await S.refreshMe(); S.render();
   }),
   nsinspord: (b) => {
     const i = S.cache.disc.inspections.find((x) => x.id === +b.dataset.id);
@@ -248,10 +343,10 @@ S.forms.nsissue = async (f) => run(f.querySelector("button[type=submit]"), async
   await nsImage(r.id); st.form = null; st.tab = "journal"; await S.refreshMe(); S.render();
 });
 S.forms.nsinsp = async (f) => run(f.querySelector("button[type=submit]"), async () => {
-  const v = (id) => S.$(id).value;
-  const body = { sid: v("#sp-sid"), title: v("#sp-title"), materials: v("#sp-mat"), conclusion: v("#sp-con"), recommend: v("#sp-rec") };
-  await call(st.insp.id ? `/api/inspections/${st.insp.id}` : "/api/inspections", { json: body });
-  toast("Перевірку збережено"); st.insp = null; S.render();
+  const i = spRead();
+  const body = { kind: i.kind, sid: i.sid, title: i.title, conclusion: i.conclusion, recommend: i.recommend, files: i.files || [], ...i.data };
+  await call(i.id ? `/api/inspections/${i.id}` : "/api/inspections", { json: body });
+  toast("Справу збережено"); st.insp = null; S.render();
 });
 S.onNav.push((v) => { if (v !== "disc") { st.insp = null; } });
 // адреса: #/disc/вкладка · #/disc/insp/5 (службова перевірка) · #/disc/insp/new

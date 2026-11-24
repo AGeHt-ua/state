@@ -38,3 +38,13 @@
 .ns footer .btn.bad{background:#7d1410;border-color:#7d1410}
 .ns-blank p{margin-bottom:14px}
 @media (max-width:760px){.ns-panel{grid-template-columns:1fr}.ns-info{border-left:0;border-top:1px dashed var(--line2)}.ns-body{max-width:none}.ns-stamp{position:static;display:inline-block;margin:0 18px 8px;max-width:none}}
+
+/* справа службового розслідування ВВБ */
+.sr-blank{width:min(900px,100%)}
+.sr-cap{display:grid;justify-items:center;gap:2px;border:3px double currentColor;padding:10px;margin-bottom:14px;text-align:center;font-size:13px}
+.sr-h{margin:16px 0 6px;font-size:14px;letter-spacing:.04em}
+.sr-t{width:100%;border-collapse:collapse;font-size:13.5px}
+.sr-t td,.sr-t th{border:1px solid rgba(0,0,0,.35);padding:5px 7px;vertical-align:top;text-align:left}
+.sr-k{width:34%;font-weight:600}
+.sr-ref{word-break:break-all}
+.form-grid .sr-h{color:var(--gold,#c9a24d)}
