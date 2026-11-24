@@ -754,6 +754,14 @@ async def cases_transfer(request):
     return web.json_response(cases.out(c, u))
 
 
+@routes.post("/api/cases/{id}/done")
+async def cases_done(request):
+    u = await auth(request)
+    b = await body(request)
+    c = await cases.realize(u, int(request.match_info["id"]), str(b.get("note") or "")[:500], bool(b.get("reopen")))
+    return web.json_response(cases.out(c, u))
+
+
 @routes.post("/api/cases/{id}/withdraw")
 async def cases_withdraw(request):
     u = await auth(request)

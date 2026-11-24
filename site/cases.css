@@ -134,3 +134,11 @@
 /* передача кейс-файлу іншому агенту */
 .kf-modal{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:16px;background:rgba(3,5,9,.78)}
 .kf-tr{width:min(520px,100%);display:grid;gap:12px;border-top:3px solid var(--gold)}
+
+/* реалізовані справи — сірі, як закриті; сортування реєстру */
+.kf-done{filter:grayscale(1) opacity(.62)}
+.kf-done:hover,.kf-done:focus-visible{filter:grayscale(.6) opacity(.85) drop-shadow(0 14px 22px rgba(0,0,0,.5))}
+.kf-real{border-color:#8b929c!important;color:#8b929c!important}
+.kf-sort{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 14px}
+.kf-sort label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted,#9aa3ad)}
+.kf-sort .i{width:auto;min-width:160px}

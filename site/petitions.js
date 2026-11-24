@@ -17,7 +17,9 @@ function askText(k, x) {
   return esc(k.ask.replace(/\{(\w+)\}/g, (_, f) => f === "person_of" ? of : (x[f] || "________")));
 }
 const titleOf = (k, x) => k.title || (x.subject ? `щодо: ${x.subject}` : "");
-const addrOf = (k, x) => k.addr || x.addressee || "________";
+const addrOf = (k, x) => k.addr || (k.to ? x[k.to] : x.addressee) || "________";
+const docOf = (k) => k.doc || "КЛОПОТАННЯ";
+const leadOf = (k) => k.lead || "Служба безпеки штату NG просить";
 
 function blank(p) {
   const m = M(), k = m.kinds[p.kind] || {}, x = p.data || {}, a = p.author || {};
@@ -25,16 +27,17 @@ function blank(p) {
   const rows = (k.fields || []).filter((f) => !skip.has(f) && x[f]).map((f) => `<p class="fin-row"><b>${esc(m.fields[f].n)}:</b> ${esc(x[f])}</p>`).join("");
   const visas = (p.visas || []).map((v) => `<div class="fin-visa"><b>${v.stage === "mgmt" ? "ПОГОДЖЕНО" : "ЗАТВЕРДЖЕНО"}</b><span>${esc(v.rankName || "")}</span><span class="kf-sign">${esc(v.name)}</span><span>${fmtDT(v.t)}</span></div>`).join("");
   return `<div class="blank fin-blank pet-blank">
-    <div class="fin-to">До: ${esc(addrOf(k, x))}<br>Від: ${esc(a.rankName || "")} ${esc(a.name || "")}, ${esc(deptName(a.dept) || "")}<br>Державна організація: Служба безпеки штату NG</div>
-    <div class="blank-title">К Л О П О Т А Н Н Я</div>
+    <div class="fin-to">${k.to === "person" ? "Кому" : "До"}: ${esc(addrOf(k, x))}<br>Від: ${esc(a.rankName || "")} ${esc(a.name || "")}, ${esc(deptName(a.dept) || "")}<br>Державна організація: Служба безпеки штату NG</div>
+    <div class="blank-title">${docOf(k).split("").join(" ")}</div>
     <div class="fin-sub">${esc(titleOf(k, x))}${p.id ? ` · № ${esc(p.no)}` : ""}</div>
-    <p>${k.basis ? `Керуючись ${esc(k.basis)}, ` : ""}Служба безпеки штату NG просить ${k.ask ? askText(k, x) : ""}${k.ask ? "." : ""}</p>
+    <p>${k.basis ? `Керуючись ${esc(k.basis)}, ` : ""}${esc(leadOf(k))} ${k.ask ? askText(k, x) : ""}${k.ask ? "." : ""}</p>
     ${k.ask ? "" : `<p>${esc(x.body || "…").replace(/\n/g, "<br>")}</p>`}
     ${rows}
+    ${k.group === "summons" && k.note ? `<p class="fin-row"><i>${esc(k.note)}</i></p>` : ""}
     <div class="fin-sign"><span><b>Дата:</b> ${day(p.approved || p.t)}</span><span><b>Підпис:</b> <span class="kf-sign">${esc(a.name || "")}</span></span></div>
     ${visas}</div>`;
 }
-const a4 = (p) => S.a4(blank(p), p.no || "КЛП-нов.", { noTo: true, date: day(p.approved || p.t), sub: "Клопотання" });
+const a4 = (p) => S.a4(blank(p), p.no || "КЛП-нов.", { noTo: true, date: day(p.approved || p.t), sub: (M().kinds[p.kind] || {}).group === "summons" ? "Повістка" : "Клопотання" });
 const fname = (p) => `${p.no}_${(M().kinds[p.kind] || {}).group || ""}`;
 
 // текст для подання на форумі / в порталі адресата
@@ -42,10 +45,11 @@ function forumText(p) {
   const m = M(), k = m.kinds[p.kind] || {}, x = p.data || {}, a = p.author || {};
   const tmp = document.createElement("div");
   tmp.innerHTML = k.ask ? askText(k, x) : esc(x.body || "");
-  const lines = [`До: ${addrOf(k, x)}`, `Від: ${a.rankName} ${a.name}, ${deptName(a.dept)}`, "Державна організація: Служба безпеки штату NG", "",
-    `[B]КЛОПОТАННЯ[/B] ${titleOf(k, x)} · № ${p.no}`, "",
-    `${k.basis ? `Керуючись ${k.basis}, ` : ""}Служба безпеки штату NG просить ${tmp.textContent}${k.ask ? "." : ""}`, ""];
+  const lines = [`${k.to === "person" ? "Кому" : "До"}: ${addrOf(k, x)}`, `Від: ${a.rankName} ${a.name}, ${deptName(a.dept)}`, "Державна організація: Служба безпеки штату NG", "",
+    `[B]${docOf(k)}[/B] ${titleOf(k, x)} · № ${p.no}`, "",
+    `${k.basis ? `Керуючись ${k.basis}, ` : ""}${leadOf(k)} ${tmp.textContent}${k.ask ? "." : ""}`, ""];
   for (const f of (k.fields || [])) if (x[f] && !["addressee", "subject", "body"].includes(f)) lines.push(`[B]${m.fields[f].n}:[/B] ${x[f]}`);
+  if (k.group === "summons" && k.note) lines.push("", k.note);
   lines.push("", `[B]Дата:[/B] ${day(p.approved || p.t)}`, `[B]Підпис:[/B] ${a.name}`);
   for (const v of p.visas || []) lines.push(`[B]${v.stage === "mgmt" ? "Погоджено" : "Затверджено"}:[/B] ${v.rankName || ""} ${v.name}`);
   return lines.join("\n");
@@ -87,8 +91,9 @@ function formHtml() {
         }).join("")}
         ${e.id ? "" : S.tagSelect('data-pf="tag"', (e.data || {}).tag || "")}
       </div>
-      ${k.note ? `<p class="note">${esc(k.note)}</p>` : ""}
-      <p class="note">Після подання: начальник управління вашого відділу (якщо відділ входить в управління) → Заступник Голови або Голова СБУ. Після затвердження — PDF, PNG і текст для подання адресату.</p>
+      ${k.note && k.group !== "summons" ? `<p class="note">${esc(k.note)}</p>` : ""}
+      <p class="note">${k.group === "summons" ? "Повістку погоджує начальник або заступник начальника вашого відділу (від начальника управління й вище — одразу чинна). Після погодження — PDF, PNG і текст для вручення."
+        : "Після подання: начальник управління вашого відділу (якщо відділ входить в управління) → Заступник Голови або Голова СБУ. Після затвердження — PDF, PNG і текст для подання адресату."}</p>
       <div class="acts"><button class="btn" type="button" data-a="petcancel">Скасувати</button><button class="btn gold" type="submit">${e.id ? "Зберегти й подати знову" : "Подати клопотання"}</button></div>
     </form><div id="pet-blank">${blank(preview)}</div></div>`;
 }
@@ -101,9 +106,9 @@ function docHtml(p) {
     ${p.result_url ? `<p class="note">Подано: <a href="${esc(S.safeUrl(p.result_url))}" target="_blank" rel="noopener">${esc(p.result_url)}</a></p>` : ""}
     <div class="acts" style="margin:12px 0;flex-wrap:wrap">
       <button class="btn" data-a="petpdf">⬇ PDF</button><button class="btn" data-a="petpng">⬇ PNG</button>${done ? '<button class="btn" data-a="petcopy">⧉ Текст для подання</button>' : ""}${S.docImgBtn("pet", p.id)}
-      ${p.canAct ? `<button class="btn ok" data-a="petok">${p.stage === "mgmt" && !S.cache.pet.rights.approve ? "Погодити" : "Затвердити"}</button><button class="btn bad" data-a="petrej">↩ Повернути автору</button>` : ""}
+      ${p.canAct ? `<button class="btn ok" data-a="petok">${p.stage === "chief" || S.cache.pet.rights.approve ? "Затвердити" : "Погодити"}</button><button class="btn bad" data-a="petrej">↩ Повернути автору</button>` : ""}
       ${p.canEdit || (p.mine && p.status === "rejected") ? '<button class="btn" data-a="petedit">✏️ Виправити</button>' : ""}
-      ${p.canResult ? `<button class="btn" data-a="petres" data-v="posted">📤 Подано адресату</button><button class="btn ok" data-a="petres" data-v="granted">✅ Задоволено</button><button class="btn bad" data-a="petres" data-v="denied">⛔ Відмовлено</button>` : ""}
+      ${p.canResult ? `<button class="btn" data-a="petres" data-v="posted">📤 ${(M().kinds[p.kind] || {}).group === "summons" ? "Вручено" : "Подано адресату"}</button><button class="btn ok" data-a="petres" data-v="granted">✅ Задоволено</button><button class="btn bad" data-a="petres" data-v="denied">⛔ Відмовлено</button>` : ""}
       ${p.canDelete ? '<button class="btn bad" data-a="petdel">🗑</button>' : ""}
     </div>
     ${blank(p)}

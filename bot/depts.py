@@ -95,7 +95,7 @@ async def week_data(d: str) -> dict:
     types = Counter(a["type"] for a in week)
     pending_acts = await db.all("SELECT id, by_sid, type, custom, t FROM acts WHERE dept=? AND status='wait' ORDER BY t", d)
     pending_raps = await db.all("SELECT id, by_sid, type, t FROM raps WHERE dept=? AND status='wait' ORDER BY t", d)
-    cases = await db.all("SELECT id, status, data, updated FROM cases WHERE dept=? AND status NOT IN ('approved','rejected','deleted') ORDER BY updated DESC", d) \
+    cases = await db.all("SELECT id, status, data, updated FROM cases WHERE dept=? AND status NOT IN ('approved','done','rejected','deleted') ORDER BY updated DESC", d) \
         if d in cases_mod.CASE_DEPTS else []
     names = {p["sid"]: p["name"] for p in staff}
     head = next((p for p in staff if p["rank"] == 12), None)

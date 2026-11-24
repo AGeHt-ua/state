@@ -1230,7 +1230,7 @@ document.addEventListener("visibilitychange", async () => {
 });
 
 // номер документа → його адреса на сайті
-const DOC_PATHS = { "ЗВТ": "act/{}", "РАП": "rap/{}", "КФ": "cases/{}", "ПЗ": "kb/prot/{}", "КЛ": "fin/{}", "КЛП": "pet/{}", "ЗВК": "fin/{}", "ВП": "bonus/{}",
+const DOC_PATHS = { "ЗВТ": "act/{}", "РАП": "rap/{}", "КФ": "cases/{}", "ПЗ": "kb/prot/{}", "КЛ": "fin/{}", "КЛП": "pet/{}", "ПВС": "pet/{}", "ЗВК": "fin/{}", "ВП": "bonus/{}",
   "НС": "disc/journal", "НП": "staff/appoint", "НГ": "staff/orders", "АНК": "hr" };
 const LAT = { Z: "З", V: "В", T: "Т", R: "Р", A: "А", P: "П", K: "К", F: "Ф", L: "Л", N: "Н", S: "С", G: "Г", H: "Н", C: "С" };
 function docPath(q) {

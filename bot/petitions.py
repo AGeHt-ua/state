@@ -10,7 +10,11 @@
   • Внутрішній статут СБУ: перевірки працівників інших держорганів — лише за письмовим дорученням Офісу Генпрокурора;
     подання до Мін'юсту про внесення до «Чорного списку».
 
-Подати може будь-який співробітник. Маршрут: начальник управління відділу автора (якщо відділ входить в управління:
+Повістки (ПВС-…) — документи СБУ про виклик на допит / опитування: погоджує начальник або заступник начальника відділу автора
+(від начальника управління й вище — одразу чинні). Неявка → клопотання до Генпрокурора про постанову про примусовий привід
+(ст. 40.2 Закону «Про державні документи штату NG»).
+
+Подати може будь-який співробітник. Маршрут клопотань: начальник управління відділу автора (якщо відділ входить в управління:
 ОРВ, ДЕБ або як задано в адмін-панелі → «Управління») → Заступник Голови або Голова СБУ (одного підпису досить).
 Після затвердження автор подає документ (PDF / PNG / текст) і позначає результат."""
 import json
@@ -48,7 +52,14 @@ FIELDS = {
     "addressee": ("Адресат", "text"),
     "subject": ("Предмет клопотання (коротко)", "text"),
     "body": ("Текст клопотання", "area"),
+    "role": ("Процесуальний статус особи (свідок, потерпілий, підозрюваний…)", "text"),
+    "agency": ("Орган / організація, де працює особа", "text"),
+    "appear": ("Дата й час явки", "text"),
+    "venue": ("Місце явки", "text"),
+    "purpose": ("Мета виклику (у справі / щодо чого)", "text"),
+    "contact": ("Контакт для зв'язку (позивний, телефон)", "text"),
 }
+SUMMON_NOTE = "При собі мати документ, що посвідчує особу (ст. 56 Закону «Про державні документи штату NG»). У разі неявки без поважних причин може бути ініційовано примусовий привід за постановою прокурора (ст. 40.2 Закону «Про державні документи штату NG»)."
 
 # вид → адресат, заголовок, підстава, що просимо (з підстановкою полів {person} …), поля, обов'язкові поля, примітка
 KINDS = {
@@ -88,6 +99,25 @@ KINDS = {
                      "basis": "Законом «Про Службу безпеки України (СБУ) штату NG»",
                      "ask": "винести постанову про забезпечення фізичної охорони: {witness}",
                      "fields": ["witness", "grounds", "term", "case"], "req": ["witness", "grounds"]},
+    "sum_witness": {"group": "summons", "doc": "ПОВІСТКА", "to": "person", "title": "про виклик на допит",
+                    "lead": "Служба безпеки штату NG викликає Вас", "basis": "",
+                    "ask": "на допит ({role}) {purpose}. Явитися: {appear}, {venue}",
+                    "fields": ["person", "role", "purpose", "appear", "venue", "contact", "case"], "req": ["person", "role", "appear", "venue"],
+                    "note": SUMMON_NOTE},
+    "sum_explain": {"group": "summons", "doc": "ПОВІСТКА", "to": "person", "title": "про виклик для надання пояснень",
+                    "lead": "Служба безпеки штату NG викликає Вас", "basis": "",
+                    "ask": "для надання пояснень {purpose}. Явитися: {appear}, {venue}",
+                    "fields": ["person", "purpose", "appear", "venue", "contact", "case"], "req": ["person", "purpose", "appear", "venue"],
+                    "note": SUMMON_NOTE},
+    "sum_official": {"group": "summons", "doc": "ВИКЛИК", "to": "agency", "title": "співробітника державного органу на допит",
+                     "lead": "Служба безпеки штату NG просить забезпечити явку", "basis": "",
+                     "ask": "Вашого співробітника {person} на допит ({role}) {purpose}. Явитися: {appear}, {venue}",
+                     "fields": ["agency", "person", "role", "purpose", "appear", "venue", "contact", "case"],
+                     "req": ["agency", "person", "role", "appear", "venue"], "note": SUMMON_NOTE},
+    "pros_drive": {"group": "pros", "addr": PROS, "title": "про винесення постанови про примусовий привід на допит",
+                   "basis": "статтею 40.2 Закону «Про державні документи штату NG»",
+                   "ask": "винести постанову про примусовий привід на допит: {person} (неявка за повісткою {subject})",
+                   "fields": ["person", "subject", "role", "grounds", "evidence", "case"], "req": ["person", "subject", "grounds"]},
     "minjust_black": {"group": "minjust", "addr": "Міністерство юстиції штату NG", "title": "про внесення до «Чорного списку»",
                       "basis": "Внутрішнім статутом Служби безпеки штату NG",
                       "ask": "внести до «Чорного списку» колишнього співробітника: {person}",
@@ -95,15 +125,26 @@ KINDS = {
     "other": {"group": "other", "addr": "", "title": "", "basis": "", "ask": "", "fields": ["addressee", "subject", "body", "evidence"],
               "req": ["addressee", "subject", "body"]},
 }
-GROUPS = {"court": "Суд", "pros": "Генеральний прокурор", "minjust": "Міністерство юстиції", "other": "Інше"}
+GROUPS = {"court": "Суд", "summons": "Повістки (виклик на допит, пояснення)", "pros": "Генеральний прокурор",
+          "minjust": "Міністерство юстиції", "other": "Інше"}
 STATUS = {"wait": "На погодженні", "rejected": "Повернуто автору", "approved": "Затверджено", "posted": "Подано адресату",
           "granted": "Задоволено", "denied": "Відмовлено адресатом", "deleted": "Видалено"}
-STAGE_NAME = {"mgmt": "погодження начальника управління", "chief": "затвердження Заступника Голови або Голови СБУ"}
+STAGE_NAME = {"head": "погодження начальника відділу", "mgmt": "погодження начальника управління",
+              "chief": "затвердження Заступника Голови або Голови СБУ"}
 DONE = ("approved", "posted", "granted", "denied")
 
 
 def no(p: dict) -> str:
-    return f"КЛП-{p['id']:04d}"
+    return f"{'ПВС' if KINDS.get(p['kind'], {}).get('group') == 'summons' else 'КЛП'}-{p['id']:04d}"
+
+
+def is_summons(kind: str) -> bool:
+    return KINDS.get(kind, {}).get("group") == "summons"
+
+
+def can_head_sign(u: dict, dept: str) -> bool:
+    """Повістку погоджує начальник / заступник начальника відділу автора; від начальника управління й вище — будь-яку."""
+    return orders.is_head_of(u, dept) or u["rank"] >= 13
 
 
 # ---------------------------------------------------------------- права
@@ -120,6 +161,8 @@ def can_act(u: dict, p: dict) -> bool:
         return False
     if is_approver(u):
         return True
+    if p["stage"] == "head":
+        return can_head_sign(u, p["dept"])
     return p["stage"] == "mgmt" and orders.is_mgmt_for(u, p["dept"])
 
 
@@ -129,7 +172,9 @@ def can_view(u: dict, p: dict) -> bool:
     return orders.is_mgmt_for(u, p["dept"]) or orders.is_head_of(u, p["dept"])
 
 
-def _route(u: dict, dept: str) -> list[str]:
+def _route(u: dict, dept: str, kind: str = "") -> list[str]:
+    if is_summons(kind):
+        return ["head"]
     route = []
     if dept in orders.mgmt_route() and not (u["rank"] >= 13):
         route.append("mgmt")
@@ -189,9 +234,11 @@ async def create(u: dict, b: dict) -> dict:
         raise Fail("Оберіть вид клопотання.")
     data = _clean(kind, b)
     dept = u["dept"]
-    route = _route(u, dept)
+    route = _route(u, dept, kind)
     t = now_ms()
-    status, stage = ("approved", "chief") if is_approver(u) else ("wait", route[0])  # Голова / Заступник затверджують своє одразу
+    # Голова / Заступник затверджують своє одразу; повістку начальника відділу й вище — теж
+    final = is_approver(u) or (is_summons(kind) and can_head_sign(u, dept))
+    status, stage = ("approved", route[-1]) if final else ("wait", route[0])
     pid = await db.run("INSERT INTO petitions(by_sid,dept,kind,data,status,stage,route,visas,history,t,updated,approved) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                        u["sid"], dept, kind, json.dumps(data, ensure_ascii=False), status, stage, ",".join(route), "[]",
                        _hist(None, u, "create"), t, t, t if status == "approved" else None)
@@ -229,10 +276,10 @@ async def decide(u: dict, pid: int, decision: str, note: str = "") -> dict:
             label = "Повернуто автору: " + note.strip()[:200]
         elif decision == "ok":
             visas = p["visas"] + [{"stage": p["stage"], "sid": u["sid"], "name": u["name"], "rank": u["rank"], "rankName": rank_name(u["rank"]), "t": t}]
-            if p["stage"] == "chief" or is_approver(u):  # затвердження ЗГС/ГС (вони можуть і замість начальника управління)
+            if p["stage"] in ("chief", "head") or is_approver(u):  # затвердження (ЗГС/ГС — і замість начальника управління)
                 await db.run("UPDATE petitions SET status='approved', stage='chief', visas=?, approved=?, history=?, updated=? WHERE id=?",
                              json.dumps(visas, ensure_ascii=False), t, _hist(p, u, "approve"), t, pid)
-                label = "Клопотання затверджено"
+                label = "Повістку погоджено" if p["stage"] == "head" else "Клопотання затверджено"
             else:
                 await db.run("UPDATE petitions SET stage='chief', visas=?, history=?, updated=? WHERE id=?",
                              json.dumps(visas, ensure_ascii=False), _hist(p, u, "visa"), t, pid)
@@ -294,7 +341,7 @@ async def pending(u: dict) -> int:
 
 
 def meta() -> dict:
-    return {"kinds": {k: {x: v[x] for x in ("group", "addr", "title", "basis", "ask", "fields", "req")} | {"note": v.get("note", "")}
+    return {"kinds": {k: {x: v.get(x, "") for x in ("group", "addr", "title", "basis", "ask", "fields", "req", "doc", "to", "lead", "note")}
                       for k, v in KINDS.items()},
             "fields": {k: {"n": v[0], "t": v[1]} for k, v in FIELDS.items()}, "groups": GROUPS, "status": STATUS}
 
@@ -308,9 +355,10 @@ async def journal(p: dict, u: dict, label: str, tag: str | None = None):
     try:
         k = KINDS[p["kind"]]
         a = await core.user(p["by_sid"])
-        title = f"Клопотання {k['title']}" if k["title"] else f"Клопотання: {p['data'].get('subject', '')}"
+        doc = (k.get("doc") or "Клопотання").capitalize()
+        title = f"{doc} {k['title']}" if k["title"] else f"Клопотання: {p['data'].get('subject', '')}"
         e = style.card(no(p), title[:200], label, COLORS.get(p["status"], style.BLUE), t=p["updated"], fields=[
-            ("Адресат", k["addr"] or p["data"].get("addressee")),
+            ("Адресат", k.get("addr") or p["data"].get(k.get("to") or "addressee") or p["data"].get("addressee")),
             ("Автор", style.person(a)),
             ("Стан", STATUS.get(p["status"]) + (f" · {STAGE_NAME.get(p['stage'], '')}" if p["status"] == "wait" else "")),
             ("Візи", " · ".join(f"{style.esc(v['name'])}" for v in p["visas"]) or None),

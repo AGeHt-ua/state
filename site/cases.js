@@ -9,25 +9,31 @@ const REQ = { search: "Ордер на обшук", arrest: "Ордер на а�
 const ROLES = ["підозрюваний", "фігурант", "свідок", "потерпілий", "джерело"];
 const ROUTE = [["draft", "Виконавець"], ["head", "Начальник відділу"], ["mgmt", "Начальник управління"], ["chief", "Голова СБУ"], ["prosecutor", "Генеральний прокурор"]];
 const route = (c) => ROUTE.filter(([k]) => k !== "mgmt" || !c.noMgmt);  // АТЦ, ЦСО «А» — без начальника управління
-const ORDER = { draft: 0, head: 1, mgmt: 2, chief: 3, prosecutor: 4, approved: 5, rejected: -1 };
+const ORDER = { draft: 0, head: 1, mgmt: 2, chief: 3, prosecutor: 4, approved: 5, done: 6, rejected: -1 };
+// сортування реєстру
+const SORTS = { upd: ["Останні зміни", (a, b) => b.updated - a.updated], new: ["Нові справи", (a, b) => b.created - a.created],
+  old: ["Старі справи", (a, b) => a.created - b.created], stage: ["За етапом", (a, b) => (ORDER[a.status] - ORDER[b.status]) || (b.updated - a.updated)],
+  title: ["За назвою", (a, b) => String(a.data.title || "").localeCompare(String(b.data.title || ""), "uk")],
+  dept: ["За відділом", (a, b) => String(a.dept).localeCompare(String(b.dept)) || (b.updated - a.updated)] };
 const no = (id) => `КФ-${String(id).padStart(4, "0")}`;
 const dept = (k) => S.META().depts[k] || { s: k, n: k, color: "#c9a05a" };
-const UIc = { id: null, edit: null, tab: null };
+const UIc = { id: null, edit: null, tab: null, sort: "upd", dept: "" };
+S.cases_ui_set = (k, v) => { UIc[k] = v; S.render(); };
 
 /* ---------- реєстр ---------- */
 function folder(c) {
   const d = dept(c.dept), st = c.status, step = ORDER[st];
-  return `<article class="kf" data-a="kfopen" data-id="${c.id}" style="--dc:${d.color}" tabindex="0">
+  return `<article class="kf ${st === "done" ? "kf-done" : ""}" data-a="kfopen" data-id="${c.id}" style="--dc:${d.color}" tabindex="0">
     <div class="kf-tab"><b>${no(c.id)}</b><span>${esc(d.s)}</span></div>
     <div class="kf-body">
       <div class="kf-grif g-${esc(c.data.grif)}">${GRIF[c.data.grif] || ""}</div>
       <div class="kf-op">Операція</div><h3>«${esc(c.data.title || "без назви")}»</h3>
       <div class="kf-org">${esc(c.data.org || "—")}</div>
-      <div class="kf-steps">${route(c).map(([k]) => `<i class="${st === "rejected" ? "bad" : step > ORDER[k] ? "done" : step === ORDER[k] ? "cur" : ""}"></i>`).join("")}<i class="${st === "approved" ? "done" : ""}"></i></div>
+      <div class="kf-steps">${route(c).map(([k]) => `<i class="${st === "rejected" ? "bad" : step > ORDER[k] ? "done" : step === ORDER[k] ? "cur" : ""}"></i>`).join("")}<i class="${["approved", "done"].includes(st) ? "done" : ""}"></i></div>
       <div class="kf-meta"><span class="${st === "approved" ? "ok" : st === "rejected" ? "bad" : c.canDecide ? "act" : ""}">${esc(c.stageName)}</span><span>${fmtDT(c.updated)}</span></div>
       <div class="kf-by">Виконавець: ${c.authorUser ? esc(c.authorUser.name) : "№" + c.author}</div>
     </div>
-    ${st === "approved" ? '<div class="kf-ok">ЗАТВЕРДЖЕНО</div>' : ""}
+    ${st === "approved" ? '<div class="kf-ok">ЗАТВЕРДЖЕНО</div>' : st === "done" ? '<div class="kf-ok kf-real">РЕАЛІЗОВАНО</div>' : ""}
   </article>`;
 }
 
@@ -37,10 +43,15 @@ async function vList() {
   const mine = list.filter((c) => c.author === S.ME().me.sid), todo = list.filter((c) => c.canDecide);
   const t = UIc.tab || (todo.length ? "todo" : r.create && r.create.length ? "mine" : "all");
   const tabs = [["todo", "На моєму погодженні", todo.length], ...(r.create && r.create.length ? [["mine", "Мої справи", mine.length]] : []),
-    ["all", "Реєстр", list.length], ["ok", "Затверджені", list.filter((c) => c.status === "approved").length]];
-  const shown = { todo, mine, all: list, ok: list.filter((c) => c.status === "approved") }[t];
+    ["all", "Реєстр", list.length], ["ok", "Затверджені", list.filter((c) => c.status === "approved").length],
+    ["done", "Реалізовані", list.filter((c) => c.status === "done").length]];
+  const depts = [...new Set(list.map((c) => c.dept))];
+  const shown = ({ todo, mine, all: list, ok: list.filter((c) => c.status === "approved"), done: list.filter((c) => c.status === "done") }[t] || list)
+    .filter((c) => !UIc.dept || c.dept === UIc.dept).sort((SORTS[UIc.sort] || SORTS.upd)[1]);
   return `<div class="kf-head"><div class="tabs">${tabs.map(([v, l, n]) => `<button class="tb ${t === v ? "on" : ""}" data-a="kftab" data-v="${v}">${l}<span class="cnt">${n}</span></button>`).join("")}</div>
       ${r.create && r.create.length ? '<button class="btn gold" data-a="kfnew">+ Завести кейс-файл</button>' : ""}</div>
+    <div class="kf-sort"><label>Сортувати <select class="i" data-kfs="sort">${Object.entries(SORTS).map(([k, [n]]) => `<option value="${k}" ${UIc.sort === k ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+      ${depts.length > 1 ? `<label>Відділ <select class="i" data-kfs="dept"><option value="">Усі</option>${depts.map((k) => `<option value="${k}" ${UIc.dept === k ? "selected" : ""}>${esc(dept(k).s)}</option>`).join("")}</select></label>` : ""}</div>
     ${shown.length ? `<div class="kf-grid">${shown.map(folder).join("")}</div>` : `<div class="empty">${t === "todo" ? "Немає справ, що очікують вашого рішення." : "Справ немає."}</div>`}`;
 }
 
@@ -108,7 +119,9 @@ async function vCase(id) {
     ${c.canEdit ? `<button class="btn" data-a="kfedit">Редагувати</button><button class="btn gold" data-a="kfsubmit">Подати на погодження</button>` : ""}
     ${c.canWithdraw ? '<button class="btn" data-a="kfwd">↩ Відкликати з погодження</button>' : ""}
     ${c.canDecide ? `<button class="btn ok" data-a="kfdec" data-d="ok">${pros ? "Затвердити" : "Погодити"}</button><button class="btn" data-a="kfdec" data-d="return">Повернути на доопрацювання</button><button class="btn bad" data-a="kfdec" data-d="rej">Відмовити</button>` : ""}
-    ${c.status === "approved" ? '<button class="btn gold" data-a="kfpdf">⬇ Завантажити PDF</button>' : ""}
+    ${["approved", "done"].includes(c.status) ? '<button class="btn gold" data-a="kfpdf">⬇ Завантажити PDF</button>' : ""}
+    ${c.canDone ? '<button class="btn ok" data-a="kfdone">✅ Реалізовано</button>' : ""}
+    ${c.canReopen ? '<button class="btn" data-a="kfreopen">↩ Повернути в роботу</button>' : ""}
     ${c.canArchive ? `<button class="btn" data-a="kfsend">📤 ${c.archived ? "Відправити в ДС повторно" : "Відправити в ДС"}</button>` : ""}
     ${c.canTransfer ? '<button class="btn" data-a="kftransfer">⇄ Передати іншому агенту</button>' : ""}
     ${c.canDelete && c.status !== "deleted" ? '<button class="btn bad" data-a="kfdelete">🗑 Видалити справу</button>' : ""}</div>`;
@@ -419,6 +432,19 @@ S.views.cases = async () => {
 };
 Object.assign(S.actions, {
   kftab: (b) => { UIc.tab = b.dataset.v; S.render(); },
+  kfdone: async (b) => {
+    const note = prompt("Справу реалізовано — її буде закрито (стане сірою в реєстрі).\nРезультат (необов'язково), напр. «затримано 3 особи, вилучено зброю»:", "");
+    if (note === null) return;
+    b.disabled = true;
+    try { await call(`/api/cases/${UIc.id}/done`, { json: { note } }); toast("Справу позначено «Реалізовано»"); await S.refreshMe(); S.render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
+  kfreopen: async (b) => {
+    if (!confirm("Повернути справу в роботу (зняти «Реалізовано»)?")) return;
+    b.disabled = true;
+    try { await call(`/api/cases/${UIc.id}/done`, { json: { reopen: true } }); toast("Справу повернуто в роботу"); S.render(); }
+    catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
   kfopen: (b) => { UIc.id = +b.dataset.id; S.render(); scrollTo(0, 0); },
   kfback: () => { if (UIc.edit) stashDrop(); UIc.id = null; UIc.edit = null; S.render(); },
   kfnew: () => { UIc.edit = blankCase(); S.render(); },
@@ -561,3 +587,10 @@ S.routes.cases = {
   },
 };
 })();
+
+// сортування й фільтр реєстру кейс-файлів
+document.addEventListener("change", (e) => {
+  const k = e.target.dataset && e.target.dataset.kfs;
+  if (!k) return;
+  window.SOVA.cases_ui_set(k, e.target.value);
+});

@@ -21,11 +21,11 @@ from roles import DEPTS, rank_name
 log = logging.getLogger("sova.cases")
 
 CASE_DEPTS = ("orv", "deb", "atc", "alpha")
-STAGES = ("draft", "head", "mgmt", "chief", "prosecutor", "approved", "rejected")
+STAGES = ("draft", "head", "mgmt", "chief", "prosecutor", "approved", "done", "rejected")
 STAGE_NAME = {"deleted": "Видалено", "draft": "Чернетка виконавця", "head": "Погодження начальника відділу",
               "mgmt": "Погодження начальника управління", "chief": "Погодження Голови СБУ",
-              "prosecutor": "Розгляд Генерального прокурора", "approved": "Затверджено", "rejected": "Відмовлено"}
-REACH = {"deleted": 0, "draft": 0, "head": 1, "mgmt": 1, "chief": 2, "prosecutor": 3, "approved": 4, "rejected": 0}
+              "prosecutor": "Розгляд Генерального прокурора", "approved": "Затверджено", "done": "Реалізовано", "rejected": "Відмовлено"}
+REACH = {"deleted": 0, "draft": 0, "head": 1, "mgmt": 1, "chief": 2, "prosecutor": 3, "approved": 4, "done": 4, "rejected": 0}
 GRIF = {"dsk": "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ", "secret": "ТАЄМНО", "top": "ЦІЛКОМ ТАЄМНО"}
 REQUESTS = {"search": "Ордер на обшук", "arrest": "Ордер на арешт (затримання)", "op": "Санкція на проведення спецоперації",
             "surv": "Санкція на негласне стеження та прослуховування", "suspect": "Повідомлення про підозру", "other": "Інше клопотання"}
@@ -102,7 +102,7 @@ def can_decide(u: dict, c: dict) -> bool:
 def can_transfer(u: dict, c: dict) -> bool:
     """Передати справу іншому виконавцю: заступник і начальник відділу — справи свого відділу, начальник управління — своїх підрозділів,
     керівництво СБУ — будь-яку. Мінімальне звання — адмін-панель → «Доступи» (case_transfer). Затверджені й видалені справи не передаються."""
-    if u.get("curator_ro") or is_prosecutor(u) or c["status"] in ("deleted", "approved"):
+    if u.get("curator_ro") or is_prosecutor(u) or c["status"] in ("deleted", "approved", "done"):
         return False
     if is_chief(u):
         return True
@@ -183,11 +183,19 @@ async def get(cid: int) -> dict:
     return c
 
 
+def can_done(u: dict, c: dict) -> bool:
+    """«Реалізовано»: затверджену справу закривають виконавець, начальник відділу, начальник управління або керівництво СБУ."""
+    if c["status"] != "approved" or u.get("curator_ro") or is_prosecutor(u):
+        return False
+    return c["author"] == u["sid"] or is_head_for(u, c["dept"]) or is_mgmt_for(u, c["dept"]) or is_chief(u)
+
+
 def out(c: dict, u: dict) -> dict:
     return {**c, "canEdit": c["author"] == u["sid"] and c["status"] == "draft", "canDecide": can_decide(u, c),
             "canWithdraw": c["author"] == u["sid"] and c["status"] in ON_REVIEW,
             "canDelete": (c["author"] == u["sid"] and c["status"] == "draft") or is_chief(u),
-            "canArchive": c["status"] == "approved" and is_chief(u), "archived": bool(c.get("arch_msg")), "canTransfer": can_transfer(u, c),
+            "canArchive": c["status"] in ("approved", "done") and is_chief(u), "canDone": can_done(u, c),
+            "canReopen": c["status"] == "done" and is_chief(u), "archived": bool(c.get("arch_msg")), "canTransfer": can_transfer(u, c),
             "stageName": STAGE_NAME[c["status"]], "noMgmt": c["dept"] not in mgmt_route()}
 
 
@@ -316,7 +324,7 @@ async def journal(c: dict, u: dict, label: str):
     if not ch:
         return
     st = c["status"]
-    color = {"approved": style.GREEN, "rejected": style.RED, "draft": style.GOLD}.get(st, style.BLUE)
+    color = {"approved": style.GREEN, "done": style.GRAY, "rejected": style.RED, "draft": style.GOLD}.get(st, style.BLUE)
     who_ = f"{style.esc(u['name'])} · №{u['sid']}" if u["dept"] != "prosecutor" else f"{style.esc(u['name'])} · Генеральний прокурор"
     e = style.card(f"КФ-{c['id']:04d}", "Кейс-файл · журнал руху", label, color, fields=[
         ("Справа", f"«{style.esc(c['data'].get('title', ''))}»"),
@@ -417,11 +425,30 @@ async def _archive_embed(c: dict, u: dict, approver: dict | None) -> discord.Emb
 
 
 @core.serialized("case")
+async def realize(u: dict, cid: int, note: str = "", reopen: bool = False) -> dict:
+    """«Реалізовано» — справу закрито (операцію проведено); керівництво може повернути її в «Затверджено»."""
+    c = await get(cid)
+    if reopen:
+        if not (c["status"] == "done" and is_chief(u)):
+            raise Fail("Повернути справу в роботу може Голова СБУ або заступник.", 403)
+        nxt, action, label = "approved", "reopen", "Повернуто в роботу (знято позначку «Реалізовано»)"
+    else:
+        if not can_done(u, c):
+            raise Fail("Позначити «Реалізовано» можна затверджену справу (виконавець, начальник відділу чи управління, керівництво).", 403)
+        nxt, action, label = "done", "done", "Реалізовано — справу закрито"
+    h = await _hist(c, u, action, note)
+    await db.run("UPDATE cases SET status=?, history=?, updated=? WHERE id=?", nxt, json.dumps(h, ensure_ascii=False), now_ms(), cid)
+    c = await get(cid)
+    await journal(c, u, label)
+    return c
+
+
+@core.serialized("case")
 async def archive(u: dict, cid: int, pdf: bytes) -> dict:
     """Затверджений кейс-файл → архівний канал Discord: embed з клікабельними посиланнями на докази + PDF бланка (формує сайт).
     Генпрокурор надсилає автоматично одразу після затвердження; Голова чи заступник — кнопкою (зокрема повторно)."""
     c = await get(cid)
-    if c["status"] != "approved":
+    if c["status"] not in ("approved", "done"):
         raise Fail("У Discord відправляється лише затверджений кейс-файл.")
     if not is_chief(u) and not (is_prosecutor(u) and not c.get("arch_msg")):
         raise Fail("Відправити кейс-файл у Discord може Голова СБУ або заступник.", 403)
