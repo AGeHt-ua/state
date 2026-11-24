@@ -227,6 +227,14 @@ CREATE INDEX IF NOT EXISTS access_status ON access_requests(status, discord_id);
 CREATE INDEX IF NOT EXISTS callsigns_sid ON callsigns(sid, status);
 CREATE INDEX IF NOT EXISTS attempts_status ON attempts(status);
 CREATE INDEX IF NOT EXISTS orders_sid ON orders(sid, status);
+CREATE TABLE IF NOT EXISTS voice_rooms (   -- приватні войс-кімнати (voice.py)
+  channel_id TEXT PRIMARY KEY,
+  owner      TEXT NOT NULL,                 -- Discord ID власника
+  locked     INTEGER DEFAULT 0,
+  hidden     INTEGER DEFAULT 0,
+  created    INTEGER
+);
+CREATE INDEX IF NOT EXISTS voice_owner ON voice_rooms(owner);
 CREATE INDEX IF NOT EXISTS acts_reviewed ON acts(reviewed);
 CREATE INDEX IF NOT EXISTS raps_reviewed ON raps(reviewed);
 CREATE INDEX IF NOT EXISTS cases_updated ON cases(updated);

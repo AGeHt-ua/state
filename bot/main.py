@@ -17,6 +17,7 @@ import candidates
 import core
 import slash
 import tunnel
+import voice
 from db import db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -37,6 +38,7 @@ class Sova(commands.Bot):
         await db.open()
         core.bot = self
         self.add_dynamic_items(core.ActButton, core.RapButton, core.AccessButton, candidates.CandButton)
+        self.add_view(voice.RoomPanel())  # кнопки приватних кімнат працюють і після перезапуску
         await slash.setup(self)
         self.runner = await api.start()
         asyncio.create_task(tunnel.run())
@@ -68,6 +70,11 @@ class Sova(commands.Bot):
             await slash.ensure_panel()
         except discord.HTTPException as e:
             log.warning("Панель не оновлено: %s", e)
+        try:
+            await voice.ensure_trigger(g)
+            await voice.cleanup(g)
+        except discord.HTTPException as e:
+            log.warning("Приватні кімнати: %s", e)
         log.info("Сова на зв'язку як %s · сервер %s", self.user, g.name)
 
     async def on_member_join(self, member: discord.Member):
@@ -83,6 +90,11 @@ class Sova(commands.Bot):
                 await member.send(embed=embed, view=view)
         except discord.Forbidden:
             log.info("Не вдалося привітати %s (закриті особисті або немає доступу до каналу)", member)
+
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        g = core.guild()
+        if g and member.guild.id == g.id:
+            await voice.on_voice(member, before, after)
 
     async def on_member_remove(self, member: discord.Member):
         g = core.guild()
