@@ -11,6 +11,7 @@ import discord
 
 import config
 import core
+import notify
 import docpost
 import overrides as ov
 import style
@@ -95,7 +96,8 @@ def can_decide(u: dict, c: dict) -> bool:
     if c["author"] == u["sid"]:
         return False
     # етап начальника управління за його відсутності може пройти й Голова чи заступник
-    return {"head": is_head_for(u, c["dept"]), "mgmt": is_mgmt_for(u, c["dept"]) or is_chief(u), "chief": is_chief(u),
+    # етап начальника відділу (вакансія, справу передано начальнику) теж може пройти Голова чи заступник — інакше справа застрягне
+    return {"head": is_head_for(u, c["dept"]) or is_chief(u), "mgmt": is_mgmt_for(u, c["dept"]) or is_chief(u), "chief": is_chief(u),
             "prosecutor": is_prosecutor(u)}.get(c["status"], False)
 
 
@@ -145,8 +147,8 @@ async def transfer(u: dict, cid: int, sid: int, note: str = "") -> dict:
                 style.kv("СПРАВА", f"«{c['data'].get('title', '')}»", bold=True), style.kv("ЕТАП", STAGE_NAME[c["status"]]),
                 style.kv("ПЕРЕДАВ", f"{rank_name(u['rank'])} {u['name']}"), *( [style.kv("ПРИМІТКА", note.strip()[:300])] if note.strip() else [] ),
                 style.rule(), style.c("Справа тепер у вашому реєстрі кейс-файлів у ЄІС «Сова»."))), view=style.site_view())
-    except discord.HTTPException:
-        pass
+    except Exception as ex:  # справу вже передано — особисте повідомлення не обов'язкове
+        log.info("КФ-%04d: новому виконавцю не написано в особисті: %s", cid, ex)
     return c
 
 
@@ -268,6 +270,7 @@ async def submit(u: dict, cid: int) -> dict:
                  nxt, REACH[nxt], json.dumps(h, ensure_ascii=False), now_ms(), cid)
     c = await get(cid)
     await journal(c, u, "Передано на погодження")
+    notify.later(notify.next_step("cases", cid, u))
     return c
 
 
@@ -322,6 +325,11 @@ async def decide(u: dict, cid: int, decision: str, note: str = "") -> dict:
                  nxt, REACH[nxt], json.dumps(h, ensure_ascii=False), now_ms(), now_ms() if nxt == "approved" else None, cid)
     c = await get(cid)
     await journal(c, u, label)
+    if c["status"] in ON_REVIEW:
+        notify.later(notify.next_step("cases", cid, u))
+    else:
+        notify.later(notify.outcome("cases", cid, c["author"], {"approved": "Затверджено Генеральним прокурором", "draft": "Повернуто на доопрацювання",
+                                                                "rejected": "Відмовлено"}.get(c["status"], label), u, note))
     return c
 
 
@@ -487,4 +495,6 @@ async def visible(u: dict) -> list[dict]:
 
 
 async def pending(u: dict) -> int:
-    return len([c for c in await visible(u) if can_decide(u, c)])
+    """Лічильник у меню (кожен /api/me): лише справи на погодженні й лише потрібні поля — без розбору фабул."""
+    rows = await db.all("SELECT id, dept, author, status FROM cases WHERE status IN ('head','mgmt','chief','prosecutor')")
+    return len([c for c in rows if can_decide(u, c)])

@@ -154,6 +154,7 @@ table.t tr:hover td:first-child{box-shadow:inset 2px 0 0 var(--gold)}
 .dz-checks li::before{font:700 12px var(--mono);width:12px}
 .dz-checks li.ok::before{content:"✔";color:var(--ok)}
 .dz-checks li.bad{border-color:rgba(212,96,90,.45);color:#f0b1ac}
+.dz-checks li.bad::before{content:"✗";color:var(--bad,#d4605a)}
 .dz-checks li.bad::before{content:"✖";color:var(--bad)}
 .dz-grid{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line)}
 .dz-grid section{padding:16px 22px;border-bottom:1px solid var(--line);min-width:0}

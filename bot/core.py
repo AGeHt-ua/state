@@ -243,18 +243,29 @@ async def member_of(discord_id: str | int, fresh: bool = False) -> discord.Membe
         return None
 
 
+class DiscordDown(Fail):
+    """Discord недоступний (бот ще не підключився, перебій, обмеження запитів) — а свіжих ролей у кеші немає."""
+    def __init__(self, msg: str = "Discord тимчасово не відповідає. Спробуйте за хвилину."):
+        super().__init__(msg, 503)
+
+
+ROLES_FRESH, ROLES_STALE_OK = 60, 15 * 60  # секунд: звичайне оновлення ролей / скільки довіряти кешу під час збою Discord
+
+
 async def member_roles(discord_id: str, fresh: bool = False) -> set[int] | None:
     hit = _roles_cache.get(discord_id)
-    if hit and not fresh and time.time() - hit[0] < 60:
+    if hit and not fresh and time.time() - hit[0] < ROLES_FRESH:
         return hit[1]
     try:
-        m = await member_of(discord_id, fresh=True)
-    except discord.HTTPException as ex:
-        # Discord перевантажений (503) чи обмежив запити: працюємо з останніми відомими ролями, а не валимо сайт помилкою 500
-        if hit:
-            log.warning("Discord не відповів (%s) — ролі %s з кешу", getattr(ex, "status", ex), discord_id)
+        m = await asyncio.wait_for(member_of(discord_id, fresh=True), 5)
+    except (discord.HTTPException, Fail, asyncio.TimeoutError) as ex:
+        if isinstance(ex, Fail) and ex.status != 503:
+            raise
+        # Discord перевантажений, обмежив запити чи бот ще не підключився: працюємо з останніми відомими ролями, а не валимо сайт
+        if hit and time.time() - hit[0] < ROLES_STALE_OK:
+            log.warning("Discord не відповів (%s) — ролі %s з кешу", getattr(ex, "status", type(ex).__name__), discord_id)
             return hit[1]
-        raise Fail("Discord тимчасово не відповідає. Спробуйте за хвилину.", 503)
+        raise DiscordDown()
     roles = {r.id for r in m.roles} if m else None
     _roles_cache[discord_id] = (time.time(), roles)
     return roles
@@ -270,12 +281,21 @@ async def access(u: dict, fresh: bool = False) -> dict:
         return {"ok": False, "why": "Доступ до сайту заблоковано адміністратором"}
     if not u["discord_id"]:
         return {"ok": False, "why": "Обліковий запис не прив'язано до Discord"}
-    roles = await member_roles(u["discord_id"], fresh)
+    try:
+        roles = await member_roles(u["discord_id"], fresh)
+    except DiscordDown:
+        # Discord недоступний і ролей у кеші немає (напр. одразу після перезапуску): пускаємо за карткою в базі,
+        # щоб кабінет працював; ролі звіримо, щойно Discord відповість
+        log.warning("Discord недоступний — доступ №%s за карткою в базі", u["sid"])
+        return {"ok": True, "rank": u["rank"], "dept": u["dept"], "degraded": True}
     if roles is None:
         return {"ok": False, "why": "Вас немає на Discord-сервері СБУ"}
     a = await apply_roles(u, roles)
     if a.get("changed"):
-        await set_nick(u)
+        try:
+            await set_nick(u)
+        except Exception as ex:  # нікнейм — не привід відмовити у вході
+            log.warning("Нікнейм №%s не оновлено: %s", u["sid"], ex)
     return a
 
 
@@ -501,6 +521,8 @@ CHANNEL_KEYS = [k for k in DEPTS if DEPTS[k]["channel"]] + ["audit", "files", "b
 
 
 async def channel(key: str) -> discord.TextChannel | None:
+    if bot is None or not bot.is_ready():  # Discord ще не підключено — повідомлення пропускаємо, дія не падає
+        return None
     ids = await db.get_setting("channels", {})
     cid = ov.channels.get(key) or config.CHANNELS.get(key) or ids.get(key)  # спершу — з адмін-панелі
     if not cid:
@@ -509,7 +531,7 @@ async def channel(key: str) -> discord.TextChannel | None:
     if ch is None:
         try:
             ch = await bot.fetch_channel(int(cid))
-        except (discord.NotFound, discord.Forbidden):
+        except (discord.HTTPException, ValueError):
             return None
     return ch
 

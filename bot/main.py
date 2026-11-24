@@ -24,6 +24,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("sova")
 
 
+_panel_task: asyncio.Task | None = None
+
+
 class Sova(commands.Bot):
     def __init__(self, members: bool):
         intents = discord.Intents.default()
@@ -35,13 +38,11 @@ class Sova(commands.Bot):
         self.members_intent = members
 
     async def setup_hook(self):
-        await db.open()
+        # база, API й тунель уже запущені в run_bot() — сайт працює, навіть поки Discord недоступний
         core.bot = self
         self.add_dynamic_items(core.ActButton, core.RapButton, core.AccessButton, candidates.CandButton, candidates.ClaimButton)
         self.add_view(voice.RoomPanel())  # кнопки приватних кімнат працюють і після перезапуску
         await slash.setup(self)
-        self.runner = await api.start()
-        asyncio.create_task(tunnel.run())
 
     async def on_ready(self):
         g = core.guild()
@@ -51,8 +52,9 @@ class Sova(commands.Bot):
             return
         if not backup_loop.is_running():  # бекапи — першими: збій Discord нижче не повинен їх зупинити
             backup_loop.start()
-        if not getattr(self, "_panel_loop", None):
-            self._panel_loop = asyncio.create_task(slash.panel_loop())
+        global _panel_task
+        if _panel_task is None or _panel_task.done():  # один цикл панелі на весь процес, і після перепідключень
+            _panel_task = asyncio.create_task(slash.panel_loop())
         try:
             await core.ensure_channels(g)
         except discord.Forbidden:
@@ -136,9 +138,26 @@ async def api_only():
 
 
 async def run_bot():
-    members = await members_intent_enabled(config.DISCORD_TOKEN)
-    async with Sova(members) as bot:
-        await bot.start(config.DISCORD_TOKEN)
+    """Спершу база, API й тунель (сайт доступний одразу), потім Discord — з повторними спробами:
+    перебій Discord під час запуску більше не зупиняє весь процес разом із сайтом."""
+    await db.open()
+    await api.start()
+    asyncio.create_task(tunnel.run())
+    delay = 15
+    while True:
+        try:
+            members = await members_intent_enabled(config.DISCORD_TOKEN)
+            async with Sova(members) as bot:
+                await bot.start(config.DISCORD_TOKEN)
+            log.warning("З'єднання з Discord закрито — перепідключення за %s с", delay)
+        except discord.LoginFailure:
+            log.error("Discord відхилив токен бота (DISCORD_TOKEN). Сайт працює без Discord; виправте токен і перезапустіть сервер.")
+            await asyncio.Event().wait()
+        except Exception:
+            log.exception("Discord недоступний — сайт працює далі, повтор підключення за %s с", delay)
+        core.bot = None
+        await asyncio.sleep(delay)
+        delay = min(delay * 2, 300)
 
 
 if __name__ == "__main__":

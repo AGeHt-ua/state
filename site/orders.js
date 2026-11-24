@@ -87,7 +87,7 @@ async function apImage(id) {
 S.docImageFns.np = apImage;
 
 async function view(head) {
-  const [staff, list] = await Promise.all([call("/api/structure"), call("/api/orders"), S.loadTags()]);
+  const [staff, list] = await Promise.all([S.cached("/api/structure"), call("/api/orders"), S.loadTags()]);
   S.cache.apStaff = staff;
   S.cache.apList = Object.fromEntries(list.map((o) => [o.id, o]));
   const f = st.f, D = S.META().depts, R = S.META().ranks, me = S.ME().me;

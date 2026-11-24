@@ -294,3 +294,17 @@ body.viewer-on{overflow:hidden}
 .docgo .i{width:190px;padding:6px 10px;font-size:12px}
 @media (max-width:760px){.docgo .i{width:130px}}
 
+
+/* телефони: кнопки переносять текст і досить великі для пальця */
+@media (max-width:760px){.btn.sm{min-height:40px;padding:8px 12px}}
+@media (max-width:460px){.btn{white-space:normal;text-align:center;line-height:1.25}}
+
+/* «Чекає мене» на головній */
+.hm-inbox{margin:0 0 18px}
+.ib-list{display:grid;gap:6px;margin-top:8px}
+.ib-it{display:grid;grid-template-columns:auto auto 1fr auto;gap:10px;align-items:center;text-align:left;width:100%;padding:9px 12px;border:1px solid var(--line2);background:var(--panel2);color:var(--fg);border-radius:3px;cursor:pointer}
+.ib-it:hover,.ib-it:focus-visible{border-color:var(--gold,#c9a24d)}
+.ib-kind{font:500 11px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.ib-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ib-t i{color:var(--muted);font-style:normal}
+.ib-age{font:12px var(--mono);color:var(--muted)}.ib-age.old{color:var(--bad,#d4605a);font-weight:700}
+@media (max-width:640px){.ib-it{grid-template-columns:1fr auto}.ib-kind{grid-column:1/-1}.ib-t{grid-column:1/-1;white-space:normal}}

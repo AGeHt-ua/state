@@ -162,7 +162,8 @@
 </div></div></div>
 <script>
 (() => {
-  const API = (new URLSearchParams(location.search).get("api") || "https://sova.d-f-12339.workers.dev").replace(/\/$/, "");
+  const OV = new URLSearchParams(location.search).get("api") || "";  // лише локальна перевірка: анкета не повинна піти на чужий сервер
+  const API = (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(OV) ? OV : "https://sova.d-f-12339.workers.dev").replace(/\/$/, "");
   const $ = (s) => document.querySelector(s);
   const f = $("#f"), btn = $("#btn"), err = $("#err"), pv = $("#pv"), photo = $("#photo"), wbv = $("#wbv"), work = $("#work");
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

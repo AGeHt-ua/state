@@ -264,6 +264,7 @@ def now_ms() -> int:
 class DB:
     def __init__(self):
         self.conn: aiosqlite.Connection | None = None
+        self.maintenance = False  # відновлення з бекапу: база на кілька секунд закрита
 
     async def open(self):
         self.conn = await aiosqlite.connect(DB_PATH)

@@ -29,6 +29,7 @@ import memo
 import news
 import orders
 import petitions
+import notify
 import config
 import core
 import review
@@ -51,6 +52,8 @@ async def cors_and_errors(request: web.Request, handler):
         resp = web.Response(status=204)
     else:
         try:
+            if db.maintenance or db.conn is None:
+                raise Fail("Триває обслуговування бази «Сови». Спробуйте за хвилину.", 503)
             resp = await handler(request)
         except Fail as e:
             resp = web.json_response({"error": str(e)}, status=e.status)
@@ -269,6 +272,7 @@ async def me(request):
         "tasks": tasks.rights(u) if u["dept"] != "prosecutor" else None,
         "control": depts.control_depts(u),
         "admin": core.is_admin(u), "curator": bool(u.get("curator_ro")),
+        "auditView": u["rank"] >= ov.P("audit_view") or core.has_dept_role(u, "vkpp"),
         "kb": {"sync": u["rank"] >= ov.P("kb_sync"), "lib": library.can_edit_lib(u), "exam": library.is_examiner(u), "memo": memo.can_edit(u)},
         "appoint": {"prepare": True, "sign": orders.can_sign(u), "scope": orders.scope(u)} if orders.can_prepare(u) else None,
         "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
@@ -326,6 +330,13 @@ async def pet_delete(request):
     u = await auth(request)
     await petitions.delete(u, int(request.match_info["id"]))
     return web.json_response({"ok": True})
+
+
+@routes.get("/api/inbox")
+async def inbox(request):
+    """«Чекає мене»: документи з усіх розділів, що чекають рішення саме цієї людини."""
+    u = await auth(request)
+    return web.json_response(await notify.inbox(u))
 
 
 @routes.get("/api/fin")
@@ -946,7 +957,7 @@ async def bonus_status(request):
 # ---------------------------------------------------------------- дисципліна
 async def disc_pending(u: dict) -> int:
     n = 0
-    if u["rank"] == 15:
+    if u["rank"] >= ov.P("disc_appeal"):
         rows = await db.all("SELECT appeal FROM discipline WHERE status='active' AND appeal IS NOT NULL")
         n += len([r for r in rows if not json.loads(r["appeal"]).get("decision")])
     if discipline.can_resolve(u):
@@ -1544,11 +1555,11 @@ async def hr_list(request):
         c["extra"] = json.loads(c.get("extra") or "null")
         try:
             c["photoUrl"] = await core.file_url(c["photo"]) if c.get("photo") else None
-        except Fail:
+        except Exception:  # фото видалено в Discord чи Discord не відповідає — анкета все одно показується
             c["photoUrl"] = None
         try:
             c["workUrl"] = await core.file_url(c["extra"]["work"]) if c["extra"] and c["extra"].get("work") else None
-        except Fail:
+        except Exception:
             c["workUrl"] = None
     for a in acc_done:
         a["reviewerName"] = nm.get(a["reviewer"])
@@ -1559,6 +1570,8 @@ async def hr_list(request):
 async def hr_cand(request):
     u = await auth(request)
     b = await body(request)
+    if b.get("decision") not in ("ok", "rej"):
+        raise Fail("Невідоме рішення.")
     text = await candidates.decide(int(request.match_info["id"]), await reviewer_member(u), b.get("decision"), (b.get("note") or "").strip())
     return web.json_response({"text": text})
 
@@ -1689,6 +1702,7 @@ async def start() -> web.AppRunner:
     asyncio.create_task(depts.weekly_loop())      # щонеділі — тижневі звіти відділів у Discord
     asyncio.create_task(tasks.weekly_loop())      # завдання тижня: повтори, нагадування, недільний підсумок
     asyncio.create_task(structure_loop())
+    asyncio.create_task(notify.remind_loop())     # особисті нагадування: документ чекає понад 24 / 48 год
     asyncio.create_task(kb.ensure_seeded())
     return runner
 

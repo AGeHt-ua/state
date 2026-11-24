@@ -1,5 +1,6 @@
 """Дисципліна: накази про стягнення, строки дії, оскарження, службові перевірки ВВБ.
 За Регламентом «Дисциплінарні стягнення СБУ» та р. VII Внутрішнього статуту СБУ."""
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -7,6 +8,7 @@ from datetime import datetime, timezone
 import discord
 
 import core
+import notify
 import docpost
 import overrides as ov
 import style
@@ -182,7 +184,23 @@ async def issue(u: dict, b: dict) -> dict:
     reason = str(b.get("reason") or "").strip()[:1500]
     if not reason:
         raise Fail("Опишіть обставини порушення.")
-    fine = max(0, int(float(b.get("fine") or 0))) if kind == "fine" else 0
+    insp = None
+    if b.get("inspection"):
+        try:
+            insp = await insp_get(int(b["inspection"]))
+        except (TypeError, ValueError):
+            raise Fail("Некоректний номер справи ВВБ.")
+        if insp["sid"] != target["sid"]:
+            raise Fail("Справа ВВБ стосується іншого співробітника.")
+        if insp.get("order_id"):
+            raise Fail("За цією справою наказ уже видано.")
+        if not ((insp["status"] == "closed" and (u["rank"] >= ov.P("disc_chief") or can_resolve(u)))
+                or (insp["status"] == "sent" and can_resolve(u))):
+            raise Fail("Заходи за справою ВВБ застосовують після затвердження висновку (резолюція Голови).", 403)
+    try:
+        fine = max(0, int(float(b.get("fine") or 0))) if kind == "fine" else 0
+    except (TypeError, ValueError):
+        raise Fail("Некоректна сума штрафу.")
     if kind == "fine" and not fine:
         raise Fail("Вкажіть суму штрафу.")
     t = now_ms()
@@ -190,16 +208,22 @@ async def issue(u: dict, b: dict) -> dict:
     h = [{"t": t, "sid": u["sid"], "name": u["name"], "action": "issue"}]
     oid = await db.run("INSERT INTO discipline(sid,dept,kind,violation,reason,fine,status,issued_by,issued,expires,history,inspection) "
                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", target["sid"], target["dept"], kind, v[0], reason, fine, "active", u["sid"], t, expires,
-                       json.dumps(h, ensure_ascii=False), b.get("inspection"))
+                       json.dumps(h, ensure_ascii=False), insp["id"] if insp else None)
     o = await get(oid)
+    if insp:  # наказ на резолюції Голови — це й затвердження висновку
+        res = insp.get("resolution") if insp["status"] == "closed" else json.dumps(
+            {"decision": "approve", "comment": "Застосовано заходи наказом", "sid": u["sid"], "name": u["name"], "rankName": rank_name(u["rank"]), "t": t},
+            ensure_ascii=False)
+        await db.run("UPDATE inspections SET status='closed', order_id=?, resolution=?, updated=? WHERE id=?", oid, res, t, insp["id"])
     await apply(u, o, target)
-    if b.get("inspection"):
-        await db.run("UPDATE inspections SET status='closed', order_id=?, updated=? WHERE id=?", oid, t, int(b["inspection"]))
     await db.audit(u["sid"], f"Стягнення: {KINDS[kind][0]}", target["sid"], f"НС-{oid:04d} · {v[1][:80]}")
-    await journal(o, target, u, "Оголошено наказ", tag=b.get("tag"))
-    reps = [x for x in await active_blocking(target["sid"]) if x["kind"] == "reprimand"]
-    if len(reps) >= 3:  # п. 3.4
-        await alert_three(target, reps)
+    try:  # наказ уже чинний — збій Discord не повертає помилку (інакше повторне натискання дасть дубль)
+        await journal(o, target, u, "Оголошено наказ", tag=b.get("tag"))
+        reps = [x for x in await active_blocking(target["sid"]) if x["kind"] == "reprimand"]
+        if len(reps) >= 3:  # п. 3.4
+            await alert_three(target, reps)
+    except Exception as ex:
+        log.warning("НС-%04d: картку в Discord не надіслано: %s", oid, ex)
     return o
 
 
@@ -217,10 +241,13 @@ async def apply(u: dict, o: dict, target: dict):
     else:
         return
     t2 = await core.user(target["sid"])
-    await core.sync_roles(t2, f"Сова: наказ НС-{o['id']:04d}")
-    if o["kind"] == "demote":
-        await core.set_nick(t2)
-    await core.send_audit(t2, u)
+    try:  # звання / статус уже змінено в базі; Discord — найкраще, що можемо, без помилки користувачу
+        await core.sync_roles(t2, f"Сова: наказ НС-{o['id']:04d}")
+        if o["kind"] == "demote":
+            await core.set_nick(t2)
+        await core.send_audit(t2, u)
+    except Exception as ex:
+        log.warning("НС-%04d: ролі/нікнейм у Discord не оновлено: %s", o["id"], ex)
 
 
 async def appeal(u: dict, oid: int, text: str) -> dict:
@@ -245,7 +272,7 @@ async def appeal(u: dict, oid: int, text: str) -> dict:
 @core.serialized("ns")
 async def decide(u: dict, oid: int, action: str, note: str = "") -> dict:
     """Голова СБУ: розгляд скарги (uphold/cancel) або дострокове зняття догани (lift)."""
-    if u["rank"] < 15:
+    if u["rank"] < ov.P("disc_appeal"):
         raise Fail("Це рішення ухвалює Голова СБУ.", 403)
     o = await get(oid)
     target = await core.user(o["sid"])
@@ -383,16 +410,38 @@ def _ihist(i: dict | None, u: dict, action: str, note: str = "") -> str:
     return json.dumps(h, ensure_ascii=False)
 
 
+_regno_lock = asyncio.Lock()  # дві справи, створені одночасно, не отримують однаковий номер
+
+
 async def _regno() -> str:
-    """Реєстраційний номер справи: ВВБ-РІК-NNN (наскрізна нумерація в межах року)."""
+    """Реєстраційний номер справи: ВВБ-РІК-NNN (наскрізна нумерація в межах року; береться найбільший, а не кількість)."""
     year = datetime.now(core.TZ).year if getattr(core, "TZ", None) else datetime.now(timezone.utc).year
-    n = (await db.one("SELECT COUNT(*) AS n FROM inspections WHERE regno LIKE ?", f"ВВБ-{year}-%"))["n"]
+    rows = await db.all("SELECT regno FROM inspections WHERE regno LIKE ?", f"ВВБ-{year}-%")
+    n = max([int(r["regno"].rsplit("-", 1)[1]) for r in rows if r["regno"].rsplit("-", 1)[1].isdigit()] or [0])
     return f"ВВБ-{year}-{n + 1:03d}"
+
+
+def insp_lead(u: dict) -> bool:
+    """Начальник / заступник ВВБ, керівництво СБУ або той, хто ставить резолюцію: бачить і веде всі справи."""
+    return is_vvb_head(u) or u["rank"] >= 14 or can_resolve(u)
+
+
+def insp_can_view(u: dict, i: dict) -> bool:
+    """Справу не бачить її фігурант (крім Голови); рядовий ВВБ — лише справи, які веде сам."""
+    if i["sid"] == u["sid"] and u["rank"] < 15:
+        return False
+    return insp_lead(u) or (is_vvb(u) and i["author"] == u["sid"])
+
+
+def insp_can_edit(u: dict, i: dict) -> bool:
+    return is_vvb(u) and insp_can_view(u, i) and (i["author"] == u["sid"] or insp_lead(u))
 
 
 async def insp_save(u: dict, b: dict, iid: int | None = None) -> dict:
     if not is_vvb(u):
         raise Fail("Службові перевірки й розслідування проводить ВВБ.", 403)
+    if str(b.get("sid") or "") == str(u["sid"]):
+        raise Fail("Відкрити справу щодо себе не можна.", 403)
     try:
         target = await core.user(int(b.get("sid") or 0))
     except (TypeError, ValueError):
@@ -425,14 +474,17 @@ async def insp_save(u: dict, b: dict, iid: int | None = None) -> dict:
     if iid:
         async with core.doc_lock("insp", iid):
             i = await insp_get(iid)
+            if not insp_can_edit(u, i):
+                raise Fail("Редагувати справу може інспектор, який її веде, або керівництво ВВБ.", 403)
             if i["status"] not in ("open", "paused"):
                 raise Fail("Справу вже передано на погодження — редагувати не можна.")
             await db.run("UPDATE inspections SET sid=?, title=?, materials=?, conclusion=?, recommend=?, files=?, kind=?, data=?, history=?, updated=? WHERE id=?",
                          *vals, _ihist(i, u, "edit"), now_ms(), iid)
     else:
-        iid = await db.run("INSERT INTO inspections(sid,title,materials,conclusion,recommend,files,kind,data,status,author,created,updated,regno,visas,history) "
-                           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", *vals, "open", u["sid"], now_ms(), now_ms(), await _regno(), "[]",
-                           _ihist(None, u, "create"))
+        async with _regno_lock:
+            iid = await db.run("INSERT INTO inspections(sid,title,materials,conclusion,recommend,files,kind,data,status,author,created,updated,regno,visas,history) "
+                               "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", *vals, "open", u["sid"], now_ms(), now_ms(), await _regno(), "[]",
+                               _ihist(None, u, "create"))
     return await insp_get(iid)
 
 
@@ -441,6 +493,10 @@ async def insp_move(u: dict, iid: int, to: str, note: str = "") -> dict:
     async with core.doc_lock("insp", iid):
         i = await insp_get(iid)
         st, chief = i["status"], u["rank"] >= ov.P("disc_chief")
+        if not insp_can_view(u, i):
+            raise Fail("Справу не знайдено.", 404)
+        if to in ("paused", "open", "head", "sent") and st in ("open", "paused") and not insp_can_edit(u, i):
+            raise Fail("Рухати справу може інспектор, який її веде, або керівництво ВВБ.", 403)
         resolve = can_resolve(u)  # резолюція по висновку (Голова; поріг — адмін-панель → Доступи «insp_approve»)
         note = (note or "").strip()
         if to == "paused" and st == "open" and is_vvb(u):
@@ -457,6 +513,7 @@ async def insp_move(u: dict, iid: int, to: str, note: str = "") -> dict:
             await db.run("UPDATE inspections SET status=?, visas=?, completed=?, history=?, updated=? WHERE id=?", nxt,
                          json.dumps(visas, ensure_ascii=False), now_ms(), _ihist(i, u, "submit"), now_ms(), iid)
             await insp_notice(await insp_get(iid), u, "head" if nxt == "head" else "sent")
+            notify.later(notify.next_step("insp", iid, u))
         elif to == "sent" and st == "head" and (is_vvb_head(u) or chief):
             if i["author"] == u["sid"] and not chief:
                 raise Fail("Власну справу погоджує інший керівник ВВБ.", 403)
@@ -464,10 +521,12 @@ async def insp_move(u: dict, iid: int, to: str, note: str = "") -> dict:
             await db.run("UPDATE inspections SET status='sent', visas=?, history=?, updated=? WHERE id=?",
                          json.dumps(visas, ensure_ascii=False), _ihist(i, u, "visa", note), now_ms(), iid)
             await insp_notice(await insp_get(iid), u, "sent")
+            notify.later(notify.next_step("insp", iid, u))
         elif to == "closed" and st == "sent" and resolve:
             res = {"decision": "approve", "comment": note[:1000], "sid": u["sid"], "name": u["name"], "rankName": rank_name(u["rank"]), "t": now_ms()}
             await db.run("UPDATE inspections SET status='closed', resolution=?, history=?, updated=? WHERE id=?",
                          json.dumps(res, ensure_ascii=False), _ihist(i, u, "approve", note), now_ms(), iid)
+            notify.later(notify.outcome("insp", iid, i["author"], "Висновок затверджено", u, note))
         elif to == "return" and ((st == "head" and (is_vvb_head(u) or chief)) or (st == "sent" and resolve)):
             if not note:
                 raise Fail("Вкажіть, що доопрацювати.")
@@ -475,6 +534,7 @@ async def insp_move(u: dict, iid: int, to: str, note: str = "") -> dict:
                 if st == "sent" else None
             await db.run("UPDATE inspections SET status='open', visas='[]', resolution=?, history=?, updated=? WHERE id=?",
                          json.dumps(res, ensure_ascii=False) if res else None, _ihist(i, u, "return", note), now_ms(), iid)
+            notify.later(notify.outcome("insp", iid, i["author"], "Повернуто на доопрацювання", u, note))
         elif to == "deleted" and (chief or (i["author"] == u["sid"] and st in ("open", "paused"))):
             await db.run("UPDATE inspections SET status='deleted', history=?, updated=? WHERE id=?", _ihist(i, u, "delete"), now_ms(), iid)
             return i
@@ -531,7 +591,8 @@ async def listing(u: dict) -> dict:
         journal_rows = [o for o in rows if o["dept"] in ds]
     else:
         journal_rows = []
-    insp = await db.all("SELECT * FROM inspections WHERE status!='deleted' ORDER BY updated DESC LIMIT 100") if (is_vvb(u) or u["rank"] >= 14 or can_resolve(u)) else []
+    insp = [i for i in await db.all("SELECT * FROM inspections WHERE status!='deleted' ORDER BY updated DESC LIMIT 300")
+            if insp_can_view(u, i)][:100] if (is_vvb(u) or u["rank"] >= 14 or can_resolve(u)) else []
     for i in insp:
         i["files"], i["data"], i["visas"], i["history"] = _j(i["files"], "[]"), _j(i.get("data"), "{}"), _j(i.get("visas"), "[]"), _j(i.get("history"), "[]")
         i["resolution"] = _j(i.get("resolution"), "{}") or None
@@ -548,7 +609,7 @@ async def listing(u: dict) -> dict:
         "journal": [out(o, people) for o in journal_rows],
         "inspections": [{**i, "target": people.get(i["sid"]), "author": people.get(i["author"])} for i in insp],
         "insp": {"kinds": INSP_KINDS, "status": INSP_STATUS, "mats": MAT_TYPES, "grifs": GRIFS},
-        "rights": {"journal": can_journal(u), "vvb": is_vvb(u), "vvbHead": is_vvb_head(u), "resolve": can_resolve(u), "chief": u["rank"] >= ov.P("disc_chief"), "head": u["rank"] == 15,
+        "rights": {"journal": can_journal(u), "vvb": is_vvb(u), "vvbHead": is_vvb_head(u), "resolve": can_resolve(u), "chief": u["rank"] >= ov.P("disc_chief"), "head": u["rank"] >= ov.P("disc_appeal"),
                    "kinds": kinds_for(u)},
         "kinds": {k: v[0] for k, v in KINDS.items()},
         "violations": [{"id": v[0], "t": v[1], "kinds": v[2], "fine": v[3]} for v in VIOLATIONS],

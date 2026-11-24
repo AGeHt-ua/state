@@ -12,6 +12,7 @@ import logging
 import discord
 
 import core
+import notify
 import docpost
 import overrides as ov
 import style
@@ -204,6 +205,7 @@ async def appoint(u: dict, b: dict) -> dict:
         return await sign(u, oid, tag=b.get("tag"))
     o = await get(oid)
     await journal(o, u, f"Проєкт наказу підготовлено · далі: {STAGE_NAME[route[0]]}", tag=b.get("tag"))
+    notify.later(notify.next_step("np", oid, u))
     return o
 
 
@@ -230,6 +232,7 @@ async def approve(u: dict, oid: int) -> dict:
     await db.run("UPDATE orders SET stage=?, visas=? WHERE id=? AND status='draft'", nxt, json.dumps(visas, ensure_ascii=False), oid)
     o = await get(oid)
     await journal(o, u, f"Погоджено ({STAGE_NAME[st]}) · далі: {STAGE_NAME[nxt]}")
+    notify.later(notify.next_step("np", oid, u))
     return o
 
 
@@ -244,6 +247,7 @@ async def resubmit(u: dict, oid: int) -> dict:
     await db.run("UPDATE orders SET status='draft', stage=?, visas='[]', note=NULL, signed_by=NULL, signed=NULL WHERE id=?", _route(o)[0], oid)
     o = await get(oid)
     await journal(o, u, f"Проєкт подано знову · далі: {STAGE_NAME[stage_of(o)]}")
+    notify.later(notify.next_step("np", oid, u))
     return o
 
 
@@ -274,13 +278,22 @@ async def sign(u: dict, oid: int, tag: str | None = None) -> dict:
         drop = [k for k in OPS_DEPTS if k not in keep]  # начальник управління — ролі лише своїх відділів, інші знімаємо
     else:
         drop = [p["dept"]] if p["dept"] in OPS_DEPTS and p["dept"] not in keep else []
-    roles_res = await apply_roles(p["sid"], o["extra"], f"Сова: наказ НП-{oid:04d}", drop_extra=drop)
+    # наказ уже чинний у базі: збій Discord далі не скасовує його й не повертає користувачу помилку
+    try:
+        warn = core.roles_problem(await apply_roles(p["sid"], o["extra"], f"Сова: наказ НП-{oid:04d}", drop_extra=drop))
+    except Exception as ex:
+        log.warning("НП-%04d: ролі в Discord не оновлено: %s", oid, ex)
+        warn = "Discord зараз не відповідає — ролі за наказом не оновлено. Натисніть «Синхронізувати» в картці співробітника пізніше."
     await db.audit(u["sid"], "Призначення на посаду", p["sid"],
                    f"{rank_name(p['rank'])} / {DEPTS[p['dept']]['s']} → {to_label(o).replace(' · ', ' / ', 1)} · НП-{oid:04d}")
     o = await get(oid)
-    await journal(o, u, "Наказ підписано й оголошено", tag=tag)
-    await core.send_audit(await core.user(p["sid"]), u)
-    if warn := core.roles_problem(roles_res):
+    try:
+        await journal(o, u, "Наказ підписано й оголошено", tag=tag)
+        notify.later(notify.outcome("np", oid, o["by_sid"], "Підписано — наказ чинний", u))
+        await core.send_audit(await core.user(p["sid"]), u)
+    except Exception as ex:
+        log.warning("НП-%04d: картку в Discord не оновлено: %s", oid, ex)
+    if warn:
         await db.audit(u["sid"], "⚠ Ролі не збігаються з наказом", p["sid"], f"НП-{oid:04d}: {warn}"[:500])
     return {**o, "rolesWarning": warn}
 
@@ -297,6 +310,7 @@ async def reject(u: dict, oid: int, note: str) -> dict:
     await db.run("UPDATE orders SET status='rejected', signed_by=?, signed=?, note=? WHERE id=?", u["sid"], now_ms(), (note or "")[:300], oid)
     o = await get(oid)
     await journal(o, u, "Проєкт наказу відхилено" + (f": {note}" if note else ""))
+    notify.later(notify.outcome("np", oid, o["by_sid"], "Відхилено — можна виправити й подати знову", u, note))
     return o
 
 
@@ -344,7 +358,11 @@ async def cancel(u: dict, oid: int) -> dict:
     warn = None
     if reverted:
         await db.run("UPDATE users SET rank=?, dept=?, since=? WHERE sid=?", o["from_rank"], o["from_dept"], now_ms(), o["sid"])
-        warn = core.roles_problem(await apply_roles(o["sid"], None, f"Сова: скасування наказу НП-{oid:04d}", drop_extra=o["extra"]))
+        try:
+            warn = core.roles_problem(await apply_roles(o["sid"], None, f"Сова: скасування наказу НП-{oid:04d}", drop_extra=o["extra"]))
+        except Exception as ex:
+            log.warning("НП-%04d: ролі після скасування не оновлено: %s", oid, ex)
+            warn = "Discord зараз не відповідає — ролі не повернуто. Синхронізуйте співробітника пізніше."
     await db.run("UPDATE orders SET status='deleted', cancelled_by=?, cancelled=? WHERE id=?", u["sid"], now_ms(), oid)
     await db.audit(u["sid"], "Скасовано наказ про призначення", o["sid"],
                    f"НП-{oid:04d}" + (" · звання й підрозділ повернуто" if reverted else " · звання вже змінювалось, повернення не виконано"))

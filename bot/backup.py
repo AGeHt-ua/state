@@ -1,4 +1,5 @@
 """Бекапи бази: кожні N годин стиснена копія йде в канал #сова-бекапи і лишається на диску."""
+import asyncio
 import gzip
 import logging
 import os
@@ -25,9 +26,12 @@ async def make_backup(reason: str) -> tuple[str, int]:
         raw.unlink()
     await db.snapshot(str(raw))
     gz = raw.with_suffix(".db.gz")
-    with open(raw, "rb") as src, gzip.open(gz, "wb", compresslevel=9) as dst:
-        shutil.copyfileobj(src, dst)
-    raw.unlink()
+
+    def pack():
+        with open(raw, "rb") as src, gzip.open(gz, "wb", compresslevel=6) as dst:
+            shutil.copyfileobj(src, dst)
+        raw.unlink()
+    await asyncio.to_thread(pack)  # стиснення не блокує бота й сайт
     size = gz.stat().st_size
     prune_local()  # до відправки в Discord: збій відправки не повинен зупиняти чистку старих копій
     ch = await core.channel("backups")
@@ -59,7 +63,7 @@ def prune_local():
 async def restore(data: bytes, filename: str) -> str:
     """Відновлює базу з бекапу. Поточна база спершу зберігається як sova-before-restore-*.db.gz."""
     if filename.endswith(".gz"):
-        data = gzip.decompress(data)
+        data = await asyncio.to_thread(gzip.decompress, data)
     if not data.startswith(SQLITE_MAGIC):
         raise core.Fail("Це не файл бази «Сови».")
     tmp = config.DATA_DIR / "restore.tmp"
@@ -75,6 +79,8 @@ async def restore(data: bytes, filename: str) -> str:
         tmp.unlink()
         raise core.Fail("У файлі немає таблиць «Сови».")
     name, _ = await make_backup("перед відновленням")
+    db.maintenance = True  # запити сайту на ці секунди отримують «зачекайте», а не помилку закритої бази
+    await asyncio.sleep(0.5)
     await db.close()
     for suffix in ("-wal", "-shm"):
         p = config.DB_PATH.with_name(config.DB_PATH.name + suffix)
@@ -82,6 +88,7 @@ async def restore(data: bytes, filename: str) -> str:
             p.unlink()
     os.replace(tmp, config.DB_PATH)
     await db.open()
+    db.maintenance = False
     import overrides as ov
     await ov.load(db)  # доступи, канали й налаштування адмін-панелі — з відновленої бази, інакше старі перезапишуть її
     await core.load_custom_acts()  # пункти звітів з адмін-панелі зберігаються в базі — перечитати з відновленої

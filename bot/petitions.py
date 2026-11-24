@@ -21,6 +21,7 @@ import json
 import logging
 
 import core
+import notify
 import docpost
 import orders
 import overrides as ov
@@ -244,6 +245,8 @@ async def create(u: dict, b: dict) -> dict:
                        _hist(None, u, "create"), t, t, t if status == "approved" else None)
     p = await _row(pid)
     await journal(p, u, "Клопотання подано" if status == "wait" else "Клопотання складено й затверджено", tag=b.get("tag"))
+    if status == "wait":
+        notify.later(notify.next_step("pet", pid, u))
     return p
 
 
@@ -259,6 +262,7 @@ async def edit(u: dict, pid: int, b: dict) -> dict:
                      json.dumps(data, ensure_ascii=False), route[0], _hist(p, u, "edit"), now_ms(), pid)
         p = await _row(pid)
     await journal(p, u, "Клопотання виправлено й подано знову")
+    notify.later(notify.next_step("pet", pid, u))
     return p
 
 
@@ -288,6 +292,11 @@ async def decide(u: dict, pid: int, decision: str, note: str = "") -> dict:
             raise Fail("Невідоме рішення.")
         p = await _row(pid)
     await journal(p, u, label)
+    if p["status"] == "wait":
+        notify.later(notify.next_step("pet", pid, u))
+    else:
+        notify.later(notify.outcome("pet", pid, p["by_sid"], "Повернуто на доопрацювання" if p["status"] == "rejected" else
+                                    ("Повістку погоджено" if is_summons(p["kind"]) else "Затверджено"), u, note if p["status"] == "rejected" else ""))
     return p
 
 

@@ -14,7 +14,7 @@ const ORDER = { draft: 0, head: 1, mgmt: 2, chief: 3, prosecutor: 4, approved: 5
 const SORTS = { upd: ["Останні зміни", (a, b) => b.updated - a.updated], new: ["Нові справи", (a, b) => b.created - a.created],
   old: ["Старі справи", (a, b) => a.created - b.created], stage: ["За етапом", (a, b) => (ORDER[a.status] - ORDER[b.status]) || (b.updated - a.updated)],
   title: ["За назвою", (a, b) => String(a.data.title || "").localeCompare(String(b.data.title || ""), "uk")],
-  dept: ["За відділом", (a, b) => String(a.dept).localeCompare(String(b.dept)) || (b.updated - a.updated)] };
+  dept: ["За відділом", (a, b) => String(dept(a.dept).s).localeCompare(String(dept(b.dept).s), "uk") || (b.updated - a.updated)] };
 const no = (id) => `КФ-${String(id).padStart(4, "0")}`;
 const dept = (k) => S.META().depts[k] || { s: k, n: k, color: "#c9a05a" };
 const UIc = { id: null, edit: null, tab: null, sort: "upd", dept: "" };

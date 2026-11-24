@@ -50,3 +50,5 @@
 .form-grid .sr-h{color:var(--gold,#c9a24d)}
 .sr-view{display:flex;justify-content:center}
 .sr-view .sr-blank{white-space:normal}
+.sp-mat{display:grid;grid-template-columns:200px 1fr 1fr auto;gap:8px;margin-bottom:6px}
+@media (max-width:760px){.sp-mat{grid-template-columns:1fr auto;padding:8px;border:1px solid var(--line);margin-bottom:8px}.sp-mat>select,.sp-mat>input{grid-column:1/-1}.sp-mat>button{grid-column:1/-1;justify-self:end}}

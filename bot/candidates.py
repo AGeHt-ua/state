@@ -364,6 +364,8 @@ async def _decide(cid: int, reviewer: discord.Member, decision: str, note: str =
     c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
     if not c or c["status"] not in ("vvb", "vkpp"):
         raise Fail("Цю анкету вже розглянуто.")
+    if decision not in ("ok", "rej"):
+        raise Fail("Невідоме рішення.")
     stage = c["status"]
     if claim_active(c) and c["claim_by"] != str(reviewer.id):
         raise Fail(f"Анкета в роботі: {c['claim_name']}, до {hhmm(c['claim_until'])}. До цього часу рішення ухвалює лише той, хто її взяв.")

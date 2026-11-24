@@ -25,7 +25,7 @@ function nsDoc(o) {
     <div class="blank-title">Н А К А З</div>
     <div style="text-align:center;margin:-8px 0 18px">№ ${no(o.id)} · ${fmtDT(o.issued)} · Про дисциплінарне стягнення</div>
     <p>За ${esc(o.violationText.toLowerCase())}${o.reason ? ` (${esc(o.reason)})` : ""}, керуючись Дисциплінарними стягненнями СБУ,</p>
-    <p style="text-indent:0"><b>НАКАЗУЮ:</b> оголосити ${esc(o.kindName.toLowerCase())}${o.fine ? ` у розмірі ${$(o.fine)}` : ""}
+    <p style="text-indent:0"><b>НАКАЗУЮ:</b> оголосити ${esc(o.kindName.toLowerCase())}${o.fine ? ` у розмірі ${$$(o.fine)}` : ""}
       ${esc((t.rankName || "").toLowerCase())} ${esc(t.name)}, жетон №${o.sid}${D[o.dept] ? `, ${esc(D[o.dept].n)}` : ""}.</p>
     ${o.expires ? `<p style="text-indent:0">Строк дії стягнення — до ${fmtDT(o.expires)}. Оскарження Голові СБУ — протягом 24 годин (п. 4.1).</p>` : ""}
     ${ap ? `<p style="text-indent:0"><b>Скарга від ${fmtDT(ap.t)}:</b> ${esc(ap.text)}${ap.decision ? ` — <b>${ap.decision === "cancel" ? "задоволено, стягнення скасовано" : "відхилено"}</b>${ap.by ? ` (${esc(ap.by)})` : ""}` : " — на розгляді"}</p>` : ""}
@@ -88,7 +88,7 @@ const spA4 = (i) => S.a4(spDoc(i, S.cache.disc.kinds), spNo(i), { noTo: true, da
 
 function spMatRow(m, n) {
   const T = S.cache.disc.insp.mats;
-  return `<div class="sp-mat" style="display:grid;grid-template-columns:200px 1fr 1fr auto;gap:8px;margin-bottom:6px">
+  return `<div class="sp-mat">
     <select class="i" data-sm="type">${T.map((t) => `<option ${t === m.type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
     <input class="i" data-sm="desc" placeholder="Зміст фіксації" value="${esc(m.desc || "")}" maxlength="500">
     <input class="i" data-sm="ref" placeholder="Посилання / статус (долучено, відмова…)" value="${esc(m.ref || "")}" maxlength="500">
@@ -211,12 +211,13 @@ function blankHtml(d, staff) {
 function spActions(i, d) {
   const R = d.rights, me = S.ME().me, M = d.insp, chip = { open: "wait", paused: "mute", head: "info", sent: "info", closed: "ok" };
   const mine = i.author && i.author.sid === me.sid, st_ = i.status;
+  const ed = R.vvb && (mine || R.vvbHead || R.chief || R.resolve);  // веде справу автор або керівництво ВВБ
   const btn = (to, label, cls) => `<button class="btn sm ${cls || ""}" data-a="nsinspmove" data-id="${i.id}" data-to="${to}">${label}</button>`;
   return `<span class="chip ${chip[st_] || ""}">${esc(M.status[st_] || st_)}</span>
         <button class="btn sm" data-a="sppdf" data-id="${i.id}">⬇ PDF</button><button class="btn sm" data-a="sppng" data-id="${i.id}">⬇ PNG</button>
-        ${["open", "paused"].includes(st_) && R.vvb ? `<button class="btn sm" data-a="nsinspedit" data-id="${i.id}">Редагувати</button>` : ""}
-        ${st_ === "open" && R.vvb ? btn("paused", "⏸ Зупинити") + btn(R.vvbHead || R.chief ? "sent" : "head", R.vvbHead || R.chief ? "Направити Голові" : "На погодження начальнику ВВБ", "gold") : ""}
-        ${st_ === "paused" && R.vvb ? btn("open", "▶ Відновити") : ""}
+        ${["open", "paused"].includes(st_) && ed ? `<button class="btn sm" data-a="nsinspedit" data-id="${i.id}">Редагувати</button>` : ""}
+        ${st_ === "open" && ed ? btn("paused", "⏸ Зупинити") + btn(R.vvbHead || R.chief ? "sent" : "head", R.vvbHead || R.chief ? "Направити Голові" : "На погодження начальнику ВВБ", "gold") : ""}
+        ${st_ === "paused" && ed ? btn("open", "▶ Відновити") : ""}
         ${st_ === "head" && (R.vvbHead && !mine || R.chief) ? btn("sent", "Погодити й направити Голові", "ok") + btn("return", "↩ На доопрацювання") : ""}
         ${st_ === "sent" && R.resolve ? btn("closed", "Затвердити висновок", "ok") + btn("return", "↩ На доопрацювання ВВБ") : ""}
         ${["sent", "closed"].includes(st_) && R.chief && !i.order_id && i.recommend ? `<button class="btn sm gold" data-a="nsinspord" data-id="${i.id}">Застосувати заходи (наказ)</button>` : ""}
@@ -289,6 +290,12 @@ function inspView(d, staff) {
 async function view() {
   const d = await call("/api/discipline");
   S.cache.disc = d;
+  if (st.editId) {
+    const x = d.inspections.find((i) => i.id === st.editId);
+    st.insp = x ? JSON.parse(JSON.stringify(x)) : null;
+    if (!x) toast("Справу не знайдено або редагування недоступне", 1);
+    st.editId = null;
+  }
   const R = d.rights;
   const tabs = [["mine", "Мої стягнення"], ...(R.journal ? [["journal", "Журнал наказів"]] : []), ...(R.kinds.length ? [["new", "Новий наказ"]] : []),
     ...(R.vvb || R.chief || R.resolve ? [["insp", "Службові перевірки"]] : [])];
@@ -298,7 +305,7 @@ async function view() {
   if (t === "journal") body = journalView(d);
   else if (t === "new" || t === "insp") {
     // список співробітників потрібен лише формам (наказ, справа) — перегляд і перелік справ без нього
-    const staff = t === "new" || st.insp ? await call("/api/structure") : (S.cache.staff || []);
+    const staff = t === "new" || st.insp ? await S.cached("/api/structure") : (S.cache.staff || []);
     if (t === "new" || st.insp) S.cache.staff = staff;
     body = t === "new" ? formView(d, staff) : inspView(d, staff);
   }
@@ -343,7 +350,7 @@ Object.assign(S.actions, {
     const ask = { sent: "Направити справу Голові СБУ?", head: "Направити справу на погодження начальнику ВВБ?", closed: "Затвердити висновок?",
       paused: "Зупинити провадження?", open: "Відновити провадження?", deleted: "Видалити справу?", return: "" }[to];
     let note = "";
-    if (to === "return") { note = prompt("Що доопрацювати (побачить ВВБ):", ""); if (!note) return; }
+    if (to === "return") { note = prompt("Що доопрацювати (побачить ВВБ):", ""); if (note === null) return; if (!note.trim()) return toast("Вкажіть, що доопрацювати", 1); }
     else if (to === "closed") { note = prompt("Затвердити висновок.\nКоментар Голови (необов'язково), напр. «Не заперечую»:", "Не заперечую"); if (note === null) return; }
     else if (!confirm(ask)) return;
     await call(`/api/inspections/${b.dataset.id}/move`, { json: { to, note } }); toast("Готово"); await S.refreshMe(); S.render();
@@ -385,6 +392,7 @@ S.routes.disc = {
     const ed = /^edit-(\d+)$/.exec(p[1] || "");
     st.spView = /^\d+$/.test(p[1] || "") ? +p[1] : null;  // #/disc/insp/5 — справа як документ
     st.insp = p[1] === "new" ? { kind: "invest", data: { mats: [] } } : ed ? (((S.cache.disc || {}).inspections) || []).find((i) => String(i.id) === ed[1]) || null : null;
+    st.editId = ed && !st.insp ? +ed[1] : null;  // даних ще немає (сторінку щойно відкрито) — знайдемо після завантаження
   },
 };
 })();

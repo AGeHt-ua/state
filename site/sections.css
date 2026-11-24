@@ -147,7 +147,7 @@
 
 @media (max-width:1100px){.hero{grid-template-columns:1fr}.rap-types{grid-template-columns:1fr 1fr}}
 @media (max-width:760px){.hero-stats{grid-template-columns:1fr 1fr;grid-template-rows:auto}.ring{grid-row:auto;grid-column:1/-1;width:100%}
-  .quick{grid-template-columns:1fr}.doc{grid-template-columns:1fr}.doc-side{justify-items:start;text-align:left;grid-auto-flow:column;justify-content:start}
+  .quick{grid-template-columns:1fr}.doc{grid-template-columns:1fr}.doc-side{display:flex;flex-wrap:wrap;align-items:center;gap:6px;justify-items:start;text-align:left}
   .org-row{grid-template-columns:1fr}.org-row::before{display:none}.org-node,.org-top>.org-node{min-width:0;width:100%}.aud-q{max-width:none;width:100%}}
 @media (prefers-reduced-motion:reduce){.idcard::after{display:none}}
 .todo-item .ico,.quick .ico{flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}

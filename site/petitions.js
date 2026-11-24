@@ -103,7 +103,7 @@ function docHtml(p) {
   return `<div class="kd-bar"><button class="btn" data-a="petback">← До клопотань</button><span class="sp"></span>
       <span class="chip ${CHIP[p.status] || ""}">${esc(p.statusName)}${p.stageName ? ` · ${esc(p.stageName)}` : ""}</span></div>
     ${p.status === "rejected" && p.note ? `<p class="note warn"><b>Повернуто на доопрацювання:</b> ${esc(p.note)}</p>` : ""}
-    ${p.result_url ? `<p class="note">Подано: <a href="${esc(S.safeUrl(p.result_url))}" target="_blank" rel="noopener">${esc(p.result_url)}</a></p>` : ""}
+    ${p.result_url ? `<p class="note">Подано: ${S.safeUrl(p.result_url) ? `<a href="${esc(S.safeUrl(p.result_url))}" target="_blank" rel="noopener">${esc(p.result_url)}</a>` : esc(p.result_url)}</p>` : ""}
     <div class="acts" style="margin:12px 0;flex-wrap:wrap">
       <button class="btn" data-a="petpdf">⬇ PDF</button><button class="btn" data-a="petpng">⬇ PNG</button>${done ? '<button class="btn" data-a="petcopy">⧉ Текст для подання</button>' : ""}${S.docImgBtn("pet", p.id)}
       ${p.canAct ? `<button class="btn ok" data-a="petok">${p.stage === "chief" || S.cache.pet.rights.approve ? "Затвердити" : "Погодити"}</button><button class="btn bad" data-a="petrej">↩ Повернути автору</button>` : ""}
@@ -116,7 +116,7 @@ function docHtml(p) {
 }
 
 S.views.pet = async () => {
-  const d = await load();
+  const d = st.edit && S.cache.pet ? S.cache.pet : await load();
   const head = (t) => `<div class="tabs">${[["mine", "Мої клопотання"], ["new", "Нове клопотання"],
     ...(d.items.some((p) => p.canAct) || d.rights.approve ? [["review", "На погодження", d.items.filter((p) => p.canAct).length]] : []),
     ...(d.items.some((p) => !p.mine) ? [["all", "Реєстр"]] : [])]
@@ -164,8 +164,8 @@ const docImg = async (id) => {
 S.docImageFns.pet = docImg;
 const act = async (b, url, body, ok, id) => {
   b.disabled = true;
-  try { await call(url, { json: body || {} }); toast(ok); if (id) await docImg(id); await S.refreshMe(); S.render(); }
-  catch (e) { toast(e.message, 1); b.disabled = false; }
+  try { await call(url, { json: body || {} }); toast(ok); if (id) await docImg(id); await S.refreshMe(); S.render(); return true; }
+  catch (e) { toast(e.message, 1); b.disabled = false; return false; }
 };
 
 S.forms.petsave = async (f, ev) => {
@@ -187,14 +187,14 @@ Object.assign(S.actions, {
   petcancel: () => { if (st.edit && st.edit.id) st.id = st.edit.id; else st.tab = "mine"; st.edit = null; S.render(); },
   petedit: () => { const p = S.cache.petDoc; st.edit = { id: p.id, no: p.no, kind: p.kind, group: (M().kinds[p.kind] || {}).group, data: { ...p.data }, author: p.author }; S.render(); },
   petok: (b) => { if (confirm("Погодити клопотання?")) act(b, `/api/petitions/${st.id}/decide`, { decision: "ok" }, "Погоджено", st.id); },
-  petrej: (b) => { const note = prompt("Що виправити (побачить автор):", ""); if (note) act(b, `/api/petitions/${st.id}/decide`, { decision: "reject", note }, "Повернуто автору", st.id); },
+  petrej: (b) => { const note = prompt("Що виправити (побачить автор):", ""); if (note === null) return; if (!note.trim()) return toast("Вкажіть, що виправити", 1); act(b, `/api/petitions/${st.id}/decide`, { decision: "reject", note }, "Повернуто автору", st.id); },
   petres: (b) => {
     const v = b.dataset.v;
     const url = v === "posted" ? prompt("Посилання на подане клопотання (форум / портал), необов'язково:", S.cache.petDoc.result_url || "") : S.cache.petDoc.result_url;
     if (v === "posted" && url === null) return;
     act(b, `/api/petitions/${st.id}/result`, { status: v, url: url || "" }, "Збережено", st.id);
   },
-  petdel: (b) => { if (confirm("Видалити клопотання?")) act(b, `/api/petitions/${st.id}/delete`, null, "Видалено").then(() => { st.id = null; S.render(); }); },
+  petdel: (b) => { if (confirm("Видалити клопотання?")) act(b, `/api/petitions/${st.id}/delete`, null, "Видалено").then((ok) => { if (ok) { st.id = null; S.render(); } }); },
   petpdf: (b) => S.pdfA4(b, a4(S.cache.petDoc), fname(S.cache.petDoc)),
   petpng: (b) => S.pngBtn(b, blank(S.cache.petDoc), fname(S.cache.petDoc)),
   petcopy: async () => { const t = forumText(S.cache.petDoc); try { await navigator.clipboard.writeText(t); toast("Текст скопійовано"); } catch (e) { prompt("Скопіюйте текст:", t); } },

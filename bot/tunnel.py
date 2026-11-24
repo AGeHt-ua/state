@@ -53,17 +53,21 @@ def ensure_binary():
     BIN.parent.mkdir(parents=True, exist_ok=True)
     log.info("Завантажую cloudflared (%s) з GitHub Cloudflare…", arch)
     tmp = BIN.with_suffix(".part")  # обірване завантаження не повинно лишити зламаний файл назавжди
-    urllib.request.urlretrieve(URL.format(arch=arch), tmp)
+    with urllib.request.urlopen(URL.format(arch=arch), timeout=120) as r, open(tmp, "wb") as f:  # без тайм-ауту потік міг зависнути назавжди
+        while chunk := r.read(1 << 16):
+            f.write(chunk)
     tmp.chmod(tmp.stat().st_mode | stat.S_IEXEC)
     tmp.replace(BIN)
 
 
-async def announce(url: str):
+async def announce(url: str, quiet: bool = False):
     relay = config.RELAY_URL
     if not relay:
         log.warning("RELAY_URL не задано — адреса тунелю: %s", url)
         return
     for attempt in range(20):
+        if url != current_url:  # тунель уже перезапущено з новою адресою — стару не оголошуємо (інакше сайт вів би в нікуди)
+            return
         ts = int(time.time())
         sig = base64.b64encode(signing_key().sign(f"{url}|{ts}".encode())).decode()
         try:
@@ -71,7 +75,8 @@ async def announce(url: str):
                 async with s.post(relay.rstrip("/") + "/__sova/upstream", json={"url": url, "ts": ts, "sig": sig},
                                   timeout=aiohttp.ClientTimeout(total=15)) as r:
                     if r.status == 200:
-                        log.info("Ретранслятор %s → %s", relay, url)
+                        if not quiet:
+                            log.info("Ретранслятор %s → %s", relay, url)
                         return
                     log.warning("Ретранслятор відповів %s: %s", r.status, (await r.text())[:200])
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
@@ -79,10 +84,22 @@ async def announce(url: str):
         await asyncio.sleep(min(60, 5 * (attempt + 1)))
 
 
+async def heartbeat():
+    """Раз на 10 хв повторно оголошує поточну адресу: якщо ретранслятор колись отримав застарілу — виправиться сам."""
+    while True:
+        await asyncio.sleep(600)
+        try:
+            if current_url:
+                await announce(current_url, quiet=True)
+        except Exception as e:
+            log.warning("Повторне оголошення тунелю: %s", e)
+
+
 async def run():
     global current_url
     if config.TUNNEL != "1":
         return
+    asyncio.create_task(heartbeat())
     log.info("Відкритий ключ ретранслятора: %s", public_key_b64())
     while True:
         try:

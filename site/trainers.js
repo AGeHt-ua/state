@@ -18,8 +18,17 @@ let sel = null;
 try { sel = sessionStorage.getItem("sova.trainer"); } catch (e) { /* без сховища — завжди з головної */ }
 const setSel = (k) => { sel = k; try { if (k) sessionStorage.setItem("sova.trainer", k); else sessionStorage.removeItem("sova.trainer"); } catch (e) { /* нічого */ } };
 
+// ігри важкі (~176 КБ) і потрібні не всім — завантажуємо скрипт гри лише при відкритті
+const SRC = { assault: "game.js?v=8", tail: "tail.js?v=1", audit: "audit.js?v=1" };
+const loadGame = (k) => S.games[k] || !SRC[k] ? Promise.resolve() : new Promise((ok, bad) => {
+  const s = document.createElement("script");
+  s.src = SRC[k]; s.onload = ok; s.onerror = () => bad(new Error("Не вдалося завантажити тренажер. Перевірте зв'язок і спробуйте ще раз."));
+  document.head.appendChild(s);
+});
+
 async function view() {
   if (sel && (S.ME().modules || {})["game_" + sel] === false) sel = null;
+  if (sel) await loadGame(sel).catch((e) => { setSel(null); throw e; });
   if (sel && S.games && S.games[sel]) return S.games[sel].view();
   for (const g of Object.values(S.games || {})) if (g.stop) g.stop();
   const h = await call("/api/game/hub").catch(() => ({ games: {}, badges: [] }));

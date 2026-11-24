@@ -4,7 +4,9 @@
 
 const DEFAULT_API = "https://sova.d-f-12339.workers.dev";
 const qs = new URLSearchParams(location.search);
-const API = (qs.get("api") || DEFAULT_API).replace(/\/$/, "");
+// ?api= — лише для локальної перевірки (localhost / 127.0.0.1): чужа адреса в посиланні не повинна отримати пароль із форми входу
+const API_OVERRIDE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(qs.get("api") || "") ? qs.get("api") : "";
+const API = (API_OVERRIDE || DEFAULT_API).replace(/\/$/, "");
 const KEY = "sova-token";
 
 const store = {
@@ -57,8 +59,19 @@ async function call(path, opts = {}) {
     throw fail("Сесія завершилась. Увійдіть знову — введений текст збережено.", 401);
   }
   if (!r.ok) throw fail((data && data.error) || `Помилка ${r.status}`, r.status);
+  if (method !== "GET") for (const k in CACHE) delete CACHE[k];  // щось змінилось — кешовані списки застаріли
   if (method !== "GET" && path !== "/api/files" && path !== "/api/login") dropDraft();  // збережено на сервері — чернетка вже не потрібна
   return data;
+}
+
+// короткий кеш GET-запитів для довідників (список співробітників тощо): форми не тягнуть його заново при кожній зміні поля
+const CACHE = {};
+async function cached(path, ttl = 60_000) {
+  const c = CACHE[path];
+  if (c && Date.now() - c.t < ttl) return c.v;
+  const v = await call(path);
+  CACHE[path] = { t: Date.now(), v };
+  return v;
 }
 
 /* ---------------- чернетки форм ----------------
@@ -196,7 +209,7 @@ const NAV = [
   ["dept", "Статистика відділів", () => !!(ME.control && ME.control.length)],
   ["cases", "Кейс-файли", () => !!(ME.cases && ME.cases.view)],
   ["hr", "Кадри", () => !!(ME.hr && (ME.hr.vvb || ME.hr.vkpp))],
-  ["audit", "Кадровий аудит", (u) => u.rank >= 12 || !!(ME.hr && ME.hr.vkpp)],
+  ["audit", "Кадровий аудит", (u) => ME.auditView !== undefined ? !!ME.auditView : (u.rank >= 12 || !!(ME.hr && ME.hr.vkpp))],
   ["pet", "Клопотання", () => !!(ME.pet && ME.pet.prepare)],
   ["fin", "Клопотання Мінфіну", () => !!(ME.fin && ME.fin.view)],
   ["game", "Тренажери", () => true],
@@ -295,11 +308,16 @@ function callsignCard(c) {
   </div>`;
 }
 
+// скільки чекає документ: «25 хв», «3 год», «2 дн»
+const ago = (t) => { const m = Math.max(0, Math.round((Date.now() - (t || 0)) / 6e4)); return m < 60 ? `${m} хв` : m < 1440 ? `${Math.round(m / 60)} год` : `${Math.round(m / 1440)} дн`; };
+
 async function vHome() {
   const cs = (ME.callsign && ME.callsign.eligible) || (ME.pending && ME.pending.callsign) ? call("/api/callsign").catch(() => null) : null;
   const newsP = call("/api/news").catch(() => null);
+  const pendAll = Object.entries(ME.pending || {}).reduce((s, [k, v]) => s + (k === "callsign" ? 0 : +v || 0), 0);
+  const inboxP = pendAll ? call("/api/inbox").catch(() => []) : Promise.resolve([]);
   const acts = await call("/api/acts");
-  const csData = await cs, newsData = await newsP;
+  const csData = await cs, newsData = await newsP, inbox = await inboxP;
   setTimeout(() => { verifyCard(); loadNewsImgs(); }, 60);  // після вставки сторінки (render вставляє HTML одразу після цього return)
   const pc = ME.promo;
   const pend = ME.pending || {};
@@ -358,6 +376,10 @@ async function vHome() {
     </div>
   </section>
 
+  ${inbox.length ? `<section class="hm-inbox"><div class="hm-todo-h"><span class="hm-dot"></span>Чекає мене · ${inbox.length}</div>
+    <div class="ib-list">${inbox.map((x) => `<button class="ib-it" data-a="goto" data-path="${esc(x.path)}">
+      <span class="ib-kind">${esc(x.kind)}</span><b class="mono">${esc(x.no)}</b><span class="ib-t">${esc(x.title || "")}${x.by ? ` · <i>${esc(x.by)}</i>` : ""}</span>
+      <span class="ib-age ${Date.now() - x.since > 864e5 ? "old" : ""}">${ago(x.since)}</span></button>`).join("")}</div></section>` : ""}
   ${todo.length ? `<section class="hm-todo"><div class="hm-todo-h"><span class="hm-dot"></span>Потребує вашого рішення</div><div class="hm-todo-row">
     ${todo.map(([v, path, l, n]) => `<button class="hm-todo-it" data-a="${v === "home" ? "csgo" : "goto"}" data-path="${path}">${ico(v === "home" ? "staff" : v)}<span>${l}</span><b class="num">${n}</b></button>`).join("")}</div></section>` : ""}
 
@@ -930,6 +952,7 @@ function candRoute(c) {
 }
 
 function candCard(c, r) {
+  if (c.claim && c.claim.until <= Date.now()) c = { ...c, claim: null };  // бронь минула — анкета знову вільна
   const x = c.extra || { docs: [], drive: [], lics: [] };
   const mine = (c.status === "vvb" && r.vvb) || (c.status === "vkpp" && r.vkpp);
   const checks = candChecks(x);
@@ -1088,12 +1111,15 @@ document.addEventListener("input", (e) => {
     clearTimeout(draftT); draftT = setTimeout(saveDraft, 700);
   }
 });
-document.addEventListener("submit", (e) => { if (!e.target.closest(".docgo")) DIRTY = false; }, true);
+// після надсилання форми DIRTY скидає render() — лише коли збереження вдалося; при помилці попередження про вихід лишається
 addEventListener("beforeunload", (e) => { if (DIRTY) { e.preventDefault(); e.returnValue = ""; } });
 // кнопки переходу поза формою (меню, вкладки, «← назад», відкрити документ) — спитати, якщо форма змінена
 const LEAVE = /^(nav|go|goto|tab|\w*back|\w*open|\w*tab|kbopen|dpsel)$/;
+const CANCEL = /^(\w*back|\w*cancel)$/;  // «Скасувати» / «← Назад» усередині форми — теж вихід без збереження
 function leaveOk(b) {
-  if (!DIRTY || !LEAVE.test(b.dataset.a || "") || b.closest("form")) return true;
+  const a = b.dataset.a || "";
+  const leaving = (LEAVE.test(a) && !b.closest("form")) || CANCEL.test(a);
+  if (!DIRTY || !leaving) return true;
   if (!confirm("Є незбережені зміни у формі. Вийти без збереження?")) return false;
   DIRTY = false;
   return true;
@@ -1184,8 +1210,12 @@ async function render(err) {
   if (Date.now() - meAt > ME_FRESH) await refreshMe();
   if (!TOKEN || !ME) return render();
   const gen = ++RENDER_GEN;
+  // та сама сторінка (дія над документом, фільтр) — показуємо попередній вміст і повертаємо прокрутку, а не «Завантаження…» зверху
+  const same = !!$("#view") && LAST_PATH === routePath();
+  const y = same ? scrollY : 0, prev = same ? $("#view").innerHTML : null;
   try {
-    $("#app").innerHTML = viewShell(loading);
+    $("#app").innerHTML = viewShell(same ? prev : loading);
+    if (same) scrollTo(0, y);
   } catch (e) {
     $("#app").innerHTML = `<div class="login"><div class="login-card"><p class="note bad">${esc(e.message)}</p><button class="btn" data-a="logout">Вийти</button></div></div>`;
     return;
@@ -1194,15 +1224,30 @@ async function render(err) {
   try {
     const html = await VIEWS[view]();
     if (gen !== RENDER_GEN) return;  // поки чекали відповіді, відкрито інший екран
-    if (UI.view === view && $("#view")) $("#view").innerHTML = html;
+    if (UI.view === view && $("#view")) { $("#view").innerHTML = html; if (same) scrollTo(0, y); }
   } catch (e) {
     if (gen !== RENDER_GEN) return;
     if ($("#view")) $("#view").innerHTML = `<p class="note bad">${esc(e.message)}</p>`;
   }
   DIRTY = false;
-  if (UI.view === view) { syncUrl(); restoreDraft(); }
+  if (UI.view === view) { syncUrl(); restoreDraft(); LAST_PATH = routePath(); a11y(); }
 }
-let RENDER_GEN = 0;
+let RENDER_GEN = 0, LAST_PATH = "";
+// клавіатура й екранні читачі: клікабельні картки фокусуються, кнопки-іконки мають підпис
+const ICON_LABEL = { "🗑": "Видалити", "✕": "Прибрати", "+1 год": "Продовжити бронь на годину" };
+function a11y() {
+  document.querySelectorAll("#view [data-a]:not(button):not(a):not(input):not(select):not(textarea):not([tabindex])").forEach((el) => {
+    el.tabIndex = 0; el.setAttribute("role", "button");
+  });
+  document.querySelectorAll("#view button:not([aria-label])").forEach((b) => {
+    const l = ICON_LABEL[b.textContent.trim()];
+    if (l) { b.setAttribute("aria-label", l); if (!b.title) b.title = l; }
+  });
+}
+document.addEventListener("keydown", (e) => {
+  if ((e.key !== "Enter" && e.key !== " ") || !e.target.matches || !e.target.matches("[data-a][role=button]")) return;
+  e.preventDefault(); e.target.click();
+});
 
 let meAt = 0;  // коли востаннє оновлювали дані співробітника (бали, баланс для підвищення, лічильники в меню)
 const ME_FRESH = 30_000;
@@ -1315,6 +1360,7 @@ const A = {
   cand: async (b) => {
     let note = "";
     if (b.dataset.d === "rej") { note = prompt("Причина відмови (кандидат її побачить):", ""); if (note === null) return; }
+    else if (!confirm(b.textContent.trim() + "?")) return;
     b.disabled = true;
     try { const r = await call(`/api/hr/cand/${b.dataset.id}`, { json: { decision: b.dataset.d, note } }); toast(r.text); await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
@@ -1458,7 +1504,7 @@ async function switchRapType(t) {
 
 // Спільні хелпери для модулів (cases.js)
 window.SOVA = { esc, fmtDT, call, toast, $, uploadFiles, render, refreshMe, views: VIEWS, actions: A, forms: F, onNav: HOOKS, cache: {},
-  ME: () => ME, META: () => META, routes: ROUTES, safeUrl, showFile, setDirty: (v) => { DIRTY = !!v; }, snapshots: SNAP, reloadMeta: async () => { META = await call("/api/meta"); } };
+  ME: () => ME, META: () => META, routes: ROUTES, safeUrl, showFile, cached, setDirty: (v) => { DIRTY = !!v; }, snapshots: SNAP, reloadMeta: async () => { META = await call("/api/meta"); } };
 
 window.SOVA.docImageFns = Object.assign(window.SOVA.docImageFns || {}, { act: actImage, rap: rapImage });
 // старт — коли підключено всі модулі (memo.js, kb.js…): швидка відповідь API не повинна випередити їх завантаження
