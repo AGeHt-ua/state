@@ -949,7 +949,7 @@ async def disc_pending(u: dict) -> int:
     if u["rank"] == 15:
         rows = await db.all("SELECT appeal FROM discipline WHERE status='active' AND appeal IS NOT NULL")
         n += len([r for r in rows if not json.loads(r["appeal"]).get("decision")])
-    if u["rank"] >= ov.P("disc_chief"):
+    if discipline.can_resolve(u):
         n += (await db.one("SELECT COUNT(*) AS n FROM inspections WHERE status='sent'"))["n"]
     elif discipline.is_vvb_head(u):
         n += (await db.one("SELECT COUNT(*) AS n FROM inspections WHERE status='head' AND author!=?", u["sid"]))["n"]

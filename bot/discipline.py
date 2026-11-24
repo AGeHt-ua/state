@@ -345,6 +345,11 @@ INSP_TEXT = {"basis": 300, "qual": 300, "when": 120, "place": 200, "fabula": 600
              "mitig": 1000, "aggr": 1000, "callsign": 40}
 
 
+def can_resolve(u: dict) -> bool:
+    """Затвердити висновок службового розслідування або повернути його на доопрацювання (резолюція Голови)."""
+    return u["rank"] >= ov.P("insp_approve") and not u.get("curator_ro")
+
+
 def is_vvb_head(u: dict) -> bool:
     """Начальник ВВБ або заступник (з роллю ВВБ) — погоджує висновок перед направленням Голові."""
     return u["rank"] in (11, 12) and "vvb" in depts_of(u)
@@ -430,6 +435,7 @@ async def insp_move(u: dict, iid: int, to: str, note: str = "") -> dict:
     async with core.doc_lock("insp", iid):
         i = await insp_get(iid)
         st, chief = i["status"], u["rank"] >= ov.P("disc_chief")
+        resolve = can_resolve(u)  # резолюція по висновку (Голова; поріг — адмін-панель → Доступи «insp_approve»)
         note = (note or "").strip()
         if to == "paused" and st == "open" and is_vvb(u):
             await db.run("UPDATE inspections SET status='paused', history=?, updated=? WHERE id=?", _ihist(i, u, "pause", note), now_ms(), iid)
@@ -452,11 +458,11 @@ async def insp_move(u: dict, iid: int, to: str, note: str = "") -> dict:
             await db.run("UPDATE inspections SET status='sent', visas=?, history=?, updated=? WHERE id=?",
                          json.dumps(visas, ensure_ascii=False), _ihist(i, u, "visa", note), now_ms(), iid)
             await insp_notice(await insp_get(iid), u, "sent")
-        elif to == "closed" and st == "sent" and chief:
+        elif to == "closed" and st == "sent" and resolve:
             res = {"decision": "approve", "comment": note[:1000], "sid": u["sid"], "name": u["name"], "rankName": rank_name(u["rank"]), "t": now_ms()}
             await db.run("UPDATE inspections SET status='closed', resolution=?, history=?, updated=? WHERE id=?",
                          json.dumps(res, ensure_ascii=False), _ihist(i, u, "approve", note), now_ms(), iid)
-        elif to == "return" and ((st == "head" and (is_vvb_head(u) or chief)) or (st == "sent" and chief)):
+        elif to == "return" and ((st == "head" and (is_vvb_head(u) or chief)) or (st == "sent" and resolve)):
             if not note:
                 raise Fail("Вкажіть, що доопрацювати.")
             res = {"decision": "return", "comment": note[:1000], "sid": u["sid"], "name": u["name"], "rankName": rank_name(u["rank"]), "t": now_ms()} \
@@ -519,7 +525,7 @@ async def listing(u: dict) -> dict:
         journal_rows = [o for o in rows if o["dept"] in ds]
     else:
         journal_rows = []
-    insp = await db.all("SELECT * FROM inspections WHERE status!='deleted' ORDER BY updated DESC LIMIT 100") if (is_vvb(u) or u["rank"] >= 14) else []
+    insp = await db.all("SELECT * FROM inspections WHERE status!='deleted' ORDER BY updated DESC LIMIT 100") if (is_vvb(u) or u["rank"] >= 14 or can_resolve(u)) else []
     for i in insp:
         i["files"], i["data"], i["visas"], i["history"] = _j(i["files"], "[]"), _j(i.get("data"), "{}"), _j(i.get("visas"), "[]"), _j(i.get("history"), "[]")
         i["resolution"] = _j(i.get("resolution"), "{}") or None
@@ -536,7 +542,7 @@ async def listing(u: dict) -> dict:
         "journal": [out(o, people) for o in journal_rows],
         "inspections": [{**i, "target": people.get(i["sid"]), "author": people.get(i["author"])} for i in insp],
         "insp": {"kinds": INSP_KINDS, "status": INSP_STATUS, "mats": MAT_TYPES, "grifs": GRIFS},
-        "rights": {"journal": can_journal(u), "vvb": is_vvb(u), "vvbHead": is_vvb_head(u), "chief": u["rank"] >= ov.P("disc_chief"), "head": u["rank"] == 15,
+        "rights": {"journal": can_journal(u), "vvb": is_vvb(u), "vvbHead": is_vvb_head(u), "resolve": can_resolve(u), "chief": u["rank"] >= ov.P("disc_chief"), "head": u["rank"] == 15,
                    "kinds": kinds_for(u)},
         "kinds": {k: v[0] for k, v in KINDS.items()},
         "violations": [{"id": v[0], "t": v[1], "kinds": v[2], "fine": v[3]} for v in VIOLATIONS],

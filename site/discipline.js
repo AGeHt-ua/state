@@ -259,7 +259,7 @@ function inspView(d, staff) {
         ${st_ === "open" && R.vvb ? btn("paused", "⏸ Зупинити") + btn(R.vvbHead || R.chief ? "sent" : "head", R.vvbHead || R.chief ? "Направити Голові" : "На погодження начальнику ВВБ", "gold") : ""}
         ${st_ === "paused" && R.vvb ? btn("open", "▶ Відновити") : ""}
         ${st_ === "head" && (R.vvbHead && !mine || R.chief) ? btn("sent", "Погодити й направити Голові", "ok") + btn("return", "↩ На доопрацювання") : ""}
-        ${st_ === "sent" && R.chief ? btn("closed", "Затвердити висновок", "ok") + btn("return", "↩ На доопрацювання ВВБ") : ""}
+        ${st_ === "sent" && R.resolve ? btn("closed", "Затвердити висновок", "ok") + btn("return", "↩ На доопрацювання ВВБ") : ""}
         ${["sent", "closed"].includes(st_) && R.chief && !i.order_id && i.recommend ? `<button class="btn sm gold" data-a="nsinspord" data-id="${i.id}">Застосувати заходи (наказ)</button>` : ""}
         ${(mine && ["open", "paused"].includes(st_)) || R.chief ? btn("deleted", "🗑", "bad") : ""}</div>
     </article>`; }).join("")}</div>` : '<div class="empty">Службових перевірок і розслідувань немає.</div>'}`;
@@ -270,7 +270,7 @@ async function view() {
   S.cache.disc = d;
   const R = d.rights;
   const tabs = [["mine", "Мої стягнення"], ...(R.journal ? [["journal", "Журнал наказів"]] : []), ...(R.kinds.length ? [["new", "Новий наказ"]] : []),
-    ...(R.vvb || R.chief ? [["insp", "Службові перевірки"]] : [])];
+    ...(R.vvb || R.chief || R.resolve ? [["insp", "Службові перевірки"]] : [])];
   const t = tabs.find((x) => x[0] === st.tab) ? st.tab : "mine";
   const head = tabs.length > 1 ? `<div class="tabs">${tabs.map(([v, l]) => `<button class="tb ${t === v ? "on" : ""}" data-a="nstab" data-v="${v}">${l}</button>`).join("")}</div>` : "";
   let body;
