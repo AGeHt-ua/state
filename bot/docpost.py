@@ -85,7 +85,7 @@ def concerns_field(e: discord.Embed, users: list[str], tag: str | None = None):
 
 # ---------------------------------------------------------------- кнопка «Відкрити в Сові»: адреса документа на сайті
 LINKS = {"act": "act/{}", "rap": "rap/{}", "np": "staff/appoint", "ng": "staff/orders", "ns": "disc/journal",
-         "pz": "kb/prot/{}", "fin": "fin/{}", "bn": "bonus/{}", "cases": "cases/{}"}
+         "pz": "kb/prot/{}", "fin": "fin/{}", "bn": "bonus/{}", "cases": "cases/{}", "pet": "pet/{}"}
 
 
 def link(kind: str, did: int) -> str | None:

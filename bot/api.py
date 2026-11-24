@@ -28,6 +28,7 @@ import library
 import memo
 import news
 import orders
+import petitions
 import config
 import core
 import review
@@ -256,10 +257,12 @@ async def me(request):
             "orders": await orders.pending(u) if orders.can_prepare(u) else 0,
             "callsign": await callsigns.pending(u),
             "fin": await finance.pending(u) if finance.can_view(u) else 0,
+            "pet": await petitions.pending(u) if ov.module_on("pet") else 0,
             "cars": await cars.pending(u) if ov.module_on("cars") else 0,
             "tasks": await tasks.pending(u) if ov.module_on("tasks") and u["dept"] != "prosecutor" else 0,
         },
         "fin": finance.rights(u),
+        "pet": {"prepare": petitions.can_prepare(u), "approve": petitions.is_approver(u)},
         "callsign": {"eligible": callsigns.eligible(u), "current": u.get("callsign")},
         "hr": hr_rights(u),
         "cases": cases.rights(u),
@@ -272,6 +275,57 @@ async def me(request):
         "bonus": {"manage": bonus.can_manage(u) or bool(u.get("curator")), "finalize": bonus.can_finalize(u)},
         "gameBadges": await games.badges(u["sid"]),
     })
+
+
+# ---------------------------------------------------------------- клопотання (суд, прокурор, Мін'юст, довільні)
+def _pet_module():
+    if not ov.module_on("pet"):
+        raise Fail("Розділ «Клопотання» вимкнено в адмін-панелі.", 403)
+
+
+@routes.get("/api/petitions")
+async def pet_list(request):
+    u = await auth(request)
+    _pet_module()
+    return web.json_response({"items": await petitions.listing(u), "meta": petitions.meta(),
+                              "rights": {"prepare": petitions.can_prepare(u), "approve": petitions.is_approver(u)}})
+
+
+@routes.post("/api/petitions")
+async def pet_create(request):
+    u = await auth(request)
+    _pet_module()
+    p = await petitions.create(u, await body(request))
+    return web.json_response({"id": p["id"]}, status=201)
+
+
+@routes.post("/api/petitions/{id:\\d+}")
+async def pet_edit(request):
+    u = await auth(request)
+    p = await petitions.edit(u, int(request.match_info["id"]), await body(request))
+    return web.json_response({"id": p["id"]})
+
+
+@routes.post("/api/petitions/{id:\\d+}/decide")
+async def pet_decide(request):
+    u = await auth(request)
+    b = await body(request)
+    await petitions.decide(u, int(request.match_info["id"]), str(b.get("decision") or ""), str(b.get("note") or ""))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/petitions/{id:\\d+}/result")
+async def pet_result(request):
+    u = await auth(request)
+    await petitions.result(u, int(request.match_info["id"]), await body(request))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/petitions/{id:\\d+}/delete")
+async def pet_delete(request):
+    u = await auth(request)
+    await petitions.delete(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
 
 
 @routes.get("/api/fin")
@@ -955,6 +1009,13 @@ async def _row_ok(table: str, did: int, check) -> bool:
     return bool(row) and check(row)
 
 
+async def _pet_ok(u: dict, pid: int) -> bool:
+    try:
+        return petitions.can_view(u, await petitions._row(pid))
+    except Fail:
+        return False
+
+
 DOC_IMAGE_RIGHTS = {
     "np": lambda u, i: orders.can_prepare(u),
     "ng": lambda u, i: orders.can_sign(u),
@@ -963,6 +1024,7 @@ DOC_IMAGE_RIGHTS = {
     "ns": lambda u, i: _row_ok("discipline", i, lambda r: u["sid"] in (r["issued_by"], r["sid"]) or u["rank"] >= ov.P("docs_view_all")),  # і сам покараний (скарга)
     "pz": lambda u, i: _row_ok("protocols", i, lambda r: r["author"] == u["sid"] or u["rank"] >= ov.P("docs_view_all") or core.lead_of(u, r["dept"])),
     "fin": lambda u, i: finance.can_view(u),
+    "pet": lambda u, i: _pet_ok(u, i),
     "bn": lambda u, i: bonus.can_manage(u) or bonus.can_finalize(u) or bool(u.get("curator")),
 }
 

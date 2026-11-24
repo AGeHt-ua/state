@@ -179,6 +179,7 @@ const IC = {
   soon: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',
   game: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v5M12 18v5M1 12h5M18 12h5"/>',
   fin: '<rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9v6M18 9v6"/>',
+  pet: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h5"/>',
   tasks: '<path d="M9 5h11M9 12h11M9 19h11"/><path d="M3.5 5l1.3 1.3L7 4M3.5 12l1.3 1.3L7 11M3.5 19l1.3 1.3L7 18"/>',
   admin: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
 };
@@ -196,6 +197,7 @@ const NAV = [
   ["cases", "Кейс-файли", () => !!(ME.cases && ME.cases.view)],
   ["hr", "Кадри", () => !!(ME.hr && (ME.hr.vvb || ME.hr.vkpp))],
   ["audit", "Кадровий аудит", (u) => u.rank >= 12 || !!(ME.hr && ME.hr.vkpp)],
+  ["pet", "Клопотання", () => !!(ME.pet && ME.pet.prepare)],
   ["fin", "Клопотання Мінфіну", () => !!(ME.fin && ME.fin.view)],
   ["game", "Тренажери", () => true],
   ["admin", "Адмін-панель", () => !!ME.admin],
@@ -203,13 +205,15 @@ const NAV = [
 const SOON = [];
 // Генеральний прокурор (не співробітник СБУ) бачить лише кейс-файли
 // розділи, вимкнені в адмін-панелі («Налаштування»), зникають з меню (адмін-панель — завжди)
+// «Клопотання» об'єднує все: Мінфін — вкладкою всередині (окремий пункт меню лише якщо розділ клопотань вимкнено)
+const petShown = () => navOk(NAV.find((n) => n[0] === "pet"));
 const navOk = (n) => n[2](ME.me) && (ME.me.dept !== "prosecutor" || n[0] === "cases") && (n[0] === "admin" || (ME.modules || {})[n[0]] !== false);
 const BANNER_TONE = { info: "📢", warn: "⚠", bad: "⛔", ok: "✅" };
-const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Статистика відділів", tasks: "Завдання тижня", bonus: "Премії", disc: "Дисципліна", kb: "База даних", admin: "Адмін-панель", fin: "Клопотання до Мінфіну", game: "Тренажери СБУ" };
+const TITLES = { home: "Службовий кабінет", act: "Звіти про діяльність", rap: "Рапорти", staff: "Особовий склад і штатна структура", audit: "Кадровий аудит", hr: "Кадри: кандидати й допуски", cases: "Кейс-файли", dept: "Статистика відділів", tasks: "Завдання тижня", bonus: "Премії", disc: "Дисципліна", kb: "База даних", admin: "Адмін-панель", fin: "Клопотання до Мінфіну", pet: "Клопотання", game: "Тренажери СБУ" };
 
 function viewShell(inner) {
   const p = ME.pending || {};
-  const badge = { kb: p.exams, staff: p.orders, act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases, fin: p.fin, tasks: p.tasks, disc: p.disc || (ME.disc && ME.disc.active) || 0 };
+  const badge = { kb: p.exams, staff: p.orders, act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases, fin: p.fin, pet: (p.pet || 0) + (petShown() ? p.fin || 0 : 0), tasks: p.tasks, disc: p.disc || (ME.disc && ME.disc.active) || 0 };
   const dp = META.depts[ME.me.dept] || {};
   const c = dp.color || "#8a94a6";
   return `<div class="shell" style="--dept:${c}">
@@ -218,7 +222,7 @@ function viewShell(inner) {
     <div class="me"><span class="dp">${esc(ME.me.deptName)}</span><span class="nm">${esc(ME.me.name)}</span><span class="rk">${esc(ME.me.rankName)}</span>
       <div class="meta"><span>${esc(dp.s || "")}</span><span>№${ME.me.sid}</span></div></div>
     <nav class="nav">
-      ${NAV.filter(navOk).map(([k, l]) => `<button data-a="nav" data-v="${k}" class="${UI.view === k ? "on" : ""}">${ico(k)}<span>${l}</span>${badge[k] ? `<span class="cnt">${badge[k]}</span>` : ""}</button>`).join("")}
+      ${NAV.filter((n) => navOk(n) && !(n[0] === "fin" && petShown())).map(([k, l]) => `<button data-a="nav" data-v="${k}" class="${UI.view === k || (k === "pet" && UI.view === "fin") ? "on" : ""}">${ico(k)}<span>${l}</span>${badge[k] ? `<span class="cnt">${badge[k]}</span>` : ""}</button>`).join("")}
       ${SOON.length && ME.me.dept !== "prosecutor" ? '<div class="sec">У розробці</div>' : ""}
       ${ME.me.dept === "prosecutor" ? "" : SOON.map((l) => `<button class="soon" disabled>${ico("soon")}<span>${l}</span></button>`).join("")}
     </nav>
@@ -308,6 +312,7 @@ async function vHome() {
     pend.orders && ["staff", "staff/appoint", "Накази на погодження", pend.orders],
     pend.cases && ["cases", "cases/todo", "Кейс-файли на погодженні", pend.cases],
     pend.disc && ["disc", "disc/journal", "Скарги й службові перевірки", pend.disc],
+    pend.pet && ["pet", "pet/review", "Клопотання на погодження", pend.pet],
     pend.fin && ["fin", "fin", "Клопотання Мінфіну", pend.fin],
     pend.exams && ["kb", "kb/exams", "Іспити на перевірку", pend.exams],
     pend.hr && ["hr", "hr/cand", "Кадрові справи", pend.hr],
@@ -1225,7 +1230,7 @@ document.addEventListener("visibilitychange", async () => {
 });
 
 // номер документа → його адреса на сайті
-const DOC_PATHS = { "ЗВТ": "act/{}", "РАП": "rap/{}", "КФ": "cases/{}", "ПЗ": "kb/prot/{}", "КЛ": "fin/{}", "ЗВК": "fin/{}", "ВП": "bonus/{}",
+const DOC_PATHS = { "ЗВТ": "act/{}", "РАП": "rap/{}", "КФ": "cases/{}", "ПЗ": "kb/prot/{}", "КЛ": "fin/{}", "КЛП": "pet/{}", "ЗВК": "fin/{}", "ВП": "bonus/{}",
   "НС": "disc/journal", "НП": "staff/appoint", "НГ": "staff/orders", "АНК": "hr" };
 const LAT = { Z: "З", V: "В", T: "Т", R: "Р", A: "А", P: "П", K: "К", F: "Ф", L: "Л", N: "Н", S: "С", G: "Г", H: "Н", C: "С" };
 function docPath(q) {

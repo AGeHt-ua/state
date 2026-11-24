@@ -227,6 +227,22 @@ CREATE INDEX IF NOT EXISTS access_status ON access_requests(status, discord_id);
 CREATE INDEX IF NOT EXISTS callsigns_sid ON callsigns(sid, status);
 CREATE INDEX IF NOT EXISTS attempts_status ON attempts(status);
 CREATE INDEX IF NOT EXISTS orders_sid ON orders(sid, status);
+CREATE TABLE IF NOT EXISTS petitions (     -- клопотання КЛП-… (petitions.py)
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  by_sid    INTEGER NOT NULL,
+  dept      TEXT,
+  kind      TEXT NOT NULL,
+  data      TEXT,
+  status    TEXT DEFAULT 'wait',           -- wait | rejected | approved | posted | granted | denied | deleted
+  stage     TEXT,                          -- mgmt | chief
+  route     TEXT,
+  visas     TEXT,
+  history   TEXT,
+  note      TEXT,
+  result_url TEXT,
+  t INTEGER, updated INTEGER, approved INTEGER
+);
+CREATE INDEX IF NOT EXISTS petitions_status ON petitions(status);
 CREATE TABLE IF NOT EXISTS voice_rooms (   -- приватні войс-кімнати (voice.py)
   channel_id TEXT PRIMARY KEY,
   owner      TEXT NOT NULL,                 -- Discord ID власника
