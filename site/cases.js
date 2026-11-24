@@ -8,6 +8,7 @@ const REQ = { search: "Ордер на обшук", arrest: "Ордер на а�
   surv: "Санкція на негласне стеження та прослуховування", suspect: "Повідомлення про підозру", other: "Інше клопотання" };
 const ROLES = ["підозрюваний", "фігурант", "свідок", "потерпілий", "джерело"];
 const ROUTE = [["draft", "Виконавець"], ["head", "Начальник відділу"], ["mgmt", "Начальник управління"], ["chief", "Голова СБУ"], ["prosecutor", "Генеральний прокурор"]];
+const route = (c) => ROUTE.filter(([k]) => k !== "mgmt" || !c.noMgmt);  // АТЦ, ЦСО «А» — без начальника управління
 const ORDER = { draft: 0, head: 1, mgmt: 2, chief: 3, prosecutor: 4, approved: 5, rejected: -1 };
 const no = (id) => `КФ-${String(id).padStart(4, "0")}`;
 const dept = (k) => S.META().depts[k] || { s: k, n: k, color: "#c9a05a" };
@@ -22,7 +23,7 @@ function folder(c) {
       <div class="kf-grif g-${esc(c.data.grif)}">${GRIF[c.data.grif] || ""}</div>
       <div class="kf-op">Операція</div><h3>«${esc(c.data.title || "без назви")}»</h3>
       <div class="kf-org">${esc(c.data.org || "—")}</div>
-      <div class="kf-steps">${ROUTE.map(([k], i) => `<i class="${st === "rejected" ? "bad" : step > i ? "done" : step === i ? "cur" : ""}"></i>`).join("")}<i class="${st === "approved" ? "done" : ""}"></i></div>
+      <div class="kf-steps">${route(c).map(([k]) => `<i class="${st === "rejected" ? "bad" : step > ORDER[k] ? "done" : step === ORDER[k] ? "cur" : ""}"></i>`).join("")}<i class="${st === "approved" ? "done" : ""}"></i></div>
       <div class="kf-meta"><span class="${st === "approved" ? "ok" : st === "rejected" ? "bad" : c.canDecide ? "act" : ""}">${esc(c.stageName)}</span><span>${fmtDT(c.updated)}</span></div>
       <div class="kf-by">Виконавець: ${c.authorUser ? esc(c.authorUser.name) : "№" + c.author}</div>
     </div>
@@ -50,7 +51,7 @@ function visas(c) {
   const i = all.map((x) => x.action).lastIndexOf("submit");
   const h = all.length && all[all.length - 1].action === "withdraw" ? [] : i >= 0 ? all.slice(i) : [];
   const last = (stage, acts) => [...h].reverse().find((x) => x.stage === stage && acts.includes(x.action));
-  return `<div class="kf-visas">${ROUTE.map(([k, label]) => {
+  return `<div class="kf-visas">${route(c).map(([k, label]) => {
     const v = k === "draft" ? last("draft", ["submit"]) : last(k, ["ok", "return", "rej"]);
     const skipped = !v && ORDER[c.status] > ORDER[k] && k !== "draft" && c.status !== "rejected";
     const cls = v ? { submit: "ok", ok: "ok", return: "warn", rej: "bad" }[v.action] : c.status === k ? "cur" : "";

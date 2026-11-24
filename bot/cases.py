@@ -1,6 +1,7 @@
-"""Кейс-файли: оперативні справи ОРВ, ДЕБ, АТЦ, ЦСО «А».
-Маршрут: виконавець → начальник відділу → начальник управління (з ролями ОРВ і ДЕБ) → Голова СБУ або заступник
-→ Генеральний прокурор → затверджено.
+"""Кейс-файли: оперативні справи ОРВ, ДЕБ, АТЦ, ЦСО «А», ВВБ.
+Маршрут: виконавець → начальник свого відділу → начальник управління (лише для відділів його управління: ОРВ, ДЕБ
+або як задано в адмін-панелі → «Управління») → Голова СБУ або заступник → Генеральний прокурор → затверджено.
+Начальник управління бачить справу своїх підрозділів лише після погодження начальником відділу.
 Зміст справи бачать лише учасники маршруту; у Discord іде тільки журнал руху документа, без змісту."""
 import io
 import json
@@ -19,7 +20,7 @@ from roles import DEPTS, rank_name
 
 log = logging.getLogger("sova.cases")
 
-CASE_DEPTS = ("orv", "deb", "atc", "alpha")
+CASE_DEPTS = ("orv", "deb", "atc", "alpha", "vvb")
 STAGES = ("draft", "head", "mgmt", "chief", "prosecutor", "approved", "rejected")
 STAGE_NAME = {"deleted": "Видалено", "draft": "Чернетка виконавця", "head": "Погодження начальника відділу",
               "mgmt": "Погодження начальника управління", "chief": "Погодження Голови СБУ",
@@ -29,7 +30,7 @@ GRIF = {"dsk": "ДЛЯ СЛУЖБОВОГО КОРИСТУВАННЯ", "secret":
 REQUESTS = {"search": "Ордер на обшук", "arrest": "Ордер на арешт (затримання)", "op": "Санкція на проведення спецоперації",
             "surv": "Санкція на негласне стеження та прослуховування", "suspect": "Повідомлення про підозру", "other": "Інше клопотання"}
 ROLES = ("підозрюваний", "фігурант", "свідок", "потерпілий", "джерело")
-MGMT_DEPTS = {"orv", "deb"}  # начальник управління саме з цими ролями бачить і погоджує всі кейс-файли
+MGMT_DEPTS = {"orv", "deb"}  # відділи управління за замовчуванням (інакше — адмін-панель → «Управління»)
 ON_REVIEW = ("head", "mgmt", "chief", "prosecutor")
 
 
@@ -48,9 +49,21 @@ def is_head_for(u: dict, dept: str) -> bool:
     return (u["rank"] == 12 and dept in mine) or (dept == "orv" and u["rank"] == 11 and "orv" in mine)
 
 
-def is_mgmt(u: dict) -> bool:
-    """Начальник управління, що веде ОРВ і ДЕБ (ролі обох відділів): бачить усі кейс-файли й погоджує їх після начальника відділу."""
-    return u["rank"] == 13 and MGMT_DEPTS <= depts_of(u)
+def mgmt_route() -> set[str]:
+    """Відділи, кейс-файли яких проходять етап начальника управління; решта (напр. АТЦ, ЦСО «А») — одразу до Голови."""
+    return MGMT_DEPTS | {d for v in ov.mgmt.values() for d in v if d in CASE_DEPTS}
+
+
+def is_mgmt_for(u: dict, dept: str) -> bool:
+    """Начальник управління саме цього відділу (адмін-панель → «Управління», інакше — за ролями відділів у Discord)."""
+    import depts  # тут, щоб уникнути циклічного імпорту
+    return u["rank"] == 13 and dept in mgmt_route() and dept in depts.mgmt_depts(u)
+
+
+def _passed_head(c: dict) -> bool:
+    """Справа вже пройшла начальника відділу (зараз або колись) — тоді її бачить начальник управління."""
+    return c["status"] not in ("draft", "head", "deleted") or c["reached"] >= 2 or any(
+        isinstance(h, dict) and h.get("stage") == "mgmt" for h in c.get("history") or [])
 
 
 def is_chief(u: dict) -> bool:
@@ -71,7 +84,9 @@ def can_create(u: dict) -> list[str]:
 
 
 def can_view(u: dict, c: dict) -> bool:
-    if c["author"] == u["sid"] or is_chief(u) or is_mgmt(u) or is_head_for(u, c["dept"]):
+    if c["author"] == u["sid"] or is_chief(u) or is_head_for(u, c["dept"]):
+        return True
+    if is_mgmt_for(u, c["dept"]) and _passed_head(c):
         return True
     return is_prosecutor(u) and c["reached"] >= 3
 
@@ -80,7 +95,7 @@ def can_decide(u: dict, c: dict) -> bool:
     if c["author"] == u["sid"]:
         return False
     # етап начальника управління за його відсутності може пройти й Голова чи заступник
-    return {"head": is_head_for(u, c["dept"]), "mgmt": is_mgmt(u) or is_chief(u), "chief": is_chief(u),
+    return {"head": is_head_for(u, c["dept"]), "mgmt": is_mgmt_for(u, c["dept"]) or is_chief(u), "chief": is_chief(u),
             "prosecutor": is_prosecutor(u)}.get(c["status"], False)
 
 
@@ -94,7 +109,7 @@ def can_transfer(u: dict, c: dict) -> bool:
     if u["rank"] < ov.P("case_transfer"):
         return False
     if u["rank"] == 13:
-        return is_mgmt(u) or c["dept"] in depts_of(u)
+        return is_mgmt_for(u, c["dept"]) or c["dept"] in depts_of(u)
     return u["rank"] in (11, 12) and c["dept"] in depts_of(u)
 
 
@@ -136,8 +151,8 @@ async def transfer(u: dict, cid: int, sid: int, note: str = "") -> dict:
 
 
 def rights(u: dict) -> dict:
-    return {"create": can_create(u), "view": bool(can_create(u)) or is_chief(u) or is_mgmt(u) or is_prosecutor(u)
-            or any(is_head_for(u, d) for d in CASE_DEPTS)}
+    return {"create": can_create(u), "view": bool(can_create(u)) or is_chief(u) or is_prosecutor(u)
+            or any(is_head_for(u, d) or is_mgmt_for(u, d) for d in CASE_DEPTS)}
 
 
 def clean(b: dict) -> dict:
@@ -173,7 +188,7 @@ def out(c: dict, u: dict) -> dict:
             "canWithdraw": c["author"] == u["sid"] and c["status"] in ON_REVIEW,
             "canDelete": (c["author"] == u["sid"] and c["status"] == "draft") or is_chief(u),
             "canArchive": c["status"] == "approved" and is_chief(u), "archived": bool(c.get("arch_msg")), "canTransfer": can_transfer(u, c),
-            "stageName": STAGE_NAME[c["status"]]}
+            "stageName": STAGE_NAME[c["status"]], "noMgmt": c["dept"] not in mgmt_route()}
 
 
 async def _hist(c: dict, u: dict, action: str, note: str = "") -> list:
@@ -186,7 +201,7 @@ async def create(u: dict, b: dict) -> dict:
     allowed = can_create(u)
     dept = b.get("dept") if b.get("dept") in allowed else (allowed[0] if allowed else None)
     if not dept:
-        raise Fail("Кейс-файли ведуть ОРВ, ДЕБ, АТЦ та ЦСО «А».", 403)
+        raise Fail("Кейс-файли ведуть ОРВ, ДЕБ, АТЦ, ЦСО «А» та ВВБ.", 403)
     data = clean(b)
     if not data["title"]:
         raise Fail("Вкажіть кодову назву операції.")
@@ -215,10 +230,10 @@ def _next_after_draft(u: dict, dept: str) -> str:
     справа Голови/заступника — до прокурора."""
     if is_chief(u):
         return "prosecutor"
-    if is_mgmt(u):
+    if is_mgmt_for(u, dept):
         return "chief"
     if is_head_for(u, dept):
-        return "mgmt"
+        return "mgmt" if dept in mgmt_route() else "chief"
     return "head"
 
 
@@ -279,8 +294,8 @@ async def decide(u: dict, cid: int, decision: str, note: str = "") -> dict:
     if decision in ("return", "rej") and not note.strip():
         raise Fail("Вкажіть причину.")
     if decision == "ok":
-        nxt = {"head": "mgmt", "mgmt": "chief", "chief": "prosecutor", "prosecutor": "approved"}[c["status"]]
-        if c["status"] == "mgmt" and not is_mgmt(u):
+        nxt = {"head": "mgmt" if c["dept"] in mgmt_route() else "chief", "mgmt": "chief", "chief": "prosecutor", "prosecutor": "approved"}[c["status"]]
+        if c["status"] == "mgmt" and not is_mgmt_for(u, c["dept"]):
             nxt = "prosecutor"  # Голова чи заступник погодив замість начальника управління — це й віза керівництва
         action, label = "ok", ("Затверджено Генеральним прокурором" if nxt == "approved" else "Погоджено")
     elif decision == "return":

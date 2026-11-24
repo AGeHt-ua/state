@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS doc_msgs (         -- повідомлення док
 );
 CREATE TABLE IF NOT EXISTS cases (
   id       INTEGER PRIMARY KEY AUTOINCREMENT,
-  dept     TEXT NOT NULL,                -- orv | deb | atc | alpha
+  dept     TEXT NOT NULL,                -- orv | deb | atc | alpha | vvb
   author   INTEGER NOT NULL,             -- Static ID виконавця
   status   TEXT DEFAULT 'draft',         -- draft | head | chief | prosecutor | approved | rejected
   reached  INTEGER DEFAULT 0,            -- найдальший етап (3 = дійшло до прокурора)
