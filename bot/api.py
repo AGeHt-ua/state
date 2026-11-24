@@ -253,7 +253,7 @@ async def me(request):
             "cases": await cases.pending(u),
             "disc": await disc_pending(u),
             "exams": (await db.one("SELECT COUNT(*) AS n FROM attempts WHERE status='submitted'"))["n"] if library.is_examiner(u) else 0,
-            "orders": (await db.one("SELECT COUNT(*) AS n FROM orders WHERE status='draft'"))["n"] if orders.can_sign(u) else 0,
+            "orders": await orders.pending(u) if orders.can_prepare(u) else 0,
             "callsign": await callsigns.pending(u),
             "fin": await finance.pending(u) if finance.can_view(u) else 0,
             "cars": await cars.pending(u) if ov.module_on("cars") else 0,
@@ -267,7 +267,7 @@ async def me(request):
         "control": depts.control_depts(u),
         "admin": core.is_admin(u), "curator": bool(u.get("curator_ro")),
         "kb": {"sync": u["rank"] >= ov.P("kb_sync"), "lib": library.can_edit_lib(u), "exam": library.is_examiner(u), "memo": memo.can_edit(u)},
-        "appoint": {"prepare": orders.can_prepare(u), "sign": orders.can_sign(u)} if orders.can_prepare(u) else None,
+        "appoint": {"prepare": True, "sign": orders.can_sign(u), "scope": orders.scope(u)} if orders.can_prepare(u) else None,
         "disc": {"active": len(await discipline.active_blocking(u["sid"])), "journal": discipline.can_journal(u), "vvb": discipline.is_vvb(u)},
         "bonus": {"manage": bonus.can_manage(u) or bool(u.get("curator")), "finalize": bonus.can_finalize(u)},
         "gameBadges": await games.badges(u["sid"]),
@@ -1012,8 +1012,8 @@ async def doc_image(request):
 async def orders_list(request):
     u = await auth(request)
     if not orders.can_appoint(u):
-        raise Fail("Накази про призначення доступні ВКПП, Голові СБУ та заступнику.", 403)
-    return web.json_response(await orders.listing())
+        raise Fail("Накази доступні керівникам відділів, ВКПП та керівництву СБУ.", 403)
+    return web.json_response(await orders.listing(u))
 
 
 @routes.post("/api/orders")
@@ -1050,6 +1050,20 @@ async def orders_sign(request):
     o = await orders.sign(u, int(request.match_info["id"]))
     _structure_cache[0] = 0
     return web.json_response({"ok": True, "rolesWarning": o.get("rolesWarning")})
+
+
+@routes.post("/api/orders/{id}/approve")
+async def orders_approve(request):
+    u = await auth(request)
+    await orders.approve(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
+
+
+@routes.post("/api/orders/{id}/resubmit")
+async def orders_resubmit(request):
+    u = await auth(request)
+    await orders.resubmit(u, int(request.match_info["id"]))
+    return web.json_response({"ok": True})
 
 
 @routes.post("/api/orders/{id}/reject")

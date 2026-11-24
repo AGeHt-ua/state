@@ -305,7 +305,7 @@ async function vHome() {
   const todo = [  // [іконка, адреса, підпис, кількість]
     pend.acts && ["act", "act/review", "Звіти на перевірку", pend.acts],
     pend.raps && ["rap", "rap/review", "Рапорти на розгляд", pend.raps],
-    pend.orders && ["staff", "staff/appoint", "Накази на підпис", pend.orders],
+    pend.orders && ["staff", "staff/appoint", "Накази на погодження", pend.orders],
     pend.cases && ["cases", "cases/todo", "Кейс-файли на погодженні", pend.cases],
     pend.disc && ["disc", "disc/journal", "Скарги й службові перевірки", pend.disc],
     pend.fin && ["fin", "fin", "Клопотання Мінфіну", pend.fin],

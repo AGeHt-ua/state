@@ -261,6 +261,8 @@ class DB:
                     "ALTER TABLE orders ADD COLUMN signed_by INTEGER", "ALTER TABLE orders ADD COLUMN signed INTEGER", "ALTER TABLE orders ADD COLUMN note TEXT",
                     "ALTER TABLE raps ADD COLUMN copies TEXT",
                     "ALTER TABLE orders ADD COLUMN title TEXT", "ALTER TABLE orders ADD COLUMN body TEXT",
+                    "ALTER TABLE orders ADD COLUMN otype TEXT", "ALTER TABLE orders ADD COLUMN stage TEXT",
+                    "ALTER TABLE orders ADD COLUMN route TEXT", "ALTER TABLE orders ADD COLUMN visas TEXT",
                     "ALTER TABLE kb_items ADD COLUMN fmt TEXT DEFAULT 'text'", "ALTER TABLE users ADD COLUMN blocked INTEGER DEFAULT 0",
                     "ALTER TABLE users ADD COLUMN callsign TEXT", "ALTER TABLE users ADD COLUMN promo_spent INTEGER",
                     "ALTER TABLE cases ADD COLUMN arch_ch TEXT", "ALTER TABLE cases ADD COLUMN arch_msg TEXT",

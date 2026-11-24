@@ -366,7 +366,7 @@ async def remind_waiting():
         todo.append(("act", a["id"], a["t"], heads, "Звіт чекає перевірки"))
     for r in await db.all("SELECT id, type, t FROM raps WHERE status='wait' AND t<?", old):
         todo.append(("rap", r["id"], r["t"], key_roles(f"rap:{r['type']}"), "Рапорт чекає розгляду"))
-    for o in await db.all("SELECT id, t FROM orders WHERE kind='appoint' AND status='draft' AND t<?", old):
+    for o in await db.all("SELECT id, t FROM orders WHERE kind='appoint' AND status='draft' AND COALESCE(stage,'sign')='sign' AND t<?", old):
         todo.append(("np", o["id"], o["t"], key_roles("order:draft"), "Проєкт наказу чекає підпису"))
     for d in await db.all("SELECT id, updated FROM fin_docs WHERE status='wait' AND updated<?", old):
         todo.append(("fin", d["id"], d["updated"], key_roles("fin:wait"), "Документ Мінфіну чекає погодження"))
