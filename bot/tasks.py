@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 import discord
 
 import core
+import docpost
 import overrides as ov
 import style
 from core import ACTS, DAY, Fail
@@ -278,6 +279,7 @@ async def create(u: dict, b: dict) -> dict:
     if w == core.week_start(0):
         for tid in ids:
             await announce(await _row(tid), "new")
+    await announce_copy(await _row(ids[0]), depts, u)
     return {"ok": True, "ids": ids, "week": w}
 
 
@@ -358,6 +360,7 @@ async def act(u: dict, tid: int, action: str, b: dict) -> dict:
         await db.run("UPDATE tasks SET history=?, updated=? WHERE id=?", _hist(t, u, "carry", f"на тиждень {week_label(cur)}"), now_ms(), tid)
         await db.audit(u["sid"], "Завдання тижня перенесено", None, f"{DEPTS[t['dept']]['s']} · {title}")
         await announce(await _row(nid), "new")
+        await announce_copy(await _row(nid), [t["dept"]], u, carried=True)
         return await get(nid, u)
     elif action == "repeat":
         if not manage:
@@ -465,6 +468,28 @@ async def announce(t: dict, what: str, note: str = ""):
         await ch.send(embed=e, view=style.site_view("Завдання тижня у «Сові»"), **(_ping(t["dept"]) if what == "new" else {"allowed_mentions": discord.AllowedMentions.none()}))
     except Exception as err:
         log.warning("Завдання тижня №%s: повідомлення відділу не надіслано: %s", t.get("id"), err)
+
+
+async def announce_copy(t: dict, depts: list[str], u: dict | None, carried: bool = False):
+    """Копія нового завдання в загальний канал (адмін-панель → Канали «tasks_copy») з пінгом ролі (Згадки «tasks_copy»):
+    одне повідомлення на завдання, навіть якщо його поставлено кільком відділам. Збій Discord не скасовує дію."""
+    try:
+        ch = await core.channel("tasks_copy")
+        if not ch:
+            return
+        x = await present(t)
+        lines = [f"**{style.esc(x['data']['title'])}**" + (" · ❗ важливе" if x["data"].get("prio") == "high" else "")]
+        if x["data"].get("descr"):
+            lines.append(style.esc(x["data"]["descr"])[:1500])
+        lines += ["", style.kv("ВІДДІЛИ", ", ".join(DEPTS[d]["s"] for d in depts)), style.kv("ЦІЛЬ", _goal(x))]
+        if u:
+            who = "Куратор СБУ" if u.get("dept") == "curator" else f"{rank_name(u['rank'])} {u['name']}"
+            lines.append(style.kv("ПОСТАВИВ", who))
+        title = "ЗАВДАННЯ ТИЖНЯ ПЕРЕНЕСЕНО" if carried else "НОВЕ ЗАВДАННЯ ТИЖНЯ"
+        e = style.document(title, style.GOLD, no=f"Тиждень {week_label(t['week'])}", desc=style.block(*lines))
+        await ch.send(embed=e, view=style.site_view("Завдання тижня у «Сові»"), **docpost.mentions([], roles=docpost.key_roles("tasks_copy")))
+    except Exception as err:
+        log.warning("Завдання тижня №%s: копію в загальний канал не надіслано: %s", t.get("id"), err)
 
 
 def _task_line(x: dict) -> str:
