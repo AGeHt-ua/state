@@ -146,7 +146,7 @@ function editor(c) {
       <label class="f"><span>Підрозділ</span><select class="i" id="kf-dept">${depts.map((k) => `<option value="${k}" ${k === c.dept ? "selected" : ""}>${esc(dept(k).n)}</option>`).join("")}</select></label>
       <label class="f"><span>Гриф секретності</span><select class="i" id="kf-grif">${Object.entries(GRIF).map(([k, v]) => `<option value="${k}" ${k === d.grif ? "selected" : ""}>${v}</option>`).join("")}</select></label>
       <label class="f"><span>Об'єкт розробки (угруповання, організація)</span><input class="i" id="kf-org" maxlength="120" value="${esc(d.org)}"></label>
-      <label class="f wide"><span>I. Фабула справи</span><textarea class="i kf-big" id="kf-summary" maxlength="6000" placeholder="Що встановлено: час, місце, обставини, зв'язки">${esc(d.summary)}</textarea></label>
+      <label class="f wide"><span>I. Фабула справи</span><textarea class="i kf-big" id="kf-summary" maxlength="30000" placeholder="Що встановлено: час, місце, обставини, зв'язки">${esc(d.summary)}</textarea></label>
     </div>
     <div class="kf-ed-sec"><div class="kf-ed-h"><b>II</b> Фігуранти <button type="button" class="btn sm" data-a="kfadd" data-k="persons">+ Додати</button></div>
       <div id="kf-persons">${(d.persons || []).map((p) => `<div class="kf-row kf-person">
@@ -168,7 +168,7 @@ function editor(c) {
         <textarea class="i" data-f="text" maxlength="600" rows="2" placeholder="Що відбулося: напр. отримано відеозапис з камери біля банку від свідка J. Doe">${esc(x.text)}</textarea>
         <button type="button" class="btn sm bad" data-a="kfdel" title="Прибрати">✕</button></div>`).join("")}</div></div>
     <div class="form-grid">
-      <label class="f wide"><span>VI. Проведені оперативно-розшукові заходи</span><textarea class="i" id="kf-measures" maxlength="4000">${esc(d.measures)}</textarea></label>
+      <label class="f wide"><span>VI. Проведені оперативно-розшукові заходи</span><textarea class="i" id="kf-measures" maxlength="12000">${esc(d.measures)}</textarea></label>
       <label class="f"><span>VII. Клопотання</span><select class="i" id="kf-rtype">${Object.entries(REQ).map(([k, v]) => `<option value="${k}" ${k === (d.request || {}).type ? "selected" : ""}>${v}</option>`).join("")}</select></label>
       <label class="f wide"><span>Зміст клопотання</span><textarea class="i" id="kf-rtext" maxlength="3000" placeholder="Прошу надати санкцію на...">${esc((d.request || {}).text)}</textarea></label>
     </div>

@@ -155,7 +155,14 @@ def rights(u: dict) -> dict:
             or any(is_head_for(u, d) or is_mgmt_for(u, d) for d in CASE_DEPTS)}
 
 
+SUMMARY_MAX, MEASURES_MAX = 30000, 12000  # фабула й ОРЗ: довгі тексти (раніше 6000 / 4000)
+
+
 def clean(b: dict) -> dict:
+    # довший текст не обрізаємо мовчки — інакше частина фабули зникла б без попередження
+    for k, n, name in (("summary", SUMMARY_MAX, "Фабула"), ("measures", MEASURES_MAX, "Оперативно-розшукові заходи")):
+        if len(str(b.get(k) or "").strip()) > n:
+            raise Fail(f"{name}: задовго ({len(str(b.get(k)).strip())} символів, максимум {n}).")
     s = lambda v, n: str(v or "").strip()[:n]
     persons = [{"name": s(p.get("name"), 60), "sid": s(p.get("sid"), 10), "role": p.get("role") if p.get("role") in ROLES else "фігурант",
                 "org": s(p.get("org"), 80), "note": s(p.get("note"), 300)} for p in (b.get("persons") or [])[:30] if s(p.get("name"), 60)]
@@ -166,7 +173,7 @@ def clean(b: dict) -> dict:
     timeline = [{"when": s(x.get("when"), 30), "text": s(x.get("text"), 600)} for x in (b.get("timeline") or [])[:60] if s(x.get("text"), 600)]
     return {
         "title": s(b.get("title"), 80), "org": s(b.get("org"), 120), "grif": b.get("grif") if b.get("grif") in GRIF else "secret",
-        "summary": s(b.get("summary"), 6000), "measures": s(b.get("measures"), 4000), "timeline": timeline,
+        "summary": s(b.get("summary"), SUMMARY_MAX), "measures": s(b.get("measures"), MEASURES_MAX), "timeline": timeline,
         "arts": [s(a, 12) for a in (b.get("arts") or [])[:20] if s(a, 12)],
         "persons": persons, "evidence": evidence,
         "request": {"type": (b.get("request") or {}).get("type") if (b.get("request") or {}).get("type") in REQUESTS else "search",

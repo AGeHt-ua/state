@@ -341,13 +341,16 @@ MAT_TYPES = ["Відеозапис з боді-камери", "Поясненн�
              "Відеозапис допиту", "Рапорт", "Розпорядження / інший документ", "Інше"]
 GRIFS = {"top": "Цілком таємно", "secret": "Таємно", "dsk": "Для службового користування"}
 # текстові поля справи: ключ → максимальна довжина
-INSP_TEXT = {"basis": 300, "qual": 300, "when": 120, "place": 200, "fabula": 6000, "statute": 2000, "regs": 2000, "crim": 1000,
+INSP_TEXT = {"basis": 300, "qual": 300, "when": 120, "place": 200, "fabula": 30000, "statute": 4000, "regs": 4000, "crim": 2000,
              "mitig": 1000, "aggr": 1000, "callsign": 40}
 
 
 def can_resolve(u: dict) -> bool:
     """Затвердити висновок службового розслідування або повернути його на доопрацювання (резолюція Голови)."""
     return u["rank"] >= ov.P("insp_approve") and not u.get("curator_ro")
+
+
+CONCL_MAX = 15000  # висновок ВВБ (раніше 4000)
 
 
 def is_vvb_head(u: dict) -> bool:
@@ -397,6 +400,9 @@ async def insp_save(u: dict, b: dict, iid: int | None = None) -> dict:
     if not target:
         raise Fail("Оберіть співробітника (фігуранта).")
     s = lambda k, n: str(b.get(k) or "").strip()[:n]
+    for k, n, name in (("fabula", INSP_TEXT["fabula"], "Фабула"), ("conclusion", CONCL_MAX, "Висновок")):
+        if len(str(b.get(k) or "").strip()) > n:  # не обрізаємо мовчки
+            raise Fail(f"{name}: задовго ({len(str(b.get(k)).strip())} символів, максимум {n}).")
     rec = b.get("recommend") if b.get("recommend") in KINDS else None
     kind = b.get("kind") if b.get("kind") in INSP_KINDS else "invest"
     data = {k: s(k, n) for k, n in INSP_TEXT.items()}
@@ -414,7 +420,7 @@ async def insp_save(u: dict, b: dict, iid: int | None = None) -> dict:
     title = s("title", 120)
     if not title:
         raise Fail("Вкажіть предмет розслідування (коротко).")
-    vals = (target["sid"], title, s("materials", 5000), s("conclusion", 4000), rec,
+    vals = (target["sid"], title, s("materials", 5000), s("conclusion", CONCL_MAX), rec,
             json.dumps([str(f)[:40] for f in (b.get("files") or [])[:10]]), kind, json.dumps(data, ensure_ascii=False))
     if iid:
         async with core.doc_lock("insp", iid):

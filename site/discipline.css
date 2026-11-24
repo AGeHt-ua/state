@@ -48,3 +48,5 @@
 .sr-k{width:34%;font-weight:600}
 .sr-ref{word-break:break-all}
 .form-grid .sr-h{color:var(--gold,#c9a24d)}
+.sr-view{display:flex;justify-content:center}
+.sr-view .sr-blank{white-space:normal}
