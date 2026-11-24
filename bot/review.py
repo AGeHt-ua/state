@@ -7,6 +7,7 @@
 не змінились заднім числом. Бали додаються до тижневих (премії, рейтинг, статистика відділів) і до балів на підвищення.
 Звання береться поточне: хто опустився нижче 11, бали за перевірку перестає отримувати."""
 import json
+import time
 
 from db import db, now_ms
 
@@ -43,7 +44,7 @@ async def _events(t0: int, t1: int) -> list[tuple[int, int]]:
                 out.append((v["sid"], DOC_PTS))
     for r in await db.all("SELECT history FROM cases WHERE updated>=?", t0):
         for h in json.loads(r["history"] or "[]"):
-            if h.get("action") in CASE_ACTIONS and h.get("sid") and t0 <= int(h.get("t") or 0) < t1:
+            if isinstance(h, dict) and h.get("action") in CASE_ACTIONS and h.get("sid") and t0 <= int(h.get("t") or 0) < t1:
                 out.append((h["sid"], CASE_PTS))
     # анкети й запити на допуск зберігають Discord ID того, хто вирішив
     sid_of = {str(u["discord_id"]): u["sid"] for u in await db.all("SELECT sid, discord_id FROM users WHERE discord_id IS NOT NULL")}
@@ -56,8 +57,23 @@ async def _events(t0: int, t1: int) -> list[tuple[int, int]]:
     return out
 
 
+_cache: dict[tuple[int, int], tuple[float, dict[int, int]]] = {}
+CACHE_S = 30  # одна сторінка кабінету питає бали кілька разів — не перераховувати щоразу всю історію
+
+
 async def points_all(t0: int = 0, t1: int = FAR) -> dict[int, int]:
-    """Бали за перевірку всіх керівників (звання від 11) за проміжок."""
+    """Бали за перевірку всіх керівників (звання від 11) за проміжок (кеш на CACHE_S секунд)."""
+    hit = _cache.get((t0, t1))
+    if hit and time.monotonic() - hit[0] < CACHE_S:
+        return dict(hit[1])
+    out = await _points_all(t0, t1)
+    if len(_cache) > 64:
+        _cache.clear()
+    _cache[(t0, t1)] = (time.monotonic(), out)
+    return dict(out)
+
+
+async def _points_all(t0: int, t1: int) -> dict[int, int]:
     events = await _events(t0, t1)
     if not events:
         return {}

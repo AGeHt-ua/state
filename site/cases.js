@@ -183,13 +183,20 @@ function collect() {
 async function save(then) {
   const draft = collect();
   for (const e of draft.data.evidence) {
-    if (e._input && e._input.files.length) e.files = e.files.concat(await S.uploadFiles(e._input));
+    if (e._input && e._input.files.length) {
+      e.files = e.files.concat(await S.uploadFiles(e._input));
+      const row = e._input.closest(".kf-ev");  // завантажені файли — у рядок доказу, щоб повтор не вантажив їх удруге
+      if (row) row.dataset.files = e.files.join(",");
+      e._input.value = "";
+    }
     delete e._input;
   }
   const body = { dept: draft.dept, ...draft.data };
   const id = UIc.edit && UIc.edit.id;
   let c = await call(id ? `/api/cases/${id}` : "/api/cases", { json: body });
+  if (UIc.edit) UIc.edit.id = c.id;  // справу створено: якщо подання нижче не вдасться, повтор оновить її, а не створить другу
   if (then === "submit") c = await call(`/api/cases/${c.id}/submit`, { json: {} });
+  stashDrop();
   UIc.edit = null;
   UIc.id = c.id;
   toast(then === "submit" ? "Кейс-файл подано на погодження" : "Чернетку збережено");
@@ -412,7 +419,7 @@ S.views.cases = async () => {
 Object.assign(S.actions, {
   kftab: (b) => { UIc.tab = b.dataset.v; S.render(); },
   kfopen: (b) => { UIc.id = +b.dataset.id; S.render(); scrollTo(0, 0); },
-  kfback: () => { UIc.id = null; UIc.edit = null; S.render(); },
+  kfback: () => { if (UIc.edit) stashDrop(); UIc.id = null; UIc.edit = null; S.render(); },
   kfnew: () => { UIc.edit = blankCase(); S.render(); },
   kfedit: () => { UIc.edit = JSON.parse(JSON.stringify(S.cache.case)); S.render(); },
   kfadd: (b) => {
@@ -521,6 +528,21 @@ S.forms.kfsave = async (f, ev) => {
   catch (e) { toast(e.message, 1); btns.forEach((x) => (x.disabled = false)); }
 };
 S.onNav.push((v) => { if (v !== "cases") { UIc.id = null; UIc.edit = null; } });
+// чернетка редактора у вкладці: зберігається разом з іншими формами (під час введення й перед завершенням сесії)
+const stashKey = () => "sova-kf:" + S.ME().me.sid;
+function stashGet() {
+  try {
+    const x = JSON.parse(sessionStorage.getItem(stashKey()) || "null");
+    return x && Date.now() - x.t < 864e5 ? x.e : null;
+  } catch (e) { return null; }
+}
+function stashDrop() { try { sessionStorage.removeItem(stashKey()); } catch (e) {} }
+S.snapshots.push(() => {
+  if (!UIc.edit || !document.querySelector("#view form[data-f=kfsave]")) return;
+  const cur = collect();
+  const e = { ...UIc.edit, dept: cur.dept, data: { ...cur.data, evidence: cur.data.evidence.map(({ _input, ...x }) => x) } };
+  try { sessionStorage.setItem(stashKey(), JSON.stringify({ t: Date.now(), e })); } catch (err) {}
+});
 // адреса: #/cases/вкладка · #/cases/7 · #/cases/7/edit · #/cases/new
 const isId = (x) => /^\d+$/.test(x || "");
 S.routes.cases = {
@@ -530,6 +552,11 @@ S.routes.cases = {
     UIc.id = isId(p[0]) ? +p[0] : null;
     if (!UIc.id) UIc.tab = p[0] && p[0] !== "new" ? p[0] : null;
     if (p[0] === "new" && ((S.ME().cases || {}).create || []).length) UIc.edit = blankCase();
+    const st = stashGet();  // незбережений редактор (сесія завершилась, сторінку перезавантажено)
+    if (st && (p[0] === "new" ? !st.id : UIc.id && st.id === UIc.id && p[1] === "edit")) {
+      UIc.edit = st;
+      setTimeout(() => toast("Відновлено незбережену чернетку кейс-файлу"), 300);
+    }
   },
 };
 })();

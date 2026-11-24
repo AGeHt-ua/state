@@ -29,6 +29,7 @@ async def make_backup(reason: str) -> tuple[str, int]:
         shutil.copyfileobj(src, dst)
     raw.unlink()
     size = gz.stat().st_size
+    prune_local()  # до відправки в Discord: збій відправки не повинен зупиняти чистку старих копій
     ch = await core.channel("backups")
     if ch:
         fits = size <= config.MAX_UPLOAD_MB * 1024 * 1024
@@ -43,7 +44,7 @@ async def make_backup(reason: str) -> tuple[str, int]:
             await ch.send(embed=e, file=discord.File(gz))
         else:
             await ch.send(embed=e)
-    prune_local()
+            log.warning("Бекап %s (%.1f МБ) більший за ліміт Discord — копія лише на хостингу", gz.name, size / 1048576)
     log.info("Бекап %s (%s)", gz.name, reason)
     return gz.name, size
 
@@ -81,6 +82,7 @@ async def restore(data: bytes, filename: str) -> str:
             p.unlink()
     os.replace(tmp, config.DB_PATH)
     await db.open()
-    import core  # пункти звітів з адмін-панелі зберігаються в базі — перечитати з відновленої
-    await core.load_custom_acts()
+    import overrides as ov
+    await ov.load(db)  # доступи, канали й налаштування адмін-панелі — з відновленої бази, інакше старі перезапишуть її
+    await core.load_custom_acts()  # пункти звітів з адмін-панелі зберігаються в базі — перечитати з відновленої
     return name

@@ -91,9 +91,12 @@ async def auth(request: web.Request) -> dict:
 
 async def body(request: web.Request) -> dict:
     try:
-        return await request.json()
+        b = await request.json()
     except (json.JSONDecodeError, UnicodeDecodeError):
         raise Fail("Некоректний запит.")
+    if not isinstance(b, dict):
+        raise Fail("Некоректний запит.")
+    return b
 
 
 def public_user(u: dict) -> dict:
@@ -112,10 +115,10 @@ async def people_map(sids) -> dict:
     return {r["sid"]: public_user(r) for r in rows}
 
 
-def limit_login(key: str):
+def limit_login(key: str, cap: int = 10):
     now = time.time()
     hits = [t for t in _attempts.get(key, []) if now - t < 600]
-    if len(hits) >= 10:
+    if len(hits) >= cap:
         raise Fail("Забагато спроб входу. Зачекайте 10 хвилин.", 429)
     hits.append(now)
     _attempts[key] = hits
@@ -158,7 +161,10 @@ async def meta(request):
 async def login(request):
     b = await body(request)
     sid = str(b.get("sid", "")).strip()
-    limit_login(f"{request.remote}:{sid}")
+    # за тунелем request.remote завжди 127.0.0.1: справжня адреса — від ретранслятора, інакше чужі 10 спроб блокували б вхід власнику номера
+    ip = request.headers.get("X-Sova-Client-IP", "").strip() or request.remote
+    limit_login(f"{ip}:{sid}")
+    limit_login(f"sid:{sid}", 40)  # загальний запобіжник від підбору пароля з багатьох адрес
     u = await db.one("SELECT * FROM users WHERE sid=?", int(sid)) if sid.isdigit() else None
     if not u or not core.check_password(str(b.get("password", "")), u["pw_hash"]):
         raise Fail("Невірний номер жетона або код доступу.", 401)

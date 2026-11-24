@@ -42,17 +42,63 @@ async function call(path, opts = {}) {
   let body = opts.body;
   if (opts.json !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.json); }
   let r;
+  const method = opts.method || (body ? "POST" : "GET");
+  const fail = (msg, status) => Object.assign(new Error(msg), { status });
   try {
-    r = await fetch(API + path, { method: opts.method || (body ? "POST" : "GET"), headers, body });
+    r = await fetch(API + path, { method, headers, body });
   } catch (e) {
-    throw new Error("Немає зв'язку з ботом «Сова». Перевірте інтернет або спробуйте за хвилину.");
+    throw fail("Немає зв'язку з ботом «Сова». Перевірте інтернет або спробуйте за хвилину.", 0);
   }
   let data = null;
   try { data = await r.json(); } catch (e) {}
-  if (r.status === 401 && path !== "/api/login") { logout(true); throw new Error("Сесія завершилась. Увійдіть знову."); }
-  if (!r.ok) throw new Error((data && data.error) || `Помилка ${r.status}`);
+  if (r.status === 401 && path !== "/api/login") {
+    saveDraft();  // текст відкритої форми повернеться після повторного входу
+    logout(true);
+    throw fail("Сесія завершилась. Увійдіть знову — введений текст збережено.", 401);
+  }
+  if (!r.ok) throw fail((data && data.error) || `Помилка ${r.status}`, r.status);
+  if (method !== "GET" && path !== "/api/files" && path !== "/api/login") dropDraft();  // збережено на сервері — чернетка вже не потрібна
   return data;
 }
+
+/* ---------------- чернетки форм ----------------
+   Введений текст тримається у вкладці (sessionStorage), поки його не збережено на сервері:
+   переживає завершення сесії (повторний вхід), перезавантаження сторінки й збій зв'язку. */
+const DRAFT = "sova-draft:";
+const SNAP = [];  // модулі зі складними формами (кейс-файли) зберігають свій стан самі
+const ss = {
+  get(k) { try { return JSON.parse(sessionStorage.getItem(k) || "null"); } catch (e) { return null; } },
+  set(k, v) { try { v ? sessionStorage.setItem(k, JSON.stringify(v)) : sessionStorage.removeItem(k); } catch (e) {} },
+  clear(prefix) { try { Object.keys(sessionStorage).filter((k) => k.startsWith(prefix)).forEach((k) => sessionStorage.removeItem(k)); } catch (e) {} },
+};
+const draftKey = () => DRAFT + (ME && ME.me ? ME.me.sid : "") + ":" + routePath();
+const SKIP_T = /^(file|password|search|hidden|checkbox|radio|submit|button|range|color|date)$/;
+const draftFields = () => [...document.querySelectorAll("#view textarea[id], #view input[id]")].filter((el) => !SKIP_T.test(el.type) && !/-q$/.test(el.id));
+function saveDraft() {
+  if (!ME || !document.getElementById("view")) return;
+  SNAP.forEach((f) => { try { f(); } catch (e) {} });
+  const v = {};
+  for (const el of draftFields()) if (el.value.trim() && el.value !== el.defaultValue) v[el.id] = el.value;
+  ss.set(draftKey(), Object.keys(v).length ? { t: Date.now(), v } : null);
+}
+function dropDraft() { if (ME) ss.set(draftKey(), null); }
+function restoreDraft() {
+  const d = ss.get(draftKey());
+  if (!d) return;
+  if (Date.now() - d.t > 864e5) return dropDraft();
+  let n = 0;
+  for (const [id, val] of Object.entries(d.v || {})) {
+    const el = document.getElementById(id);
+    if (el && el.closest("#view") && !SKIP_T.test(el.type) && el.value === el.defaultValue && el.value !== val) {
+      el.value = val;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      n++;
+    }
+  }
+  if (n) { DIRTY = true; toast("Відновлено незбережений текст форми"); }
+}
+let draftT = 0;
+addEventListener("pagehide", () => saveDraft());
 
 /* ---------------- вхід ---------------- */
 function viewLogin(err) {
@@ -107,7 +153,8 @@ function logout(silent) {
   store.set(null);
   // наступний користувач планшета не бачить, де був попередній: адреса, вкладки, відкриті документи й кеш — з нуля
   if (!silent) {
-    Object.assign(UI, { view: "home", tabs: {}, actId: null, rapId: null, file: null });
+    Object.assign(UI, { view: "home", tabs: {}, actId: null, rapId: null, file: null, rapArc: null });
+    ss.clear(DRAFT); ss.clear("sova-kf:");
     HOOKS.forEach((f) => f("home"));
     if (window.SOVA) for (const k of Object.keys(window.SOVA.cache)) delete window.SOVA.cache[k];
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
@@ -163,12 +210,13 @@ const TITLES = { home: "Службовий кабінет", act: "Звіти п�
 function viewShell(inner) {
   const p = ME.pending || {};
   const badge = { kb: p.exams, staff: p.orders, act: p.acts, rap: p.raps, hr: p.hr, cases: p.cases, fin: p.fin, tasks: p.tasks, disc: p.disc || (ME.disc && ME.disc.active) || 0 };
-  const c = META.depts[ME.me.dept].color;
+  const dp = META.depts[ME.me.dept] || {};
+  const c = dp.color || "#8a94a6";
   return `<div class="shell" style="--dept:${c}">
   <aside class="side">
     <div class="brand"><img src="sbu-logo.webp" alt="" width="46" height="46"><div><b>СОВА</b><span>ЄІС Служби безпеки штату NG</span></div></div>
     <div class="me"><span class="dp">${esc(ME.me.deptName)}</span><span class="nm">${esc(ME.me.name)}</span><span class="rk">${esc(ME.me.rankName)}</span>
-      <div class="meta"><span>${esc(META.depts[ME.me.dept].s)}</span><span>№${ME.me.sid}</span></div></div>
+      <div class="meta"><span>${esc(dp.s || "")}</span><span>№${ME.me.sid}</span></div></div>
     <nav class="nav">
       ${NAV.filter(navOk).map(([k, l]) => `<button data-a="nav" data-v="${k}" class="${UI.view === k ? "on" : ""}">${ico(k)}<span>${l}</span>${badge[k] ? `<span class="cnt">${badge[k]}</span>` : ""}</button>`).join("")}
       ${SOON.length && ME.me.dept !== "prosecutor" ? '<div class="sec">У розробці</div>' : ""}
@@ -554,7 +602,8 @@ async function vAct() {
           <button class="btn gold" type="submit" id="a-btn">Надіслати на перевірку</button></div>
       </form></div>`;
   }
-  const list = await call("/api/acts" + (t === "review" || t === "journal" ? "?scope=" + t : ""));
+  let list;
+  try { list = await call("/api/acts" + (t === "review" || t === "journal" ? "?scope=" + t : "")); } catch (e) { return head + errBox(e); }
   const empty = { review: "Немає звітів, що очікують перевірки.", journal: "У ваших підрозділах звітів ще немає." }[t] || "Звітів ще немає.";
   return head + (t === "journal" ? '<p class="note">Усі звіти співробітників підрозділів, якими ви керуєте. Натисніть на звіт, щоб відкрити його повністю.</p>' : "")
     + (list.length ? actFeed(list, t === "mine" ? false : t) : `<div class="empty">${empty}</div>`);
@@ -645,6 +694,7 @@ function rapDoc(r) {
     </div>`;
 }
 
+const errBox = (e) => `<p class="note bad">${esc(e.message)}</p>`;
 async function vRap() {
   if (UI.rapId) return vRapView(UI.rapId);
   const canRev = ME.me.rank >= 11 || !!(ME.hr && ME.hr.vkpp) || (ME.pending.raps || 0) > 0;
@@ -652,8 +702,9 @@ async function vRap() {
   const canArc = ME.me.rank >= 11 || !!(ME.hr && ME.hr.vkpp);
   const head = tabsBar("rap", [["mine", "Мої рапорти"], ["new", "Подати рапорт"], ...(canRev ? [["review", "На розгляд", ME.pending.raps || 0]] : []), ...(canArc ? [["archive", "Архів"]] : [])], "mine");
   if (t === "new") return head + rapForm();
-  if (t === "archive" && canArc) return head + await rapArchive();
-  const list = await call("/api/raps" + (t === "review" ? "?scope=review" : ""));
+  if (t === "archive" && canArc) { try { return head + await rapArchive(); } catch (e) { return head + errBox(e) + '<button class="btn sm" data-a="arcreset">Скинути фільтри</button>'; } }
+  let list;
+  try { list = await call("/api/raps" + (t === "review" ? "?scope=review" : "")); } catch (e) { return head + errBox(e); }
   if (!list.length) return head + `<div class="empty">${t === "review" ? "Немає рапортів на розгляд." : "Ви ще не подавали рапортів."}</div>`;
   return head + `<div class="docs">${list.map((r) => `<article class="doc st-${r.status} clickable" data-a="rapopen" data-id="${r.id}" title="Відкрити рапорт">
       <div class="doc-no"><b>${docNo("РАП", r.id)}</b><span>${fmtDT(r.t)}</span></div>
@@ -671,7 +722,7 @@ async function vRap() {
 const RAP_ARC_ST = [["done", "Усі розглянуті"], ["ok", "Погоджені"], ["rej", "Відмовлені"], ["cancel", "Відкликані"], ["all", "Усі, разом із тими, що на розгляді"]];
 async function rapArchive() {
   const f = UI.rapArc || (UI.rapArc = { st: "done", type: "", dept: "", from: "", to: "" });
-  const day = (iso, end) => iso ? String(new Date(iso + (end ? "T23:59:59.999" : "T00:00:00")).getTime()) : "";
+  const day = (iso, end) => { const t = iso ? new Date(iso + (end ? "T23:59:59.999" : "T00:00:00")).getTime() : NaN; return isNaN(t) ? "" : String(t); };
   const qs = new URLSearchParams({ scope: "archive", st: f.st, type: f.type, dept: f.dept, from: day(f.from), to: day(f.to, 1) });
   const list = await call("/api/raps?" + qs);
   const opt = (v, l, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`;
@@ -1022,7 +1073,12 @@ addEventListener("popstate", async (e) => {
   scrollTo(0, (e.state && e.state.y) || 0);
 });
 // незбережені зміни: введення у формах на сторінці; попередження при виході зі сторінки чи закритті вкладки
-document.addEventListener("input", (e) => { if (e.target.closest("#view form, #view .kf-ed, #view [data-f]") && e.target.type !== "search" && !/-q$/.test(e.target.id || "")) DIRTY = true; });
+document.addEventListener("input", (e) => {
+  if (e.target.closest("#view form, #view .kf-ed, #view [data-f]") && e.target.type !== "search" && !/-q$/.test(e.target.id || "")) {
+    DIRTY = true;
+    clearTimeout(draftT); draftT = setTimeout(saveDraft, 700);
+  }
+});
 document.addEventListener("submit", (e) => { if (!e.target.closest(".docgo")) DIRTY = false; }, true);
 addEventListener("beforeunload", (e) => { if (DIRTY) { e.preventDefault(); e.returnValue = ""; } });
 // кнопки переходу поза формою (меню, вкладки, «← назад», відкрити документ) — спитати, якщо форма змінена
@@ -1095,7 +1151,7 @@ async function boot() {
   } catch (e) {
     if (!TOKEN) return render();
     // Бот перезапускається або тунель ще не піднявся: вхід збережено — чекаємо й пробуємо знову, а не показуємо екран входу
-    if (/зв'язку/.test(e.message)) {
+    if (e.status === 0 || e.status >= 500 || /зв'язку/.test(e.message)) {
       $("#app").innerHTML = `<div class="login"><div class="login-card"><img src="sbu-logo.webp" alt="" width="120" height="120">
         <h1>ЄІС «СОВА»</h1><p class="sub"><span class="spin"></span> Відновлюю зв'язок із ботом… Вхід збережено, сторінка відкриється автоматично.</p></div></div>`;
       return setTimeout(boot, 5000);
@@ -1118,17 +1174,26 @@ async function render(err) {
   if (!NAV.find((n) => n[0] === UI.view && navOk(n))) UI.view = (NAV.find(navOk) || ["home"])[0];
   if (Date.now() - meAt > ME_FRESH) await refreshMe();
   if (!TOKEN || !ME) return render();
-  $("#app").innerHTML = viewShell(loading);
+  const gen = ++RENDER_GEN;
+  try {
+    $("#app").innerHTML = viewShell(loading);
+  } catch (e) {
+    $("#app").innerHTML = `<div class="login"><div class="login-card"><p class="note bad">${esc(e.message)}</p><button class="btn" data-a="logout">Вийти</button></div></div>`;
+    return;
+  }
   const view = UI.view;
   try {
     const html = await VIEWS[view]();
+    if (gen !== RENDER_GEN) return;  // поки чекали відповіді, відкрито інший екран
     if (UI.view === view && $("#view")) $("#view").innerHTML = html;
   } catch (e) {
+    if (gen !== RENDER_GEN) return;
     if ($("#view")) $("#view").innerHTML = `<p class="note bad">${esc(e.message)}</p>`;
   }
   DIRTY = false;
-  if (UI.view === view) syncUrl();
+  if (UI.view === view) { syncUrl(); restoreDraft(); }
 }
+let RENDER_GEN = 0;
 
 let meAt = 0;  // коли востаннє оновлювали дані співробітника (бали, баланс для підвищення, лічильники в меню)
 const ME_FRESH = 30_000;
@@ -1175,7 +1240,7 @@ const A = {
   rapopen: (b) => { UI.rapId = +b.dataset.id; render(); scrollTo(0, 0); },
   arcreset: () => { UI.rapArc = null; render(); },
   rapback: () => { UI.rapId = null; render(); },
-  raptype: (b) => { UI.rapType = b.dataset.v; render(); },
+  raptype: (b) => switchRapType(b.dataset.v),
   auditf: (b) => { UI.auditF = b.dataset.v; render(); },
   tab: (b) => { UI.rapId = null; UI.actId = null; UI.tabs[b.dataset.k] = b.dataset.v; render(); },
   logout: () => logout(false),
@@ -1361,14 +1426,22 @@ document.addEventListener("change", (e) => {
     p.hidden = !f; if (f) p.src = URL.createObjectURL(f);
     $("#nw-img-x").hidden = !f; $("#nw-img-name").textContent = f ? f.name : "не обрано";
   }
-  if (e.target.dataset.arc && UI.rapArc) { UI.rapArc[e.target.dataset.arc] = e.target.value; render(); }  // фільтри архіву рапортів
+  // фільтри архіву рапортів; дату — лише повну (Chrome шле change на кожну цифру року)
+  if (e.target.dataset.arc && UI.rapArc && !(e.target.type === "date" && e.target.value && +e.target.value.slice(0, 4) < 2000)) { UI.rapArc[e.target.dataset.arc] = e.target.value; render(); }
   if (e.target.id === "a-type" && $("#a-custom-f")) $("#a-custom-f").hidden = e.target.value !== "other";
   if (e.target.id === "a-type" && $("#a-qty-f")) { $("#a-qty-f").hidden = e.target.value !== "patrol"; if (e.target.value !== "patrol") $("#a-qty").value = 1; }
-  if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview(); if (e.target.dataset.change === "raptype") { UI.rapType = e.target.value; render(); } });
+  if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview(); if (e.target.dataset.change === "raptype") switchRapType(e.target.value); });
+// інший тип рапорту — інша форма, але вже написаний текст обґрунтування не губиться
+async function switchRapType(t) {
+  const keep = $("#r-reason") ? $("#r-reason").value : "";
+  UI.rapType = t;
+  await render();
+  if (keep && $("#r-reason") && !$("#r-reason").value) { $("#r-reason").value = keep; DIRTY = true; }
+}
 
 // Спільні хелпери для модулів (cases.js)
 window.SOVA = { esc, fmtDT, call, toast, $, uploadFiles, render, refreshMe, views: VIEWS, actions: A, forms: F, onNav: HOOKS, cache: {},
-  ME: () => ME, META: () => META, routes: ROUTES, safeUrl, showFile, setDirty: (v) => { DIRTY = !!v; }, reloadMeta: async () => { META = await call("/api/meta"); } };
+  ME: () => ME, META: () => META, routes: ROUTES, safeUrl, showFile, setDirty: (v) => { DIRTY = !!v; }, snapshots: SNAP, reloadMeta: async () => { META = await call("/api/meta"); } };
 
 window.SOVA.docImageFns = Object.assign(window.SOVA.docImageFns || {}, { act: actImage, rap: rapImage });
 // старт — коли підключено всі модулі (memo.js, kb.js…): швидка відповідь API не повинна випередити їх завантаження

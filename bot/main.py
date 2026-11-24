@@ -47,19 +47,27 @@ class Sova(commands.Bot):
             log.error("Не визначено сервер СБУ (бот на %s серверах, GUILD_ID=%s). Запросіть бота на сервер СБУ або вкажіть GUILD_ID.",
                       len(self.guilds), config.GUILD_ID)
             return
+        if not backup_loop.is_running():  # бекапи — першими: збій Discord нижче не повинен їх зупинити
+            backup_loop.start()
+        if not getattr(self, "_panel_loop", None):
+            self._panel_loop = asyncio.create_task(slash.panel_loop())
         try:
             await core.ensure_channels(g)
         except discord.Forbidden:
             log.error("Боту бракує права «Керувати каналами» — канали не створено.")
+        except discord.HTTPException as e:
+            log.warning("Канали не перевірено: %s", e)
         if not getattr(self, "_synced", False):  # on_ready приходить і після кожного перепідключення — команди синхронізуємо раз
-            self.tree.copy_global_to(guild=g)
-            await self.tree.sync(guild=g)
-            self._synced = True
-        await slash.ensure_panel()
-        if not getattr(self, "_panel_loop", None):
-            self._panel_loop = asyncio.create_task(slash.panel_loop())
-        if not backup_loop.is_running():
-            backup_loop.start()
+            try:
+                self.tree.copy_global_to(guild=g)
+                await self.tree.sync(guild=g)
+                self._synced = True
+            except discord.HTTPException as e:
+                log.warning("Команди не синхронізовано (повтор при перепідключенні): %s", e)
+        try:
+            await slash.ensure_panel()
+        except discord.HTTPException as e:
+            log.warning("Панель не оновлено: %s", e)
         log.info("Сова на зв'язку як %s · сервер %s", self.user, g.name)
 
     async def on_member_join(self, member: discord.Member):

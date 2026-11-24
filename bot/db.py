@@ -227,6 +227,9 @@ CREATE INDEX IF NOT EXISTS access_status ON access_requests(status, discord_id);
 CREATE INDEX IF NOT EXISTS callsigns_sid ON callsigns(sid, status);
 CREATE INDEX IF NOT EXISTS attempts_status ON attempts(status);
 CREATE INDEX IF NOT EXISTS orders_sid ON orders(sid, status);
+CREATE INDEX IF NOT EXISTS acts_reviewed ON acts(reviewed);
+CREATE INDEX IF NOT EXISTS raps_reviewed ON raps(reviewed);
+CREATE INDEX IF NOT EXISTS cases_updated ON cases(updated);
 """
 
 

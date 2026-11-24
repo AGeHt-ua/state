@@ -135,6 +135,8 @@ async function docView(id) {
 
 function editView() {
   const e = st.edit, x = e.data, A = S.META().acts || {}, o = st.o || {};
+  // для яких з обраних відділів цей тип звіту недоступний (як у формі звіту; «instr» — інструктори будь-якого відділу)
+
   const all = o.depts || Object.keys(D()).filter((k) => !["lead", "curator", "prosecutor"].includes(k));
   const acts = Object.entries(A).filter(([, v]) => !v.off);
   return `<div class="kd-bar"><button class="btn" data-a="tkback">← До завдань</button><span class="sp"></span>
@@ -149,7 +151,7 @@ function editView() {
         <label class="chk"><input type="radio" name="tk-kind" value="auto" ${e.kind === "auto" ? "checked" : ""}> <b>За звітами</b> — закривається саме, коли підтверджено потрібну кількість звітів</label>
         <label class="chk"><input type="radio" name="tk-kind" value="manual" ${e.kind === "manual" ? "checked" : ""}> <b>Ручне</b> — начальник відділу позначає з доказами, ви підтверджуєте</label></div>`}
       <div class="f wide tk-auto" ${e.kind === "auto" ? "" : "hidden"}><span>Які звіти зараховуються (нічого не обрано — будь-які)</span>
-        <div class="tk-acts">${acts.map(([k, v]) => `<label class="chk"><input type="checkbox" data-ta="${k}" ${(x.acts || []).includes(k) ? "checked" : ""}> ${esc(v.n)}</label>`).join("")}</div></div>
+        <div class="tk-acts">${acts.map(([k, v]) => { const no = actNoDepts(v, e.id ? [e.dept] : e.depts || []); return `<label class="chk"><input type="checkbox" data-ta="${k}" ${(x.acts || []).includes(k) ? "checked" : ""}> ${esc(v.n)} <span class="muted small tk-no" data-k="${k}" title="Співробітники цих відділів не можуть подати такий звіт — завдання для них не виконається">${noText(no)}</span></label>`; }).join("")}</div></div>
       <label class="f tk-auto" ${e.kind === "auto" ? "" : "hidden"}><span>Ціль: скільки звітів (патрулювання — блоків по 30 хв)</span><input class="i mono" type="number" min="1" max="200" data-tx="target" value="${esc(x.target || 3)}"></label>
       <label class="f"><span>Пріоритет</span><select class="i" data-tx="prio"><option value="normal">Звичайне</option><option value="high" ${x.prio === "high" ? "selected" : ""}>Важливе ❗</option></select></label>
       ${e.id ? "" : `<label class="f"><span>Тиждень</span><select class="i" id="tk-week"><option value="cur">Поточний (${dd(o.current)}–${dd(o.current + 6 * 86400000)})</option>
@@ -165,6 +167,15 @@ function editView() {
 S.views.tasks = async () => st.edit ? editView() : st.id ? docView(st.id) : listView();
 
 const run = async (b, fn) => { if (b) b.disabled = true; try { await fn(); } catch (e) { toast(e.message, 1); } if (b) b.disabled = false; };
+// для яких з обраних відділів тип звіту недоступний (як у формі звіту; «all» і «instr» — будь-який відділ)
+const actNoDepts = (v, depts) => Array.isArray(v.d) ? depts.filter((d) => !v.d.includes(d)) : [];
+const noText = (no) => no.length ? `⚠ недоступно: ${esc(no.map((d) => (D()[d] || {}).s || d).join(", "))}` : "";
+function updNo() {
+  const A = S.META().acts || {}, e = st.edit;
+  if (!e) return;
+  const depts = e.id ? [e.dept] : [...document.querySelectorAll("[data-td]:checked")].map((el) => el.dataset.td);
+  document.querySelectorAll(".tk-no").forEach((el) => { el.innerHTML = A[el.dataset.k] ? noText(actNoDepts(A[el.dataset.k], depts)) : ""; });
+}
 const read = () => {
   const e = st.edit, x = e.data;
   document.querySelectorAll("[data-tx]").forEach((el) => { x[el.dataset.tx] = el.value; });
@@ -179,6 +190,7 @@ const read = () => {
 document.addEventListener("change", (e) => {
   if (e.target.name === "tk-kind") document.querySelectorAll(".tk-auto").forEach((el) => { el.hidden = e.target.value !== "auto"; });
   if (e.target.id === "tk-alld") document.querySelectorAll("[data-td]").forEach((el) => { el.checked = e.target.checked; });
+  if (e.target.id === "tk-alld" || e.target.dataset.td) updNo();
 });
 S.forms.tksubmit = (f) => run(f.querySelector("button"), async () => {
   const links = document.getElementById("tk-links").value.split(/\s+/).map((s) => s.trim()).filter(Boolean);

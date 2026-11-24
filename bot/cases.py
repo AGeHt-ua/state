@@ -197,6 +197,7 @@ async def create(u: dict, b: dict) -> dict:
     return await get(cid)
 
 
+@core.serialized("case")
 async def update(u: dict, cid: int, b: dict) -> dict:
     c = await get(cid)
     if c["author"] != u["sid"] or c["status"] != "draft":
@@ -221,6 +222,7 @@ def _next_after_draft(u: dict, dept: str) -> str:
     return "head"
 
 
+@core.serialized("case")
 async def submit(u: dict, cid: int) -> dict:
     c = await get(cid)
     if c["author"] != u["sid"] or c["status"] != "draft":
@@ -239,6 +241,7 @@ async def submit(u: dict, cid: int) -> dict:
     return c
 
 
+@core.serialized("case")
 async def withdraw(u: dict, cid: int) -> dict:
     """Виконавець відкликає справу з погодження назад у свою чернетку (поки її не затвердили чи не відмовили)."""
     c = await get(cid)
@@ -253,6 +256,7 @@ async def withdraw(u: dict, cid: int) -> dict:
     return c
 
 
+@core.serialized("case")
 async def delete(u: dict, cid: int):
     """Видалення справи: виконавець — свою чернетку (з погодження спершу відкликати); Голова й заступник — будь-яку."""
     c = await get(cid)
@@ -397,6 +401,7 @@ async def _archive_embed(c: dict, u: dict, approver: dict | None) -> discord.Emb
     return e
 
 
+@core.serialized("case")
 async def archive(u: dict, cid: int, pdf: bytes) -> dict:
     """Затверджений кейс-файл → архівний канал Discord: embed з клікабельними посиланнями на докази + PDF бланка (формує сайт).
     Генпрокурор надсилає автоматично одразу після затвердження; Голова чи заступник — кнопкою (зокрема повторно)."""

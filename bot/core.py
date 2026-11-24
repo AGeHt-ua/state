@@ -44,7 +44,7 @@ ACTS = {  # id: (назва, бали, відділи або "all"/"instr", по
     "covert":    ("Негласний захід / впровадження", 6, ["orv", "atc"], False),
     "raid":      ("Рейд або спецоперація", 6, ["orv", "atc", "alpha", "deb", "lead"], False),
     "escort":    ("Охорона свідка, судді або конвой", 4, ["alpha"], False),
-    "supply":    ("Супровід поставки", 3, ["orv", "atc", "alpha", "deb", "vvb", "lead"], False),
+    "supply":    ("Супровід поставки", 3, ["orv", "atc", "alpha", "deb", "vvb", "vkpp", "lead"], False),
     "block":     ("Блокування рахунку за КФ", 4, ["deb"], False),
     "fin":       ("Фінансовий моніторинг (звіт)", 3, ["deb"], False),
     "check":     ("Службова перевірка ВВБ", 5, ["vvb"], False),
@@ -850,6 +850,15 @@ def mention(key: str | None, users: list | None = None) -> dict:
             "allowed_mentions": discord.AllowedMentions(everyone=False, users=[discord.Object(x) for x in uids], roles=[discord.Object(r) for r in ids])}
 
 
+async def post_card_safe(kind: str, row: dict, tag: str | None = None):
+    """Документ уже збережено в базі: збій Discord (права каналу, перебій) не повинен повертати користувачу помилку,
+    інакше він подасть удруге і вийде дубль."""
+    try:
+        await post_card(kind, row, tag=tag)
+    except Exception:
+        log.exception("Картка %s #%s не надіслана в Discord", kind, row.get("id"))
+
+
 async def post_card(kind: str, row: dict, tag: str | None = None):
     import docpost  # тут, а не вгорі: docpost сам імпортує core
     special = f"rap:{row['type']}" if kind == "rap" else None
@@ -1039,7 +1048,7 @@ async def create_act(u: dict, body: dict) -> dict:
                        u["sid"], dept, t, qty, min(when, now_ms()), json.dumps(arts, ensure_ascii=False),
                        str(body.get("subj", ""))[:200], ev[:500], json.dumps(files), str(body.get("note", ""))[:1500], custom)
     row = await db.one("SELECT * FROM acts WHERE id=?", rid)
-    await post_card("act", row, tag=body.get("tag"))
+    await post_card_safe("act", row, tag=body.get("tag"))
     return row
 
 
@@ -1075,7 +1084,10 @@ async def vacation_loop():
                     until = vacation_until(json.loads(r["data"] or "{}"), r["reviewed"] or now) if r else now
                     await db.run("UPDATE users SET vac_until=? WHERE sid=?", until, u["sid"])
                 if until <= now:
-                    await back_from_vacation(u["sid"], f"строк відпустки минув {style.when(until)}")
+                    try:
+                        await back_from_vacation(u["sid"], f"строк відпустки минув {style.when(until)}")
+                    except Exception as ex:  # один збійний запис не зупиняє повернення решти
+                        log.warning("Повернення з відпустки №%s: %s", u["sid"], ex)
         except Exception as ex:
             log.warning("Повернення з відпусток: %s", ex)
         await asyncio.sleep(1800)
@@ -1208,7 +1220,7 @@ async def create_rap(u: dict, body: dict) -> dict:
     rid = await db.run("INSERT INTO raps(by_sid,dept,type,data,t) VALUES(?,?,?,?,?)",
                        u["sid"], u["dept"], t, json.dumps(data, ensure_ascii=False), now_ms())
     row = await db.one("SELECT * FROM raps WHERE id=?", rid)
-    await post_card("rap", row, tag=body.get("tag"))
+    await post_card_safe("rap", row, tag=body.get("tag"))
     return row
 
 

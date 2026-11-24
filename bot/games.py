@@ -66,7 +66,10 @@ async def save(u: dict, b: dict) -> dict:
     if not 0 <= lvl <= WEEKLY or not 0 <= sc <= GAMES[game]["max"] or ms < 8000:  # грубий захист від підробки
         raise Fail("Некоректний результат.")
     d = b.get("data") or {}
-    data = {k: d.get(k) for k in GAMES[game]["fields"]}
+    if not isinstance(d, dict):
+        d = {}
+    # лише короткі значення: інакше скрипт міг би роздувати базу (і бекапи) довільними даними
+    data = {k: (v if v is None or isinstance(v, (int, float, bool)) else str(v)[:40]) for k in GAMES[game]["fields"] for v in [d.get(k)]}
     if game == "assault":
         data["rescued"] = [int(x) for x in (d.get("rescued") or []) if str(x).isdigit()][:8]
     data["dept"] = u["dept"]

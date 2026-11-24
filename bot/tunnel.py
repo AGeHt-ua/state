@@ -52,8 +52,10 @@ def ensure_binary():
     arch = "arm64" if platform.machine() in ("aarch64", "arm64") else "amd64"
     BIN.parent.mkdir(parents=True, exist_ok=True)
     log.info("Завантажую cloudflared (%s) з GitHub Cloudflare…", arch)
-    urllib.request.urlretrieve(URL.format(arch=arch), BIN)
-    BIN.chmod(BIN.stat().st_mode | stat.S_IEXEC)
+    tmp = BIN.with_suffix(".part")  # обірване завантаження не повинно лишити зламаний файл назавжди
+    urllib.request.urlretrieve(URL.format(arch=arch), tmp)
+    tmp.chmod(tmp.stat().st_mode | stat.S_IEXEC)
+    tmp.replace(BIN)
 
 
 async def announce(url: str):
@@ -72,7 +74,7 @@ async def announce(url: str):
                         log.info("Ретранслятор %s → %s", relay, url)
                         return
                     log.warning("Ретранслятор відповів %s: %s", r.status, (await r.text())[:200])
-        except aiohttp.ClientError as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             log.warning("Ретранслятор недоступний: %s", e)
         await asyncio.sleep(min(60, 5 * (attempt + 1)))
 

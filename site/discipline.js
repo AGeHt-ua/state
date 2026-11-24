@@ -118,13 +118,14 @@ function formView(d, staff) {
     <div class="form-grid">
       <label class="f wide"><span>Співробітник</span><select class="i" id="ns-sid" data-ns>${'<option value="">— оберіть —</option>' + staff.filter((p) => p.sid !== me.sid)
         .map((p) => `<option value="${p.sid}" ${String(p.sid) === String(f.sid) ? "selected" : ""}>${esc(p.name)} · ${esc(p.rankName)} · ${esc((S.META().depts[p.dept] || {}).s || "")} · ${p.sid}</option>`).join("")}</select></label>
-      <label class="f wide"><span>Порушення</span><select class="i" id="ns-v" data-ns>${d.violations.map((x) => `<option value="${x.id}" ${x.id === v.id ? "selected" : ""}>${esc(x.t)}</option>`).join("")}</select></label>
+      <label class="f wide"><span>Порушення</span><select class="i" id="ns-v" data-ns>${d.violations.map((x) => `<option value="${x.id}" ${x.id === v.id ? "selected" : ""}>${esc(x.t)}${x.kinds.some((k) => d.rights.kinds.includes(k)) ? "" : " · лише вище керівництво"}</option>`).join("")}</select></label>
       <label class="f"><span>Вид стягнення</span><select class="i" id="ns-kind" data-ns>${kinds.length ? kinds.map((k) => `<option value="${k}" ${k === kind ? "selected" : ""}>${esc(d.kinds[k])}</option>`).join("") : '<option value="">немає повноважень</option>'}</select></label>
       ${kind === "fine" ? `<label class="f"><span>Сума штрафу, $</span><input class="i" id="ns-fine" type="number" min="0" step="1000" value="${f.fine ?? v.fine}" data-ns></label>` : ""}
       <label class="f wide"><span>Обставини порушення</span><textarea class="i" id="ns-reason" data-ns placeholder="Коли, де, що сталося; докази">${esc(f.reason || "")}</textarea></label>
       ${S.tagSelect('id="ns-tag" data-ns', f.tag || "")}
     </div>
     ${["demote", "dismiss", "blacklist"].includes(kind) ? '<p class="note warn">Бот одразу виконає наказ: змінить звання або зніме ролі СБУ в Discord і запише це в кадровий аудит.</p>' : ""}
+    ${kinds.length ? "" : `<p class="note warn">За це порушення статут передбачає: ${v.kinds.map((k) => `<b>${esc((d.kinds[k] || "").toLowerCase())}</b>`).join(" або ")} — це поза вашими повноваженнями, такий наказ оголошує вище керівництво.${d.rights.vvb ? " Оформіть службову перевірку з рекомендованим стягненням і передайте її керівництву." : ""}</p>`}
     ${f.inspection ? `<p class="note">Наказ за матеріалами службової перевірки СП-${String(f.inspection).padStart(4, "0")}.</p>` : ""}
     <div><button class="btn gold" type="submit" ${kinds.length ? "" : "disabled"}>Оголосити наказ</button></div></form>
     ${blankHtml(d, staff)}</div>`;
