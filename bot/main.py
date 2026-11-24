@@ -37,7 +37,7 @@ class Sova(commands.Bot):
     async def setup_hook(self):
         await db.open()
         core.bot = self
-        self.add_dynamic_items(core.ActButton, core.RapButton, core.AccessButton, candidates.CandButton)
+        self.add_dynamic_items(core.ActButton, core.RapButton, core.AccessButton, candidates.CandButton, candidates.ClaimButton)
         self.add_view(voice.RoomPanel())  # кнопки приватних кімнат працюють і після перезапуску
         await slash.setup(self)
         self.runner = await api.start()

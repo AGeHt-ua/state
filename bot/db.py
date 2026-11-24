@@ -277,6 +277,8 @@ class DB:
                     "ALTER TABLE orders ADD COLUMN signed_by INTEGER", "ALTER TABLE orders ADD COLUMN signed INTEGER", "ALTER TABLE orders ADD COLUMN note TEXT",
                     "ALTER TABLE raps ADD COLUMN copies TEXT",
                     "ALTER TABLE orders ADD COLUMN title TEXT", "ALTER TABLE orders ADD COLUMN body TEXT",
+                    "ALTER TABLE candidates ADD COLUMN claim_by TEXT", "ALTER TABLE candidates ADD COLUMN claim_name TEXT",
+                    "ALTER TABLE candidates ADD COLUMN claim_stage TEXT", "ALTER TABLE candidates ADD COLUMN claim_until INTEGER",
                     "ALTER TABLE inspections ADD COLUMN kind TEXT", "ALTER TABLE inspections ADD COLUMN data TEXT",
                     "ALTER TABLE inspections ADD COLUMN visas TEXT", "ALTER TABLE inspections ADD COLUMN history TEXT",
                     "ALTER TABLE inspections ADD COLUMN regno TEXT", "ALTER TABLE inspections ADD COLUMN resolution TEXT",

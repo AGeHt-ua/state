@@ -1494,7 +1494,8 @@ async def public_candidate(request):
 
 # ---------------------------------------------------------------- кадри: анкети кандидатів і заявки на допуск
 def hr_rights(u: dict) -> dict:
-    return {"vvb": u["rank"] >= ov.P("cand_vvb") or core.has_dept_role(u, "vvb"), "vkpp": u["rank"] >= ov.P("cand_vkpp") or core.has_dept_role(u, "vkpp")}
+    return {"vvb": u["rank"] >= ov.P("cand_vvb") or core.has_dept_role(u, "vvb"), "vkpp": u["rank"] >= ov.P("cand_vkpp") or core.has_dept_role(u, "vkpp"),
+            "lead": u["rank"] >= ov.P("cand_vkpp")}
 
 
 async def hr_pending(u: dict) -> int:
@@ -1535,6 +1536,9 @@ async def hr_list(request):
     acc = await db.all("SELECT * FROM access_requests WHERE status='wait' ORDER BY t") if r["vkpp"] else []
     acc_done = await db.all("SELECT * FROM access_requests WHERE status NOT IN ('wait','deleted') ORDER BY reviewed DESC LIMIT 30") if r["vkpp"] else []
     nm = await names([c["vvb_by"] for c in cand + done] + [c["vkpp_by"] for c in cand + done] + [a["reviewer"] for a in acc_done])
+    for c in cand:
+        act = candidates.claim_active(c)
+        c["claim"] = {"name": c["claim_name"], "until": c["claim_until"], "mine": c["claim_by"] == str(u.get("discord_id"))} if act else None
     for c in cand + done:
         c["vvbName"], c["vkppName"] = nm.get(c["vvb_by"]), nm.get(c["vkpp_by"])
         c["extra"] = json.loads(c.get("extra") or "null")
@@ -1557,6 +1561,15 @@ async def hr_cand(request):
     b = await body(request)
     text = await candidates.decide(int(request.match_info["id"]), await reviewer_member(u), b.get("decision"), (b.get("note") or "").strip())
     return web.json_response({"text": text})
+
+
+@routes.post("/api/hr/cand/{id}/claim")
+async def hr_cand_claim(request):
+    u = await auth(request)
+    b = await body(request)
+    c = await candidates.claim(int(request.match_info["id"]), await reviewer_member(u), release=bool(b.get("release")),
+                               force=u["rank"] >= ov.P("cand_vkpp"))
+    return web.json_response({"ok": True, "until": c.get("claim_until")})
 
 
 @routes.post("/api/hr/access/{id}")

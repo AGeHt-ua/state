@@ -1,6 +1,7 @@
 """Анкети кандидатів на службу: кандидат подає анкету → ВВБ перевіряє й погоджує → ВКПП приймає на службу (ролі, допуск, код)."""
 import io
 import json
+from datetime import datetime, timezone
 import logging
 import re
 
@@ -218,6 +219,8 @@ async def card(c: dict, member: discord.Member | None) -> discord.Embed:
         lines.append(style.kv("ВКПП", f"{'погоджено' if c['status'] == 'ok' else 'відмовлено'} · {await _name(c['vkpp_by'])}",
                               "green" if c["status"] == "ok" else "red"))
     lines.append(style.kv("СТАН", label, color, True))
+    if claim_active(c):
+        lines.append(style.kv("В РОБОТІ", f"{c['claim_name']} · до {hhmm(c['claim_until'])}", "gold", True))
     if c["note"]:
         lines += [style.kv("ПРИЧИНА" if i == 0 else "", p, "white") for i, p in enumerate(style.wrap(c["note"], 28))]
     footer = {"vvb": "Перевірка Відділом внутрішньої безпеки", "vkpp": "Рішення Відділу кадрів та підготовки персоналу"}.get(c["status"], "Розгляд завершено")
@@ -296,12 +299,74 @@ async def _dm(member: discord.Member | None, **kw):
         return False
 
 
-@core.serialized("cand", 0)
+# ---------------------------------------------------------------- «Взяти в роботу»: бронь анкети на 1 годину
+CLAIM_MS = 3600_000
+
+
+def claim_active(c: dict, now: int | None = None) -> bool:
+    """Анкету зараз опрацьовує хтось на її поточному етапі (бронь ще не минула)."""
+    return bool(c.get("claim_by")) and c.get("claim_stage") == c["status"] and (c.get("claim_until") or 0) > (now or now_ms())
+
+
+def hhmm(t: int) -> str:
+    return datetime.fromtimestamp(t / 1000, core.TZ or timezone.utc).strftime("%H:%M")
+
+
+def _can_stage(reviewer: discord.Member, stage: str) -> bool:
+    return can_vvb(reviewer) if stage == "vvb" else core.can_approve_access(reviewer)
+
+
+async def claim(cid: int, reviewer: discord.Member, release: bool = False, force: bool = False) -> dict:
+    """Взяти анкету в роботу на годину (повторно — продовжити ще на годину) або звільнити її. Поки бронь діє,
+    рішення по анкеті ухвалює лише той, хто її взяв; після години анкета знову доступна всім."""
+    async with core.doc_lock("cand", cid):
+        c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
+        if not c or c["status"] not in ("vvb", "vkpp"):
+            raise Fail("Цю анкету вже розглянуто.")
+        if not _can_stage(reviewer, c["status"]):
+            raise Fail("Опрацьовувати анкету на цьому етапі може " + ("ВВБ" if c["status"] == "vvb" else "ВКПП") + " або керівництво СБУ.", 403)
+        mine = c.get("claim_by") == str(reviewer.id)
+        if release:
+            if not claim_active(c):
+                raise Fail("Анкета зараз не в роботі.")
+            if not (mine or force):
+                raise Fail("Звільнити анкету може той, хто взяв її в роботу, або керівництво СБУ.", 403)
+            await db.run("UPDATE candidates SET claim_by=NULL, claim_name=NULL, claim_stage=NULL, claim_until=NULL WHERE id=?", cid)
+        else:
+            if claim_active(c) and not mine:
+                raise Fail(f"Анкета вже в роботі: {c['claim_name']}, до {hhmm(c['claim_until'])}. Після цього вона знову стане доступною.")
+            await db.run("UPDATE candidates SET claim_by=?, claim_name=?, claim_stage=?, claim_until=? WHERE id=?",
+                         str(reviewer.id), reviewer.display_name[:80], c["status"], now_ms() + CLAIM_MS, cid)
+        c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
+    await _refresh_card(c)
+    return c
+
+
+async def _refresh_card(c: dict):
+    """Оновити картку анкети в каналі поточного етапу (кнопки лишаються)."""
+    st = c["status"]
+    if st not in ("vvb", "vkpp") or not c.get(f"{st}_ch") or not c.get(f"{st}_msg"):
+        return
+    try:
+        ch = core.bot.get_channel(int(c[f"{st}_ch"])) or await core.bot.fetch_channel(int(c[f"{st}_ch"]))
+        msg = await ch.fetch_message(int(c[f"{st}_msg"]))
+        await msg.edit(embeds=await embeds(c, None))
+    except (discord.HTTPException, AttributeError, ValueError):
+        pass
+
+
 async def decide(cid: int, reviewer: discord.Member, decision: str, note: str = "") -> str:
+    async with core.doc_lock("cand", cid):
+        return await _decide(cid, reviewer, decision, note)
+
+
+async def _decide(cid: int, reviewer: discord.Member, decision: str, note: str = "") -> str:
     c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
     if not c or c["status"] not in ("vvb", "vkpp"):
         raise Fail("Цю анкету вже розглянуто.")
     stage = c["status"]
+    if claim_active(c) and c["claim_by"] != str(reviewer.id):
+        raise Fail(f"Анкета в роботі: {c['claim_name']}, до {hhmm(c['claim_until'])}. До цього часу рішення ухвалює лише той, хто її взяв.")
     if stage == "vvb" and not can_vvb(reviewer):
         raise Fail("Перевіряти анкети кандидатів може лише ВВБ або керівництво СБУ.")
     if stage == "vkpp" and not core.can_approve_access(reviewer):
@@ -311,7 +376,8 @@ async def decide(cid: int, reviewer: discord.Member, decision: str, note: str = 
     t = now_ms()
     col = "vvb" if stage == "vvb" else "vkpp"
     new = ("vkpp" if stage == "vvb" else "ok") if decision == "ok" else "rej"
-    await db.run(f"UPDATE candidates SET status=?, {col}_by=?, {col}_t=?, note=? WHERE id=?", new, str(reviewer.id), t, note[:300] or None, cid)
+    await db.run(f"UPDATE candidates SET status=?, {col}_by=?, {col}_t=?, note=?, claim_by=NULL, claim_name=NULL, claim_stage=NULL, claim_until=NULL WHERE id=?",
+                 new, str(reviewer.id), t, note[:300] or None, cid)
     c = await db.one("SELECT * FROM candidates WHERE id=?", cid)
     await _refresh(c, None)
     await core.post_log(c[f"{col}_ch"], c[f"{col}_msg"], style.doc_no("АНК", cid),
@@ -399,8 +465,30 @@ class CandButton(discord.ui.DynamicItem[discord.ui.Button], template=r"sova:cand
         await interaction.followup.send(text, ephemeral=True)
 
 
+class ClaimButton(discord.ui.DynamicItem[discord.ui.Button], template=r"sova:candclaim:(?P<id>\d+)"):
+    """«Взяти в роботу» під карткою анкети в Discord: бронь на 1 годину (повторне натискання — продовжити)."""
+    def __init__(self, cid: int):
+        super().__init__(discord.ui.Button(label="Взяти в роботу (1 год)", emoji="🔒", style=discord.ButtonStyle.secondary,
+                                           custom_id=f"sova:candclaim:{cid}"))
+        self.cid = cid
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            c = await claim(self.cid, interaction.user)
+            text = f"🔒 Анкету взято в роботу до {hhmm(c['claim_until'])}. Інші не зможуть ухвалити по ній рішення, поки бронь діє."
+        except Fail as e:
+            text = str(e)
+        await interaction.followup.send(text, ephemeral=True)
+
+
 def view(cid: int, stage: str) -> discord.ui.View:
     v = discord.ui.View(timeout=None)
+    v.add_item(ClaimButton(cid))
     v.add_item(CandButton(cid, stage, "ok"))
     v.add_item(CandButton(cid, stage, "rej"))
     return v

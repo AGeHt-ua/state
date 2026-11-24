@@ -982,9 +982,13 @@ function candCard(c, r) {
   ${c.note ? `<div class="dz-note"><b>Причина відмови:</b> ${esc(c.note)}</div>` : ""}
   ${candRoute(c)}
   ${r.vvb || r.vkpp ? `<div class="dz-del"><button class="btn sm bad" data-a="del" data-url="/api/hr/cand/${c.id}/delete" data-q="Видалити анкету ${docNo("АНК", c.id)} (спам, дубль)? Фото кандидата й трудову книжку теж буде видалено.">🗑 Видалити анкету</button></div>` : ""}
-  ${mine ? `<footer class="dz-act"><span class="muted small">${c.status === "vvb" ? "Висновок Відділу внутрішньої безпеки" : "Рішення Відділу кадрів та підготовки персоналу"}</span>
-    <div class="acts"><button class="btn ok" data-a="cand" data-id="${c.id}" data-d="ok">${c.status === "vvb" ? "Погодити й передати до ВКПП" : "Погодити зарахування"}</button>
-    <button class="btn bad" data-a="cand" data-id="${c.id}" data-d="rej">Відмовити</button></div></footer>` : ""}
+  ${mine ? `<footer class="dz-act"><span class="muted small">${c.status === "vvb" ? "Висновок Відділу внутрішньої безпеки" : "Рішення Відділу кадрів та підготовки персоналу"}
+      ${c.claim ? `<br><b class="${c.claim.mine ? "" : "warn"}">🔒 В роботі: ${c.claim.mine ? "у вас" : esc(c.claim.name)} — до ${new Date(c.claim.until).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</b>` : ""}</span>
+    <div class="acts">${!c.claim ? `<button class="btn" data-a="candclaim" data-id="${c.id}">🔒 Взяти в роботу (1 год)</button>`
+      : c.claim.mine ? `<button class="btn sm" data-a="candclaim" data-id="${c.id}">+1 год</button><button class="btn sm" data-a="candclaim" data-id="${c.id}" data-rel="1">Звільнити</button>`
+      : r.lead ? `<button class="btn sm" data-a="candclaim" data-id="${c.id}" data-rel="1">Зняти бронь</button>` : ""}
+    ${!c.claim || c.claim.mine ? `<button class="btn ok" data-a="cand" data-id="${c.id}" data-d="ok">${c.status === "vvb" ? "Погодити й передати до ВКПП" : "Погодити зарахування"}</button>
+    <button class="btn bad" data-a="cand" data-id="${c.id}" data-d="rej">Відмовити</button>` : '<span class="muted small">Рішення ухвалює той, хто взяв анкету в роботу.</span>'}</div></footer>` : ""}
 </article>`;
 }
 
@@ -1299,6 +1303,14 @@ const A = {
     b.disabled = true;
     try { await call(`/api/acts/${b.dataset.id}/decision`, { json: { decision: b.dataset.d, score: sel ? +sel.value || null : null, note } }); toast(b.dataset.d === "ok" ? `Звіт підтверджено${sel ? ` · ${sel.value} б.` : ""}` : "Звіт відхилено"); await actImage(+b.dataset.id); await refreshMe(); render(); }
     catch (e) { toast(e.message, 1); b.disabled = false; }
+  },
+  candclaim: async (b) => {
+    b.disabled = true;
+    try {
+      const r = await call(`/api/hr/cand/${b.dataset.id}/claim`, { json: { release: !!b.dataset.rel } });
+      toast(b.dataset.rel ? "Анкету звільнено — вона знову доступна всім" : `Анкету взято в роботу до ${new Date(r.until).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}`);
+      render();
+    } catch (e) { toast(e.message, 1); b.disabled = false; }
   },
   cand: async (b) => {
     let note = "";
