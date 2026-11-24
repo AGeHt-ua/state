@@ -559,3 +559,7 @@
 .act-trail .rej-note{margin:0 0 10px}
 .rap-rej{margin-top:6px;padding:6px 10px;border-left:3px solid #c0392b;background:rgba(192,57,43,.06);font-size:13px}
 .hm-act-rej{display:block;margin-top:2px;font-size:11.5px;font-weight:400;color:#ef8a83;white-space:normal}
+
+/* Архів рапортів: панель фільтрів */
+.rap-arc-f{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;align-items:end;margin-bottom:12px}
+.rap-arc-f .btn{justify-self:start}

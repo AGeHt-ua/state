@@ -325,7 +325,7 @@ async function vHome() {
         <button data-a="go" data-v="rap" data-tab="new">${ico("rap")}<b>Рапорт</b><span>підвищення, відпустка, переведення</span></button>
         <button data-a="go" data-v="staff" data-tab="tree">${ico("staff")}<b>Штатна структура</b><span>хто є хто у відділах</span></button>
       </div>
-      <div class="do-line"><span class="eyebrow">Відіграш жетона</span><code>/do На спорядженні закріплений номерний жетон СБУ ${esc(d.s)} №${me.sid}.</code></div></div>
+      <div class="do-line"><span class="eyebrow">Відіграш жетона</span><code>/do На поясі закріплений жетон на якому написано [СБУ] [${esc(d.s)}] [${me.sid}].</code></div></div>
     </section>
   </div>
 
@@ -649,8 +649,10 @@ async function vRap() {
   if (UI.rapId) return vRapView(UI.rapId);
   const canRev = ME.me.rank >= 11 || !!(ME.hr && ME.hr.vkpp) || (ME.pending.raps || 0) > 0;
   const t = tab("rap", "mine");
-  const head = tabsBar("rap", [["mine", "Мої рапорти"], ["new", "Подати рапорт"], ...(canRev ? [["review", "На розгляд", ME.pending.raps || 0]] : [])], "mine");
+  const canArc = ME.me.rank >= 11 || !!(ME.hr && ME.hr.vkpp);
+  const head = tabsBar("rap", [["mine", "Мої рапорти"], ["new", "Подати рапорт"], ...(canRev ? [["review", "На розгляд", ME.pending.raps || 0]] : []), ...(canArc ? [["archive", "Архів"]] : [])], "mine");
   if (t === "new") return head + rapForm();
+  if (t === "archive" && canArc) return head + await rapArchive();
   const list = await call("/api/raps" + (t === "review" ? "?scope=review" : ""));
   if (!list.length) return head + `<div class="empty">${t === "review" ? "Немає рапортів на розгляд." : "Ви ще не подавали рапортів."}</div>`;
   return head + `<div class="docs">${list.map((r) => `<article class="doc st-${r.status} clickable" data-a="rapopen" data-id="${r.id}" title="Відкрити рапорт">
@@ -662,6 +664,34 @@ async function vRap() {
         : t === "review"
         ? `<button class="btn sm ok" data-a="rapd" data-id="${r.id}" data-d="ok">Погодити</button><button class="btn sm bad" data-a="rapd" data-id="${r.id}" data-d="rej">Відмовити</button>`
         : `<span class="doc-stamp">${{ ok: "Погоджено", rej: "Відмовлено", wait: "На розгляді", cancel: "Відкликано" }[r.status]}</span>${r.reviewer ? `<span class="muted small">${esc(r.reviewer.name)}</span>` : ""}${r.status === "wait" ? `<button class="btn sm" data-a="wd" data-k="raps" data-id="${r.id}">↩ Відкликати</button>` : ""}${["wait", "rej", "cancel"].includes(r.status) ? `<button class="btn sm bad" data-a="del" data-url="/api/raps/${r.id}/delete" data-q="Видалити документ? Його буде прибрано з кабінету, у журналі Discord лишиться запис.">🗑 Видалити</button>` : ""}`}</div>
+    </article>`).join("")}</div>`;
+}
+
+// Архів рапортів: розглянуті рапорти, які ви маєте право переглядати (керівництво — усі, начальники — своїх відділів, ВКПП)
+const RAP_ARC_ST = [["done", "Усі розглянуті"], ["ok", "Погоджені"], ["rej", "Відмовлені"], ["cancel", "Відкликані"], ["all", "Усі, разом із тими, що на розгляді"]];
+async function rapArchive() {
+  const f = UI.rapArc || (UI.rapArc = { st: "done", type: "", dept: "", from: "", to: "" });
+  const day = (iso, end) => iso ? String(new Date(iso + (end ? "T23:59:59.999" : "T00:00:00")).getTime()) : "";
+  const qs = new URLSearchParams({ scope: "archive", st: f.st, type: f.type, dept: f.dept, from: day(f.from), to: day(f.to, 1) });
+  const list = await call("/api/raps?" + qs);
+  const opt = (v, l, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`;
+  const depts = Object.entries(META.depts).filter(([k]) => k !== "curator");
+  const n = (s) => list.filter((r) => r.status === s).length;
+  const bar = `<div class="card rap-arc-f">
+      <label class="f"><span>Статус</span><select class="i" data-arc="st">${RAP_ARC_ST.map(([v, l]) => opt(v, l, f.st)).join("")}</select></label>
+      <label class="f"><span>Тип рапорту</span><select class="i" data-arc="type">${opt("", "Усі типи", f.type)}${Object.entries(META.rapTypes).map(([k, l]) => opt(k, l.replace("Рапорт ", ""), f.type)).join("")}</select></label>
+      <label class="f"><span>Відділ</span><select class="i" data-arc="dept">${opt("", "Усі доступні", f.dept)}${depts.map(([k, d]) => opt(k, d.n, f.dept)).join("")}</select></label>
+      <label class="f"><span>Розглянуто з</span><input class="i" type="date" data-arc="from" value="${esc(f.from)}"></label>
+      <label class="f"><span>по</span><input class="i" type="date" data-arc="to" value="${esc(f.to)}"></label>
+      <button class="btn sm" data-a="arcreset">Скинути</button></div>
+    <p class="note">Знайдено: <b>${list.length}</b>${list.length >= 300 ? " (показано останні 300 — звузьте фільтр)" : ""} · погоджено ${n("ok")} · відмовлено ${n("rej")} · відкликано ${n("cancel")}${n("wait") ? ` · на розгляді ${n("wait")}` : ""}. Натисніть на рапорт, щоб відкрити його повністю або завантажити PDF.</p>`;
+  if (!list.length) return bar + `<div class="empty">За цими фільтрами рапортів немає.</div>`;
+  const STAMP = { ok: "Погоджено", rej: "Відмовлено", wait: "На розгляді", cancel: "Відкликано" };
+  return bar + `<div class="docs">${list.map((r) => `<article class="doc st-${r.status} clickable" data-a="rapopen" data-id="${r.id}" title="Відкрити рапорт">
+      <div class="doc-no"><b>${docNo("РАП", r.id)}</b><span>${fmtDT(r.t)}</span></div>
+      <div class="doc-main"><div class="doc-who">${who(r.by)} ${deptTag(r.dept)}</div>
+        <div class="doc-title">${esc(META.rapTypes[r.type] || "Рапорт")}</div><div class="doc-line">${rapDesc(r)}</div>${rejBox(r.rejNote)}</div>
+      <div class="doc-side"><span class="doc-stamp">${STAMP[r.status] || ""}</span>${r.reviewer ? `<span class="muted small">${esc(r.reviewer.name)}</span>` : ""}${r.reviewed ? `<span class="muted small">${fmtDT(r.reviewed)}</span>` : ""}</div>
     </article>`).join("")}</div>`;
 }
 
@@ -1143,6 +1173,7 @@ const A = {
   nav: (b) => { UI.view = b.dataset.v; UI.rapId = null; HOOKS.forEach((f) => f(UI.view)); render(); scrollTo(0, 0); },
   go: (b) => { UI.actId = null; UI.view = b.dataset.v; if (b.dataset.tab) UI.tabs[b.dataset.v] = b.dataset.tab; render(); scrollTo(0, 0); },
   rapopen: (b) => { UI.rapId = +b.dataset.id; render(); scrollTo(0, 0); },
+  arcreset: () => { UI.rapArc = null; render(); },
   rapback: () => { UI.rapId = null; render(); },
   raptype: (b) => { UI.rapType = b.dataset.v; render(); },
   auditf: (b) => { UI.auditF = b.dataset.v; render(); },
@@ -1330,6 +1361,7 @@ document.addEventListener("change", (e) => {
     p.hidden = !f; if (f) p.src = URL.createObjectURL(f);
     $("#nw-img-x").hidden = !f; $("#nw-img-name").textContent = f ? f.name : "не обрано";
   }
+  if (e.target.dataset.arc && UI.rapArc) { UI.rapArc[e.target.dataset.arc] = e.target.value; render(); }  // фільтри архіву рапортів
   if (e.target.id === "a-type" && $("#a-custom-f")) $("#a-custom-f").hidden = e.target.value !== "other";
   if (e.target.id === "a-type" && $("#a-qty-f")) { $("#a-qty-f").hidden = e.target.value !== "patrol"; if (e.target.value !== "patrol") $("#a-qty").value = 1; }
   if (e.target.closest("form[data-f=rap]") && $("#rap-prev")) $("#rap-prev").innerHTML = rapPreview(); if (e.target.dataset.change === "raptype") { UI.rapType = e.target.value; render(); } });

@@ -7,6 +7,7 @@ import json
 import discord
 
 import core
+import review
 import style
 from db import db, now_ms
 from roles import RANKS, rank_name
@@ -44,7 +45,7 @@ async def _points(sid: int, before: int | None = None) -> int:
     c = await core.coef()
     q = "SELECT type, qty FROM acts WHERE by_sid=? AND status='ok'" + (" AND t<?" if before else "")
     rows = await db.all(q, sid, *([before] if before else []))
-    return sum(c.get(r["type"], 0) * (r["qty"] or 1) for r in rows)
+    return sum(c.get(r["type"], 0) * (r["qty"] or 1) for r in rows) + await review.points(sid, 0, before or review.FAR)
 
 
 async def spent(u: dict) -> int:

@@ -30,6 +30,7 @@ import news
 import orders
 import config
 import core
+import review
 import overrides as ov
 from core import ACTS, RAP_TYPES, Fail
 from db import db, now_ms
@@ -541,10 +542,41 @@ def rap_out(r: dict, people: dict) -> dict:
             "by": people.get(r["by_sid"]), "reviewer": people.get(r["reviewer"]), "rejNote": r.get("rej_note") if r["status"] == "rej" else None}
 
 
+def can_view_rap(u: dict, r: dict) -> bool:
+    """Повний текст рапорту бачать: автор, той, хто розглядає, ВКПП, керівництво (rap_view_all) і начальники обох відділів."""
+    return (r["by_sid"] == u["sid"] or core.can_approve_rap(u, r) or u["rank"] >= ov.P("rap_view_all") or core.has_dept_role(u, "vkpp")
+            or core.lead_of(u, r["dept"]) or core.lead_of(u, json.loads(r["data"] or "{}").get("to")))
+
+
+ARCHIVE_STATUSES = {"done": ("ok", "rej", "cancel"), "ok": ("ok",), "rej": ("rej",), "cancel": ("cancel",), "all": ("ok", "rej", "cancel", "wait")}
+
+
+async def raps_archive(u: dict, q) -> list[dict]:
+    """Архів рапортів: розглянуті (за замовчуванням) рапорти, які людина має право переглядати; найновіші рішення першими."""
+    statuses = ARCHIVE_STATUSES.get(q.get("st", "done"), ARCHIVE_STATUSES["done"])
+    sql, args = f"SELECT * FROM raps WHERE status IN ({','.join('?' * len(statuses))})", list(statuses)
+    if q.get("type") in core.RAP_TYPES:
+        sql += " AND type=?"
+        args.append(q["type"])
+    for key, op in (("from", ">="), ("to", "<=")):
+        try:
+            sql += f" AND COALESCE(reviewed, t) {op} ?"
+            args.append(int(q.get(key) or (0 if op == ">=" else 1 << 62)))
+        except ValueError:
+            raise Fail("Неправильна дата.")
+    sql += " ORDER BY COALESCE(reviewed, t) DESC LIMIT 3000"
+    dept = q.get("dept") or ""
+    rows = [r for r in await db.all(sql, *args)
+            if can_view_rap(u, r) and (not dept or r["dept"] == dept or json.loads(r["data"] or "{}").get("to") == dept)]
+    return rows[:300]
+
+
 @routes.get("/api/raps")
 async def raps_list(request):
     u = await auth(request)
-    if request.query.get("scope") == "review":
+    if request.query.get("scope") == "archive":
+        rows = await raps_archive(u, request.query)
+    elif request.query.get("scope") == "review":
         # на розгляд: що можу погодити зараз + переведення / розподіл мого відділу, які чекають іншу сторону (обидва начальники бачать рапорт)
         rows = []
         for r in await db.all("SELECT * FROM raps WHERE status='wait' ORDER BY t"):
@@ -573,8 +605,7 @@ async def raps_get(request):
     r = await db.one("SELECT * FROM raps WHERE id=?", int(request.match_info["id"]))
     if not r or r["status"] == "deleted":
         raise Fail("Рапорт не знайдено.", 404)
-    if not (r["by_sid"] == u["sid"] or core.can_approve_rap(u, r) or u["rank"] >= ov.P("rap_view_all") or core.has_dept_role(u, "vkpp")
-            or core.lead_of(u, r["dept"]) or core.lead_of(u, json.loads(r["data"] or "{}").get("to"))):
+    if not can_view_rap(u, r):
         raise Fail("Немає доступу до цього рапорту.", 403)
     data = json.loads(r["data"] or "{}")
     out = rap_out(r, await people_map([r["by_sid"], r["reviewer"]]))
@@ -1543,6 +1574,7 @@ async def start() -> web.AppRunner:
     log.info("API слухає %s:%s", config.API_HOST, config.API_PORT)
     await ov.load(db)
     await core.load_custom_acts()
+    await review.since()  # момент запуску балів за перевірку (ставиться один раз)
     core.ROLES_CHANGED.append(build_structure)
     asyncio.create_task(finance.reminder_loop())
     asyncio.create_task(docpost.reminder_loop())  # нагадування про документи, що чекають рішення понад добу

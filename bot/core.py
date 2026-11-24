@@ -13,6 +13,7 @@ import discord
 
 import config
 import overrides as ov
+import review
 import style
 from db import db, now_ms
 from roles import (ALL_SBU_ROLES, CURATOR_ROLE, DEPTS, OPS_DEPTS, PRESS_ROLE, RANK_ROLES, RANKS, SBU_ROLE,
@@ -35,6 +36,10 @@ ACTS = {  # id: (назва, бали, відділи або "all"/"instr", по
     "patrol":    ("Патрулювання (за 30 хв)", 1, "all", False),
     "patrol2":   ("Посилений патруль", 3, "all", False),
     "checkpoint": ("Блокпост", 2, "all", False),
+    "vzh":       ("ВЗХ", 2, "all", False),
+    "lect":      ("Лекція", 2, "all", False),
+    # колишній «Лекція або тренування» (3 б., інструктори): ключ той самий, щоб старі звіти й бали не змінились
+    "lecture":   ("Тренування", 3, "all", False),
     "interrog":  ("Вербальний допит з протоколом", 2, ["orv", "atc", "alpha", "vvb", "lead"], False),
     "covert":    ("Негласний захід / впровадження", 6, ["orv", "atc"], False),
     "raid":      ("Рейд або спецоперація", 6, ["orv", "atc", "alpha", "deb", "lead"], False),
@@ -44,7 +49,6 @@ ACTS = {  # id: (назва, бали, відділи або "all"/"instr", по
     "fin":       ("Фінансовий моніторинг (звіт)", 3, ["deb"], False),
     "check":     ("Службова перевірка ВВБ", 5, ["vvb"], False),
     "interview": ("Співбесіда з кандидатом", 2, "instr", False),
-    "lecture":   ("Лекція або тренування", 3, "instr", False),
     "exam":      ("Прийнятий залік у стажера", 2, "instr", False),
     "gov":       ("Оголошення в державну хвилю", 1, ["press"], False),
     "pr":        ("Брифінг або медіаматеріал", 3, ["press"], False),
@@ -126,7 +130,7 @@ def act_allowed(u: dict, act_id: str) -> bool:
         return False
     _, _, depts, _ = ACTS[act_id]
     if u["rank"] == 1:
-        return act_id in ("patrol", "lecture")
+        return act_id in ("patrol", "lecture", "lect", "vzh")
     if depts == "all":
         return True
     if depts == "instr":
@@ -152,7 +156,7 @@ async def week_points(sid: int, offset: int = 0) -> int:
     ws = week_start(offset)
     rows = await db.all("SELECT type, qty FROM acts WHERE by_sid=? AND status='ok' AND t>=? AND t<?", sid, ws, ws + 7 * DAY)
     c = await coef()
-    return sum(c.get(r["type"], 0) * (r["qty"] or 1) for r in rows)
+    return sum(c.get(r["type"], 0) * (r["qty"] or 1) for r in rows) + await review.points(sid, ws, ws + 7 * DAY)
 
 
 async def week_points_all(offset: int = 0) -> dict[int, int]:
@@ -164,6 +168,8 @@ async def week_points_all(offset: int = 0) -> dict[int, int]:
     out: dict[int, int] = {}
     for r in rows:
         out[r["by_sid"]] = out.get(r["by_sid"], 0) + c.get(r["type"], 0) * r["n"]
+    for sid, p in (await review.points_all(ws, ws + 7 * DAY)).items():  # бали керівників за перевірку документів
+        out[sid] = out.get(sid, 0) + p
     return out
 
 

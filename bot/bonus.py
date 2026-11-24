@@ -8,6 +8,7 @@ import logging
 import discord
 
 import core
+import review
 import docpost
 import overrides as ov
 import style
@@ -63,6 +64,8 @@ async def calc_rows(ws: int, c: dict) -> list[dict]:
     by = {}
     for a in acts:
         by[a["by_sid"]] = by.get(a["by_sid"], 0) + pts.get(a["type"], 0) * (a["qty"] or 1)
+    for sid, p in (await review.points_all(ws, ws + 7 * DAY)).items():  # керівникам — бали за перевірку документів
+        by[sid] = by.get(sid, 0) + p
     # П. 1.2 Регламенту стягнень: активна догана протягом тижня блокує премію
     blocked = {r["sid"] for r in await db.all("SELECT sid FROM discipline WHERE status IN ('active','lifted') AND kind IN ('reprimand','severe') "
                                               "AND issued<? AND expires>?", ws + 7 * DAY, ws)}

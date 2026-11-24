@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import discord
 
 import core
+import review
 import style
 import overrides as ov
 from core import ACTS, DAY, Fail
@@ -68,6 +69,7 @@ async def week_data(d: str) -> dict:
     pts = lambda a: c.get(a["type"], 0) * (a["qty"] or 1)
     last = {r["by_sid"]: r["t"] for r in await db.all("SELECT by_sid, MAX(t) AS t FROM acts WHERE dept=? AND status!='deleted' GROUP BY by_sid", d)}
 
+    rv_now, rv_prev = await review.points_all(ws, ws + 7 * DAY), await review.points_all(pws, ws)  # керівникам — бали за перевірку
     reps = {r["sid"]: r["n"] for r in await db.all("SELECT sid, COUNT(*) AS n FROM discipline WHERE status='active' AND kind IN ('reprimand','severe') "
                                                   "AND expires>? GROUP BY sid", now)}
     people = []
@@ -77,8 +79,8 @@ async def week_data(d: str) -> dict:
         lt = last.get(p["sid"])
         people.append({
             "sid": p["sid"], "name": p["name"], "rank": p["rank"], "rankName": rank_name(p["rank"]), "status": p["status"], "since": p["since"],
-            "pts": sum(pts(a) for a in week if a["status"] == "ok"),
-            "ptsPrev": sum(pts(a) for a in mine if a["t"] < ws and a["status"] == "ok"),
+            "pts": sum(pts(a) for a in week if a["status"] == "ok") + rv_now.get(p["sid"], 0),
+            "ptsPrev": sum(pts(a) for a in mine if a["t"] < ws and a["status"] == "ok") + rv_prev.get(p["sid"], 0),
             "acts": len(week), "wait": len([a for a in week if a["status"] == "wait"]),
             "reps": reps.get(p["sid"], 0), "last": lt, "inactive": p["status"] == "active" and (not lt or now - lt > ov.C("inactive_days") * DAY),
         })
